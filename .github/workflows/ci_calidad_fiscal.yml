@@ -29,6 +29,6 @@ jobs:
         run: |
           python3 -m unittest discover -s tests -v
 
-      - name: Gate 3 — Seguridad (Cero credenciales o bóvedas en Git)
+      - name: Gate 3 — Seguridad (Cero credenciales o bóvedas trackeadas en Git)
         run: |
-          ! find . -path './.git' -prune -o \( -name '*.enc' -o -name '*.key' -o -name '.vault_key' -o -name '.bot_secret' \) -print | grep .
+          ! git ls-files | grep -E '(\.enc|\.key|\.vault_key|\.bot_secret|\.env)$'
