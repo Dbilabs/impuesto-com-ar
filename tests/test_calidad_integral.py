@@ -140,6 +140,41 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
         for slug in pack_slugs:
             self.assertIn(f'"slug": "{slug}"', bundle_txt, f"Skill {slug} no sincronizado en skills_bundle.js — correr python3 scripts/sync_skills.py")
 
+    def test_07_auditoria_sin_timeout_cache_y_herramientas_gemini(self):
+        import time
+        from unittest.mock import patch
+        from bot import main as bot_main
+
+        # Verificar que listar_empresas y consultar_situacion_monotributo estén mapeadas en bot/main.py
+        src = (ROOT / "bot" / "main.py").read_text(encoding="utf-8")
+        self.assertIn('"listar_empresas"', src)
+        self.assertIn('"consultar_situacion_monotributo"', src)
+
+        # Verificar modo anti-timeout (EN_PROGRESO rápido + deduplicación + caché TTL)
+        calls = {"n": 0}
+        def fake_slow_audit(cuit, clave):
+            calls["n"] += 1
+            time.sleep(0.35)
+            return {"ok": True, "cuit": cuit, "informe_contador_markdown": "## OK"}
+
+        test_cuit = "20999999991"
+        bot_main.AUDIT_CACHE.pop(test_cuit, None)
+        bot_main.AUDIT_INFLIGHT.pop(test_cuit, None)
+        with patch.object(bot_main, "auditar_estado_integral_arca", side_effect=fake_slow_audit), \
+             patch.object(bot_main, "AUDIT_SYNC_WAIT_SEC", 0.08):
+            r1 = bot_main._ejecutar_auditoria_sin_timeout(test_cuit, "dummy")
+            self.assertEqual(r1.get("estado"), "EN_PROGRESO")
+            # Segunda llamada concurrente no duplica Chromium
+            r2 = bot_main._ejecutar_auditoria_sin_timeout(test_cuit, "dummy")
+            self.assertEqual(calls["n"], 1)
+            time.sleep(0.35)
+            # Tercera llamada sirve desde caché al instante
+            r3 = bot_main._ejecutar_auditoria_sin_timeout(test_cuit, "dummy")
+            self.assertTrue(r3.get("desde_cache"))
+            self.assertEqual(r3.get("informe_contador_markdown"), "## OK")
+            self.assertEqual(calls["n"], 1)
+        bot_main.AUDIT_CACHE.pop(test_cuit, None)
+
 
 if __name__ == "__main__":
     unittest.main()

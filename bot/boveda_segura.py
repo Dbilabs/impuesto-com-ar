@@ -138,3 +138,19 @@ def revocar_credenciales(cuit: str) -> Dict[str, Any]:
         vault.pop(cuit_clean, None)
         _save_vault(vault)
     return {"ok": True, "cuit": cuit_clean, "revocado": existed}
+
+
+def listar_cuits_vinculados() -> list:
+    """Lista metadatos seguros de los CUITs vinculados en la bóveda (nunca expone secretos)."""
+    vault = _load_vault()
+    out = []
+    for cuit_clean, rec in vault.items():
+        out.append({
+            "cuit": cuit_clean,
+            "alias": rec.get("alias") or f"Contribuyente {cuit_clean}",
+            "modo": rec.get("modo", "solo_lectura_cifrada"),
+            "solo_lectura_por_defecto": rec.get("solo_lectura_por_defecto", True),
+            "tiene_wsaa": rec.get("tiene_wsaa", False),
+            "vinculado_at": rec.get("vinculado_at"),
+        })
+    return out

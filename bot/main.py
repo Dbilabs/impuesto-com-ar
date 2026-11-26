@@ -16,6 +16,7 @@ import os
 import uuid
 import time
 import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any, Optional
 from fastapi import FastAPI, HTTPException, Header, Request
@@ -28,6 +29,7 @@ from .boveda_segura import (
     obtener_credenciales_descifradas,
     estado_vinculacion,
     revocar_credenciales,
+    listar_cuits_vinculados,
     normalizar_cuit,
 )
 from .auditoria_unificada import auditar_estado_integral_arca
@@ -35,9 +37,16 @@ from .auditoria_unificada import auditar_estado_integral_arca
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("arca_api")
 
-app = FastAPI(title="impuesto.com.ar — ARCA Headless Engine", version="2.2.0")
-executor = ThreadPoolExecutor(max_workers=3)
+app = FastAPI(title="impuesto.com.ar — ARCA Headless Engine", version="2.3.0")
+executor = ThreadPoolExecutor(max_workers=4)
 jobs: Dict[str, Dict[str, Any]] = {}
+
+# Caché TTL (15 min) + deduplicación de auditorías en curso para evitar timeouts en Gemini Online / Cloudflare
+AUDIT_TTL_SEC = int(os.environ.get("AUDIT_CACHE_TTL_SEC", "900"))
+AUDIT_SYNC_WAIT_SEC = float(os.environ.get("AUDIT_SYNC_WAIT_SEC", "18.0"))
+_audit_lock = threading.Lock()
+AUDIT_CACHE: Dict[str, Dict[str, Any]] = {}
+AUDIT_INFLIGHT: Dict[str, Dict[str, Any]] = {}
 
 
 class AutomationFilters(BaseModel):
@@ -80,6 +89,13 @@ def _check_secret(x_bot_secret: Optional[str]):
 def _resolve_creds(args: Dict[str, Any], public_base_url: str):
     cuit = normalizar_cuit(args.get("cuit") or args.get("cuit_empresa") or args.get("cuit_emisor") or args.get("usuario") or "")
     if not cuit:
+        try:
+            vinculados = listar_cuits_vinculados()
+            if len(vinculados) == 1:
+                cuit = vinculados[0]["cuit"]
+        except Exception:
+            pass
+    if not cuit:
         return None, None, {
             "ok": False,
             "requiere_vinculacion": True,
@@ -103,9 +119,85 @@ def _resolve_creds(args: Dict[str, Any], public_base_url: str):
     }
 
 
+def _run_auditoria_background(cuit: str, clave: str, entry: Dict[str, Any]) -> None:
+    try:
+        res = auditar_estado_integral_arca(cuit=cuit, clave=clave)
+        now = time.time()
+        with _audit_lock:
+            entry["result"] = res
+            entry["finished_at"] = now
+            if isinstance(res, dict) and res.get("ok") is not False:
+                AUDIT_CACHE[cuit] = {"ts": now, "data": res}
+            AUDIT_INFLIGHT.pop(cuit, None)
+    except Exception as e:
+        logger.exception(f"Error en auditoria_unificada background para {cuit}")
+        with _audit_lock:
+            entry["result"] = {"ok": False, "cuit": cuit, "error": str(e)}
+            entry["finished_at"] = time.time()
+            AUDIT_INFLIGHT.pop(cuit, None)
+    finally:
+        entry["event"].set()
+
+
+def _ejecutar_auditoria_sin_timeout(cuit: str, clave: str, forzar_refresco: bool = False) -> Dict[str, Any]:
+    """Ejecuta la auditoría 360° con caché de 15 min y espera máx. de 18s para evitar timeouts en Gemini Online / Cloudflare."""
+    now = time.time()
+    with _audit_lock:
+        cached = AUDIT_CACHE.get(cuit)
+        if not forzar_refresco and cached and (now - cached["ts"]) < AUDIT_TTL_SEC:
+            out = dict(cached["data"])
+            out["desde_cache"] = True
+            out["antiguedad_seg"] = int(now - cached["ts"])
+            return out
+
+        inflight = AUDIT_INFLIGHT.get(cuit)
+        if inflight is None:
+            inflight = {
+                "started_at": now,
+                "event": threading.Event(),
+                "result": None,
+            }
+            AUDIT_INFLIGHT[cuit] = inflight
+            executor.submit(_run_auditoria_background, cuit, clave, inflight)
+
+    finished = inflight["event"].wait(timeout=AUDIT_SYNC_WAIT_SEC)
+    if finished and inflight.get("result") is not None:
+        return inflight["result"]
+
+    elapsed = int(time.time() - inflight["started_at"])
+    return {
+        "ok": True,
+        "estado": "EN_PROGRESO",
+        "cuit": cuit,
+        "tiempo_transcurrido_seg": elapsed,
+        "mensaje": (
+            f"Auditoría integral de ARCA en curso para CUIT {cuit} (lleva {elapsed}s). "
+            "Estamos relevando CCMA, Mis Facilidades (Ver Pagos), SCT y Portal Monotributo en segundo plano. "
+            "Suele demorar entre 1 y 3 minutos dependiendo de la velocidad de ARCA."
+        ),
+        "instruccion_para_ia": (
+            "Respondé al usuario de forma breve y clara: avisale que ya estamos relevando en segundo plano "
+            "sus 4 módulos oficiales en ARCA (CCMA, Mis Facilidades, SCT y Monotributo), que es normal que "
+            "demore entre 1 y 3 minutos, que no cierre la sesión y que en 1 minuto te escriba '¿ya terminó?' "
+            "para mostrarle el informe completo al instante (en la próxima llamada a `auditar_estado_integral_arca` "
+            "devolverá el informe completo desde caché en menos de 1 segundo)."
+        ),
+    }
+
+
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": "2.2.0", "mode": "headless_vault", "active_jobs": len(jobs)}
+    with _audit_lock:
+        c_count = len(AUDIT_CACHE)
+        i_count = len(AUDIT_INFLIGHT)
+    return {
+        "status": "ok",
+        "version": "2.3.0",
+        "mode": "headless_vault",
+        "active_jobs": len(jobs),
+        "cached_audits": c_count,
+        "inflight_audits": i_count,
+    }
 
 
 @app.get("/vincular", response_class=HTMLResponse)
@@ -225,13 +317,42 @@ def run_mcp_tool(req: McpToolRequest, request: Request, x_bot_secret: Optional[s
         from .scraper_extras_arca import verificar_proveedor_apocrifo_apoc
         return verificar_proveedor_apocrifo_apoc(args.get("cuit_proveedor", ""))
 
+    if tool == "listar_empresas":
+        vinculados = listar_cuits_vinculados()
+        representadas = []
+        with _audit_lock:
+            for item in vinculados:
+                cached = AUDIT_CACHE.get(item["cuit"])
+                if cached and isinstance(cached.get("data"), dict):
+                    sct = cached["data"].get("sct") or {}
+                    if isinstance(sct.get("cuits_disponibles"), list):
+                        representadas.extend(sct["cuits_disponibles"])
+        if not vinculados:
+            return {
+                "ok": True,
+                "empresas_vinculadas": [],
+                "requiere_vinculacion": True,
+                "mensaje": f"Todavía no hay CUITs vinculados en la bóveda segura. Vinculá tu CUIT en {public_base}/vincular.",
+                "url_vinculacion_segura": f"{public_base}/vincular",
+            }
+        return {
+            "ok": True,
+            "empresas_vinculadas": vinculados,
+            "cuits_representados_detectados": representadas,
+            "nota": "Para relevar todas las empresas representadas en ARCA en tiempo real, ejecutá `auditar_estado_integral_arca`.",
+        }
+
     # Herramientas que requieren acceso ARCA desde la Bóveda Cifrada (cero popups)
     cuit, clave, err = _resolve_creds(args, public_base)
     if err:
         return err
 
     if tool == "auditar_estado_integral_arca":
-        return auditar_estado_integral_arca(cuit=cuit, clave=clave)
+        return _ejecutar_auditoria_sin_timeout(
+            cuit=cuit,
+            clave=clave,
+            forzar_refresco=bool(args.get("forzar_refresco", False)),
+        )
 
     if tool == "consultar_ccma_cuenta_corriente":
         from .auditoria_unificada import consultar_ccma_preciso
@@ -268,7 +389,13 @@ def run_mcp_tool(req: McpToolRequest, request: Request, x_bot_secret: Optional[s
         from .scraper import consultar_notificaciones_dfe
         return {"ok": True, "notificaciones": consultar_notificaciones_dfe(usuario=cuit, clave=clave, cuit_objetivo=args.get("cuit"))}
 
-    if tool == "consultar_estado_monotributo":
+    if tool in ("consultar_estado_monotributo", "consultar_situacion_monotributo"):
+        with _audit_lock:
+            cached = AUDIT_CACHE.get(cuit)
+            if cached and (time.time() - cached["ts"]) < AUDIT_TTL_SEC:
+                mono = (cached["data"] or {}).get("portal_monotributo")
+                if mono:
+                    return {"ok": True, "cuit": cuit, "desde_cache": True, "portal_monotributo": mono}
         from .scraper_monotributo import consultar_estado_monotributo
         return consultar_estado_monotributo(usuario=cuit, clave=clave)
 

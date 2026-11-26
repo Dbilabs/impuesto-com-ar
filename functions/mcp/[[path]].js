@@ -29,10 +29,12 @@ const MCP_TOOLS = [
   },
   {
     name: "listar_empresas",
-    description: "Lista todas las personas físicas y empresas jurídicas que el usuario tiene autorización para operar y representar legalmente en ARCA.",
+    description: "Lista todas las personas físicas y empresas jurídicas que el usuario tiene vinculadas o autorización para representar legalmente en ARCA.",
     inputSchema: {
       type: "object",
-      properties: {}
+      properties: {
+        cuit: { type: "string", description: "CUIT opcional del contribuyente vinculado" }
+      }
     }
   },
   {
@@ -40,7 +42,9 @@ const MCP_TOOLS = [
     description: "Ingresa en vivo al portal oficial de MONOTRIBUTO en ARCA. Extrae categoría vigente, facturación anual acumulada, margen disponible hasta el tope de exclusión, próxima fecha de recategorización, deuda de períodos vencidos y genera el Plan de Acción con bots ejecutores.",
     inputSchema: {
       type: "object",
-      properties: {}
+      properties: {
+        cuit: { type: "string", description: "CUIT a consultar (11 dígitos; opcional si solo hay 1 CUIT vinculado en la bóveda)" }
+      }
     }
   },
   {
@@ -1929,13 +1933,20 @@ export async function onRequest({ request, env, params }) {
           const resp = await fetch(`${env.BOT_API_URL.replace(/\/$/, "")}/api/v1/mcp/tool`, {
             method: "POST",
             headers,
-            body: JSON.stringify({ name: toolName, arguments: args })
+            body: JSON.stringify({ name: toolName, arguments: args }),
+            signal: AbortSignal.timeout(26000)
           });
           const result = await resp.json();
           let outText = (result && typeof result.informe_contador_markdown === "string")
             ? result.informe_contador_markdown
             : JSON.stringify(result, null, 2);
-          if (toolName === "auditar_estado_integral_arca" && result && result.ok !== false && PROMPTS_MAESTROS["02-post-diagnostico"]) {
+          if (
+            toolName === "auditar_estado_integral_arca" &&
+            result &&
+            result.ok !== false &&
+            result.estado !== "EN_PROGRESO" &&
+            PROMPTS_MAESTROS["02-post-diagnostico"]
+          ) {
             outText = `${PROMPTS_MAESTROS["02-post-diagnostico"]}\n\n---\n\n${outText}`;
           }
           return jsonRpcSuccess(id, { content: [{ type: "text", text: outText }] });
