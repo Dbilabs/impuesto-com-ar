@@ -50,12 +50,14 @@ app = FastAPI(title="impuesto.com.ar — ARCA Headless Multi-Tenant Engine", ver
 executor = ThreadPoolExecutor(max_workers=4)
 jobs: Dict[str, Dict[str, Any]] = {}
 
-# Caché TTL (15 min) + deduplicación de auditorías en curso para evitar timeouts en Gemini Online / Cloudflare
+# Caché TTL (15 min) + deduplicación de auditorías y scrapers ARCA en curso para evitar timeouts en Gemini Online / Cloudflare
 AUDIT_TTL_SEC = int(os.environ.get("AUDIT_CACHE_TTL_SEC", "900"))
 AUDIT_SYNC_WAIT_SEC = float(os.environ.get("AUDIT_SYNC_WAIT_SEC", "6.0"))
 _audit_lock = threading.Lock()
 AUDIT_CACHE: Dict[str, Dict[str, Any]] = {}
 AUDIT_INFLIGHT: Dict[str, Dict[str, Any]] = {}
+TOOL_CACHE: Dict[str, Dict[str, Any]] = {}
+TOOL_INFLIGHT: Dict[str, Dict[str, Any]] = {}
 
 
 class AutomationFilters(BaseModel):
@@ -252,6 +254,67 @@ def _ejecutar_auditoria_sin_timeout(
             "para mostrarle el informe completo al instante (en la próxima llamada a `auditar_estado_integral_arca` "
             "devolverá el informe completo desde caché en menos de 1 segundo)."
         ),
+    }
+
+
+def _run_tool_sin_timeout(
+    cache_key: str,
+    label: str,
+    fn,
+    cuit: str,
+    actor_email: str = "",
+    origen_llm: str = "mcp",
+    accion_hist: str = "",
+) -> Dict[str, Any]:
+    """Ejecuta cualquier scraper ARCA en segundo plano con caché de 15 min y espera máx. 6s para evitar cuelgues en Gemini Online."""
+    now = time.time()
+    with _audit_lock:
+        cached = TOOL_CACHE.get(cache_key)
+        if cached and (now - cached["ts"]) < AUDIT_TTL_SEC:
+            data = cached["data"]
+            if isinstance(data, dict):
+                out = dict(data)
+                out["desde_cache"] = True
+                return out
+            return {"ok": True, "desde_cache": True, "resultado": data}
+
+        inflight = TOOL_INFLIGHT.get(cache_key)
+        if inflight is None:
+            inflight = {"started_at": now, "event": threading.Event(), "result": None}
+            TOOL_INFLIGHT[cache_key] = inflight
+
+            def _worker():
+                try:
+                    res = fn()
+                    ts_done = time.time()
+                    with _audit_lock:
+                        inflight["result"] = res
+                        TOOL_CACHE[cache_key] = {"ts": ts_done, "data": res}
+                        TOOL_INFLIGHT.pop(cache_key, None)
+                    if actor_email and accion_hist:
+                        registrar_evento_historial(actor_email, cuit, origen_llm, accion_hist, f"{label} (CUIT {cuit})")
+                except Exception as e:
+                    logger.exception(f"Error en {cache_key}")
+                    with _audit_lock:
+                        inflight["result"] = {"ok": False, "cuit": cuit, "error": str(e)}
+                        TOOL_INFLIGHT.pop(cache_key, None)
+                finally:
+                    inflight["event"].set()
+
+            executor.submit(_worker)
+
+    if inflight["event"].wait(timeout=AUDIT_SYNC_WAIT_SEC) and inflight.get("result") is not None:
+        return inflight["result"]
+
+    elapsed = int(time.time() - inflight["started_at"])
+    return {
+        "ok": True,
+        "estado": "EN_PROGRESO",
+        "cuit": cuit,
+        "modulo": label,
+        "tiempo_transcurrido_seg": elapsed,
+        "mensaje": f"{label} en curso en ARCA en segundo plano para CUIT {cuit} (lleva {elapsed}s). Volvé a consultar en ~1 minuto y se entrega al instante desde caché.",
+        "instruccion_para_ia": f"Avisale al usuario en 1 línea que {label} sigue procesándose en segundo plano en ARCA y que en ~1 minuto vuelva a preguntar para verlo al instante sin que se cuelgue la sesión.",
     }
 
 
@@ -664,42 +727,56 @@ def run_mcp_tool(
 
     if tool == "consultar_bienes_personales_web":
         from .scraper_bbpp import consultar_bienes_personales_web
-        res = consultar_bienes_personales_web(usuario=cuit, clave=clave)
-        registrar_evento_historial(actor_email, cuit, origen_llm, "consulta_bbpp", f"Consulta Bienes Personales F.762 (CUIT {cuit})")
-        return res
+        return _run_tool_sin_timeout(
+            f"bbpp:{cuit}", "Bienes Personales Web (F. 762)",
+            lambda: consultar_bienes_personales_web(usuario=cuit, clave=clave),
+            cuit=cuit, actor_email=actor_email, origen_llm=origen_llm, accion_hist="consulta_bbpp",
+        )
 
     if tool == "consultar_nuestra_parte_arca":
         from .scraper_extras_arca import consultar_nuestra_parte
-        res = consultar_nuestra_parte(usuario=cuit, clave=clave)
-        registrar_evento_historial(actor_email, cuit, origen_llm, "consulta_nuestra_parte", f"Consulta Nuestra Parte (CUIT {cuit})")
-        return res
+        return _run_tool_sin_timeout(
+            f"nuestraparte:{cuit}", "Nuestra Parte ARCA",
+            lambda: consultar_nuestra_parte(usuario=cuit, clave=clave),
+            cuit=cuit, actor_email=actor_email, origen_llm=origen_llm, accion_hist="consulta_nuestra_parte",
+        )
 
     if tool == "consultar_mis_retenciones_arca":
         from .scraper_extras_arca import consultar_mis_retenciones
-        return consultar_mis_retenciones(usuario=cuit, clave=clave, cuit_objetivo=args.get("cuit_objetivo"))
+        obj = args.get("cuit_objetivo") or cuit
+        return _run_tool_sin_timeout(
+            f"retenciones:{cuit}:{obj}", "Mis Retenciones ARCA",
+            lambda: consultar_mis_retenciones(usuario=cuit, clave=clave, cuit_objetivo=args.get("cuit_objetivo")),
+            cuit=cuit, actor_email=actor_email, origen_llm=origen_llm, accion_hist="consulta_retenciones",
+        )
 
     if tool == "consultar_y_renovar_certificado_mipyme":
         from .scraper_extras_arca import consultar_y_renovar_certificado_mipyme
-        return consultar_y_renovar_certificado_mipyme(
-            usuario=cuit, clave=clave, cuit_empresa=args.get("cuit_empresa", cuit), confirmado=bool(args.get("confirmado", False))
+        emp = args.get("cuit_empresa", cuit)
+        conf = bool(args.get("confirmado", False))
+        return _run_tool_sin_timeout(
+            f"mipyme:{cuit}:{emp}:{conf}", "Certificado MiPyME (F. 1272)",
+            lambda: consultar_y_renovar_certificado_mipyme(usuario=cuit, clave=clave, cuit_empresa=emp, confirmado=conf),
+            cuit=cuit, actor_email=actor_email, origen_llm=origen_llm, accion_hist="consulta_mipyme",
         )
 
     if tool == "consultar_comprobantes_mes":
-        res = consultar_mis_comprobantes(
-            cuit=cuit,
-            usuario=cuit,
-            clave=clave,
-            tipo="E" if args.get("tipo") == "emitidos" else "R",
-            rango_fechas=args.get("rango_fechas", ""),
+        t_code = "E" if args.get("tipo") == "emitidos" else "R"
+        rango = args.get("rango_fechas", "")
+        return _run_tool_sin_timeout(
+            f"comprobantes:{cuit}:{t_code}:{rango}", f"Mis Comprobantes ({args.get('tipo','ambos')})",
+            lambda: consultar_mis_comprobantes(cuit=cuit, usuario=cuit, clave=clave, tipo=t_code, rango_fechas=rango),
+            cuit=cuit, actor_email=actor_email, origen_llm=origen_llm, accion_hist="consulta_comprobantes",
         )
-        registrar_evento_historial(actor_email, cuit, origen_llm, "consulta_comprobantes", f"Mis Comprobantes {args.get('periodo','')} ({args.get('tipo','ambos')})")
-        return res
 
     if tool == "leer_notificaciones_dfe":
         from .scraper import consultar_notificaciones_dfe
-        res = {"ok": True, "notificaciones": consultar_notificaciones_dfe(usuario=cuit, clave=clave, cuit_objetivo=args.get("cuit"))}
-        registrar_evento_historial(actor_email, cuit, origen_llm, "consulta_dfe", f"Revisión DFE (CUIT {cuit})")
-        return res
+        obj = args.get("cuit") or cuit
+        return _run_tool_sin_timeout(
+            f"dfe:{cuit}:{obj}", "Domicilio Fiscal Electrónico (DFE)",
+            lambda: {"ok": True, "cuit": obj, "notificaciones": consultar_notificaciones_dfe(usuario=cuit, clave=clave, cuit_objetivo=args.get("cuit"))},
+            cuit=cuit, actor_email=actor_email, origen_llm=origen_llm, accion_hist="consulta_dfe",
+        )
 
     if tool in ("consultar_estado_monotributo", "consultar_situacion_monotributo"):
         with _audit_lock:
