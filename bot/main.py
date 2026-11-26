@@ -63,8 +63,9 @@ from .auditoria_unificada import auditar_estado_integral_arca
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("arca_api")
 
-app = FastAPI(title="impuesto.com.ar — ARCA Headless Multi-Tenant Engine", version="3.0.0")
-executor = ThreadPoolExecutor(max_workers=4)
+app = FastAPI(title="impuesto.com.ar — ARCA Headless Multi-Tenant Engine", version="3.1.0")
+executor = ThreadPoolExecutor(max_workers=6)
+PLAYWRIGHT_SEM = threading.Semaphore(3)
 jobs: Dict[str, Dict[str, Any]] = {}
 
 # Caché TTL (15 min) + deduplicación de auditorías y scrapers ARCA en curso para evitar timeouts en Gemini Online / Cloudflare
@@ -193,7 +194,8 @@ def _resolve_creds_authorized(
 
 def _run_auditoria_background(cuit: str, clave: str, entry: Dict[str, Any], actor_email: str = "", origen_llm: str = "mcp") -> None:
     try:
-        res = auditar_estado_integral_arca(cuit=cuit, clave=clave)
+        with PLAYWRIGHT_SEM:
+            res = auditar_estado_integral_arca(cuit=cuit, clave=clave)
         now = time.time()
         with _audit_lock:
             entry["result"] = res
@@ -302,7 +304,8 @@ def _run_tool_sin_timeout(
 
             def _worker():
                 try:
-                    res = fn()
+                    with PLAYWRIGHT_SEM:
+                        res = fn()
                     ts_done = time.time()
                     with _audit_lock:
                         inflight["result"] = res
@@ -342,7 +345,7 @@ def health():
         i_count = len(AUDIT_INFLIGHT)
     return {
         "status": "ok",
-        "version": "3.0.0",
+        "version": "3.1.0",
         "mode": "headless_vault_multitenant",
         "active_jobs": len(jobs),
         "cached_audits": c_count,

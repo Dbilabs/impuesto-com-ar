@@ -953,13 +953,44 @@ export async function onRequest({ request, env, params }) {
     });
   }
 
-  // 4. Manejo de mensajes JSON-RPC (POST a /mcp/messages o /mcp)
+  // 4. Manejo de mensajes JSON-RPC (POST a /mcp/messages o /mcp — soporta objeto único y JSON-RPC Batch paralelo)
   if (request.method === "POST") {
     let rpc;
     try {
       rpc = await request.json();
     } catch {
       return jsonRpcError(null, -32700, "Parse error");
+    }
+
+    if (Array.isArray(rpc)) {
+      if (rpc.length === 0) return jsonRpcError(null, -32600, "Invalid Request: empty batch");
+      const results = await Promise.all(
+        rpc.map(async (item) => {
+          const subReq = new Request(request.url, {
+            method: "POST",
+            headers: request.headers,
+            body: JSON.stringify(item)
+          });
+          const subResp = await onRequest({ request: subReq, env, params });
+          if (subResp.status === 202 || subResp.status === 204) return null;
+          try {
+            return await subResp.json();
+          } catch {
+            return null;
+          }
+        })
+      );
+      const valid = results.filter(Boolean);
+      if (valid.length === 0) {
+        return new Response(null, { status: 202, headers: { "Access-Control-Allow-Origin": "*" } });
+      }
+      return new Response(JSON.stringify(valid), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Access-Control-Allow-Origin": "*"
+        }
+      });
     }
 
     const { id, method, params: rpcParams } = rpc;
