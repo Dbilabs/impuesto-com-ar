@@ -20,6 +20,7 @@ import time
 from typing import Dict, Any, List
 from playwright.sync_api import sync_playwright
 from .doublecheck_arca import validar_cobertura_auditoria
+from .validador_invariantes import validar_invariantes_auditoria
 
 
 def _parse_ar_num(s: str) -> float:
@@ -62,12 +63,15 @@ def _parse_ccma_detalle_periodos(txt: str) -> Dict[str, Any]:
         if not m:
             continue
         per, imp, sub, rest = m.groups()
-        # Look ahead for date and Debe amount on same line or next lines
-        block = " ".join(lines[i:i+4])
-        # Skip if credited by PFP Mis Facilidades
-        if "Mis Facilidades" in block:
+        # Skip if THIS movement is itself a PFP credit OR immediately offset on the next line for the SAME period+impuesto
+        if "Mis Facilidades" in line:
             continue
-        m_amt = re.search(r"(\d{2}/\d{2}/\d{4})\s+([\d,]+\.\d{2})", block)
+        next_line = lines[i + 1] if i + 1 < len(lines) else ""
+        if "Mis Facilidades" in next_line and per in next_line and imp in next_line:
+            continue
+        m_amt = re.search(r"(\d{2}/\d{2}/\d{4})\s+([\d,]+\.\d{2})", line)
+        if not m_amt:
+            m_amt = re.search(r"(\d{2}/\d{2}/\d{4})\s+([\d,]+\.\d{2})", line + " " + next_line)
         if not m_amt:
             continue
         fecha_vto, amt_str = m_amt.group(1), m_amt.group(2)
@@ -420,6 +424,7 @@ def auditar_estado_integral_arca(cuit: str, clave: str) -> Dict[str, Any]:
         browser.close()
 
     resultado["doublecheck"] = validar_cobertura_auditoria("estado_de_cuenta_y_deudas", verificadas, fallidas)
+    resultado["control_invariantes_contables"] = validar_invariantes_auditoria(resultado)
 
     # Adjuntar SIEMPRE el kit de Espacio de Trabajo ("Proyecto Impuestos" + Skills + Automatizaciones 12 meses)
     # directamente en la respuesta de la auditoría para que el asistente NUNCA omita ordenarle el año al usuario.
