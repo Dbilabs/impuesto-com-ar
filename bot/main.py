@@ -234,8 +234,8 @@ def run_mcp_tool(req: McpToolRequest, request: Request, x_bot_secret: Optional[s
         return auditar_estado_integral_arca(cuit=cuit, clave=clave)
 
     if tool == "consultar_ccma_cuenta_corriente":
-        from .scraper_extras_arca import consultar_ccma
-        return consultar_ccma(usuario=cuit, clave=clave)
+        from .auditoria_unificada import consultar_ccma_preciso
+        return consultar_ccma_preciso(cuit=cuit, clave=clave)
 
     if tool == "consultar_bienes_personales_web":
         from .scraper_bbpp import consultar_bienes_personales_web

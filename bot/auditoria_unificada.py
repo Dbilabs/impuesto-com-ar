@@ -44,6 +44,117 @@ def _parse_ar_num(s: str) -> float:
         return 0.0
 
 
+def _parse_ccma_detalle_periodos(txt: str) -> Dict[str, Any]:
+    """Extrae el desglose por período e impuesto (Monotributo vs Autónomos) del texto de CCMA."""
+    # Parse blocks like: 11/2026  020  019  019  Obligacion Mensual Monot.  20/11/2026  18,246.86
+    # and Saldo  26/11/2026  (18,347.22)
+    monot_total = 0.0
+    auton_vencido = 0.0
+    auton_por_vencer = 0.0
+    periodos_monot = set()
+    periodos_auton_venc = set()
+    periodos_auton_fut = set()
+
+    # Match each movement line with Debe amount
+    lines = [l.strip() for l in txt.splitlines() if l.strip()]
+    for i, line in enumerate(lines):
+        m = re.match(r"^(\d{2}/\d{4})\s+(020|021|024|AUT)\s+\d{3}\s+(019|051)\s+(.+)$", line)
+        if not m:
+            continue
+        per, imp, sub, rest = m.groups()
+        # Look ahead for date and Debe amount on same line or next lines
+        block = " ".join(lines[i:i+4])
+        # Skip if credited by PFP Mis Facilidades
+        if "Mis Facilidades" in block:
+            continue
+        m_amt = re.search(r"(\d{2}/\d{2}/\d{4})\s+([\d,]+\.\d{2})", block)
+        if not m_amt:
+            continue
+        fecha_vto, amt_str = m_amt.group(1), m_amt.group(2)
+        amt = _parse_ar_num(amt_str)
+        if imp in ("020", "021", "024"):
+            monot_total += amt
+            periodos_monot.add(per)
+        elif imp == "AUT":
+            # Check if future due date (> today) by checking whether sub=='051' or month/year
+            if sub == "019" and fecha_vto.endswith("/2026") and int(fecha_vto.split("/")[1]) == 12:
+                auton_por_vencer += amt
+                periodos_auton_fut.add(per)
+            else:
+                auton_vencido += amt
+                periodos_auton_venc.add(per)
+
+    return {
+        "monotributo_vencido_total": round(monot_total, 2),
+        "monotributo_periodos_impagos": sorted(periodos_monot),
+        "autonomos_vencido_total": round(auton_vencido, 2),
+        "autonomos_periodos_vencidos": sorted(periodos_auton_venc),
+        "autonomos_por_vencer_total": round(auton_por_vencer, 2),
+        "autonomos_periodos_por_vencer": sorted(periodos_auton_fut),
+    }
+
+
+def consultar_ccma_preciso(cuit: str, clave: str) -> Dict[str, Any]:
+    """Consulta CCMA con cálculo real de deuda + desglose por período (Monotributo vs Autónomos)."""
+    cuit_clean = "".join(ch for ch in (cuit or "") if ch.isdigit())
+    with sync_playwright() as p:
+        try:
+            browser = p.chromium.launch(headless=True, channel="chrome")
+        except Exception:
+            browser = p.chromium.launch(headless=True)
+        ctx = browser.new_context(viewport={"width": 1440, "height": 900})
+        page = ctx.new_page()
+        page.goto("https://auth.afip.gob.ar/contribuyente_/login.xhtml", wait_until="domcontentloaded", timeout=30000)
+        page.fill("#F1\\:username", cuit_clean)
+        page.click("#F1\\:btnSiguiente")
+        page.wait_for_selector("#F1\\:password", timeout=15000)
+        page.fill("#F1\\:password", clave)
+        page.click("#F1\\:btnIngresar")
+        page.wait_for_url("**/portalcf.cloud.afip.gob.ar/**", timeout=30000)
+        page.wait_for_load_state("networkidle", timeout=20000)
+        time.sleep(2)
+        page.keyboard.press("Escape")
+
+        search = page.locator("#buscadorInput").first
+        search.click(force=True)
+        search.fill("CCMA")
+        time.sleep(1.8)
+        ccma = None
+        items = page.locator("[id^='rbt-menu-item-']")
+        for i in range(items.count()):
+            if "ccma" in items.nth(i).inner_text().lower():
+                with ctx.expect_page(timeout=20000) as np:
+                    items.nth(i).click()
+                ccma = np.value
+                break
+        if not ccma:
+            browser.close()
+            return {"ok": False, "error": "No se pudo abrir CCMA."}
+        ccma.wait_for_load_state("domcontentloaded", timeout=30000)
+        time.sleep(2)
+        btn = ccma.locator("input[type='submit'], input[type='button'], button, a").filter(has_text="Deuda")
+        if btn.count() > 0:
+            btn.first.click()
+            time.sleep(4)
+        txt = ccma.inner_text("body")
+        browser.close()
+
+        m_deud = re.search(r"Total Saldo Deudor:\s*([\d\.,]+)", txt)
+        m_cap = re.search(r"Obligaci[oó]n Mensual:\s*([\d\.,]+)", txt)
+        m_acc = re.search(r"Accesorios:\s*([\d\.,]+)", txt)
+        m_acre = re.search(r"Total Saldo Acreedor:\s*([\d\.,]+)", txt)
+        return {
+            "ok": True,
+            "cuit": cuit_clean,
+            "saldo_deudor_vencido": _parse_ar_num(m_deud.group(1)) if m_deud else 0.0,
+            "capital_mensual": _parse_ar_num(m_cap.group(1)) if m_cap else 0.0,
+            "intereses_accesorios": _parse_ar_num(m_acc.group(1)) if m_acc else 0.0,
+            "saldo_acreedor": _parse_ar_num(m_acre.group(1)) if m_acre else 0.0,
+            "tiene_pfp_mis_facilidades": "Mis Facilidades" in txt,
+            "desglose_por_regimen": _parse_ccma_detalle_periodos(txt),
+        }
+
+
 def auditar_estado_integral_arca(cuit: str, clave: str) -> Dict[str, Any]:
     """
     Ejecuta auditoría integral en segundo plano (headless) en una sola sesión ARCA.
@@ -122,6 +233,7 @@ def auditar_estado_integral_arca(cuit: str, clave: str) -> Dict[str, Any]:
                     "intereses_accesorios": _parse_ar_num(m_acc.group(1)) if m_acc else 0.0,
                     "saldo_acreedor": _parse_ar_num(m_acre.group(1)) if m_acre else 0.0,
                     "tiene_pfp_mis_facilidades": "Mis Facilidades" in txt,
+                    "desglose_por_regimen": _parse_ccma_detalle_periodos(txt),
                 }
                 verificadas.append("ccma")
                 ccma.close()
@@ -235,7 +347,41 @@ def auditar_estado_integral_arca(cuit: str, clave: str) -> Dict[str, Any]:
             fallidas.append("mis_facilidades")
             resultado["mis_facilidades"] = {"error": str(e)}
 
-        # C. Portal Monotributo (acceso directo SSO admin_mono + login si lo pide + espera de renderizado)
+        # C. SCT (antes de admin_mono para no invalidar la sesión SSO del Portal CF!)
+        try:
+            sct = open_service("Sistema de Cuentas Tributarias", "Sistema de Cuentas Tributarias")
+            if sct and sct.locator("select").count() > 0:
+                sct_opts = sct.evaluate("() => Array.from(document.querySelector('select').options).map(o => o.text.trim())")
+                if sct_opts:
+                    resultado["cuits_representadas_en_arca"] = sorted(set(resultado["cuits_representadas_en_arca"] + sct_opts))
+                sct.locator("select").first.select_option(label=cuit_clean)
+                time.sleep(0.5)
+                sct.get_by_text("FILTRAR", exact=False).first.click()
+                time.sleep(2.5)
+                sct.get_by_text("Cuenta Corriente", exact=False).locator("visible=true").first.click()
+                time.sleep(1)
+                sct.get_by_text("Estado de Cumplimiento", exact=False).locator("visible=true").first.click()
+                time.sleep(2)
+                inps = sct.locator("input[type='text']:visible")
+                if inps.count() >= 2:
+                    inps.nth(0).fill("20250000")
+                    inps.nth(1).fill("20260000")
+                sct.locator("input[type='submit'][value='Siguiente']").first.click()
+                time.sleep(3.5)
+                stxt = sct.inner_text("body")
+                m_sd = re.search(r"Deuda\s*\n\s*\$\s*([\d\.,]+)", stxt)
+                m_sld = re.search(r"Saldo Libre Disponibilidad\s*\n\s*\$\s*([\d\.,]+)", stxt)
+                resultado["sct"] = {
+                    "deuda_dgi_ventana_actual": _parse_ar_num(m_sd.group(1)) if m_sd else 0.0,
+                    "saldo_libre_disponibilidad": _parse_ar_num(m_sld.group(1)) if m_sld else 0.0,
+                }
+                verificadas.append("sct")
+                sct.close()
+        except Exception as e:
+            fallidas.append("sct")
+            resultado["sct"] = {"error": str(e)}
+
+        # D. Portal Monotributo (al final para que el re-login SSO admin_mono no corte SCT!)
         try:
             mono = ctx.new_page()
             mono.goto("https://auth.afip.gob.ar/contribuyente_/login.xhtml?action=SYSTEM&system=admin_mono", wait_until="domcontentloaded", timeout=25000)
@@ -269,40 +415,6 @@ def auditar_estado_integral_arca(cuit: str, clave: str) -> Dict[str, Any]:
         except Exception as e:
             fallidas.append("portal_monotributo")
             resultado["portal_monotributo"] = {"error": str(e)}
-
-        # D. SCT (Estado de Cumplimiento + enumeración completa de CUITs)
-        try:
-            sct = open_service("Sistema de Cuentas Tributarias", "Sistema de Cuentas Tributarias")
-            if sct and sct.locator("select").count() > 0:
-                sct_opts = sct.evaluate("() => Array.from(document.querySelector('select').options).map(o => o.text.trim())")
-                if sct_opts:
-                    resultado["cuits_representadas_en_arca"] = sorted(set(resultado["cuits_representadas_en_arca"] + sct_opts))
-                sct.locator("select").first.select_option(label=cuit_clean)
-                time.sleep(0.5)
-                sct.get_by_text("FILTRAR", exact=False).first.click()
-                time.sleep(2.5)
-                sct.get_by_text("Cuenta Corriente", exact=False).locator("visible=true").first.click()
-                time.sleep(1)
-                sct.get_by_text("Estado de Cumplimiento", exact=False).locator("visible=true").first.click()
-                time.sleep(2)
-                inps = sct.locator("input[type='text']:visible")
-                if inps.count() >= 2:
-                    inps.nth(0).fill("20250000")
-                    inps.nth(1).fill("20260000")
-                sct.locator("input[type='submit'][value='Siguiente']").first.click()
-                time.sleep(3.5)
-                stxt = sct.inner_text("body")
-                m_sd = re.search(r"Deuda\s*\n\s*\$\s*([\d\.,]+)", stxt)
-                m_sld = re.search(r"Saldo Libre Disponibilidad\s*\n\s*\$\s*([\d\.,]+)", stxt)
-                resultado["sct"] = {
-                    "deuda_dgi_ventana_actual": _parse_ar_num(m_sd.group(1)) if m_sd else 0.0,
-                    "saldo_libre_disponibilidad": _parse_ar_num(m_sld.group(1)) if m_sld else 0.0,
-                }
-                verificadas.append("sct")
-                sct.close()
-        except Exception as e:
-            fallidas.append("sct")
-            resultado["sct"] = {"error": str(e)}
 
         browser.close()
 
