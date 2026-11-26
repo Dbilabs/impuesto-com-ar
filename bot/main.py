@@ -295,6 +295,11 @@ input,select{{width:100%;padding:11px 13px;border:1px solid #CBD5E1;border-radiu
 .urls{{margin-top:16px;display:none;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:12px;padding:16px}}
 .url-row{{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fff;border:1px solid #D1FAE5;border-radius:8px;padding:8px 10px;margin-top:8px;font-size:12.5px;font-family:ui-monospace,monospace}}
 .copy{{background:var(--acc);color:#fff;border:0;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}}
+.pw-wrap{{position:relative;display:flex;align-items:center}}
+.pw-wrap input{{padding-right:78px}}
+.pw-toggle{{position:absolute;right:8px;background:#F1F5F9;border:1px solid #CBD5E1;color:var(--ink);border-radius:7px;padding:5px 9px;font-size:12px;font-weight:600;cursor:pointer}}
+.pw-toggle:hover{{background:#E2E8F0}}
+.hint{{font-size:12.5px;margin-top:5px;font-weight:600}}
 </style>
 </head>
 <body>
@@ -315,10 +320,24 @@ input,select{{width:100%;padding:11px 13px;border:1px solid #CBD5E1;border-radiu
       <label>CUIT (11 dígitos)</label>
       <input id="cuit" name="cuit" value="{cuit_val}" placeholder="20301234567" maxlength="13">
       <label>Clave Fiscal ARCA (cifrada en reposo, nunca visible en el chat)</label>
-      <input id="clave" name="clave_fiscal" type="password" placeholder="••••••••">
+      <div class="pw-wrap">
+        <input id="clave" name="clave_fiscal" type="password" placeholder="••••••••">
+        <button type="button" class="pw-toggle" onclick="togglePw('clave', this)">Ver</button>
+      </div>
     </div>
     <label>Frase clave personalizada para tu enlace privado (opcional · mín. 16 caracteres, letras + números)</label>
-    <input id="custom_token" name="token_personalizado" type="password" placeholder="Dejar vacío para generar automática (ej: Cafe-Cordoba-Fiscal-8924)">
+    <div class="pw-wrap">
+      <input id="custom_token" name="token_personalizado" type="password" placeholder="Dejar vacío para generar automática (ej: Cafe-Cordoba-Fiscal-8924)" oninput="checkMatch()">
+      <button type="button" class="pw-toggle" onclick="togglePw('custom_token', this)">Ver</button>
+    </div>
+    <div id="repeatWrap" style="display:none">
+      <label>Repetir frase clave personalizada</label>
+      <div class="pw-wrap">
+        <input id="custom_token_2" type="password" placeholder="Volvé a escribir la misma frase clave" oninput="checkMatch()">
+        <button type="button" class="pw-toggle" onclick="togglePw('custom_token_2', this)">Ver</button>
+      </div>
+      <div id="matchHint" class="hint"></div>
+    </div>
     <label>Etiqueta del dispositivo / LLM (opcional)</label>
     <input id="label" name="etiqueta_token" placeholder="Ej: Gemini personal, Claude trabajo, ChatGPT">
     <button class="btn" type="submit">Vincular y generar mis enlaces privados</button>
@@ -341,11 +360,49 @@ function toggleArca() {{
   const m = document.getElementById('modo').value;
   document.getElementById('arcaFields').style.display = (m === 'solo_token_llm') ? 'none' : 'block';
 }}
+function togglePw(id, btn) {{
+  const inp = document.getElementById(id);
+  const show = inp.type === 'password';
+  inp.type = show ? 'text' : 'password';
+  btn.textContent = show ? 'Ocultar' : 'Ver';
+}}
+function checkMatch() {{
+  const t1 = document.getElementById('custom_token').value.trim();
+  const t2 = document.getElementById('custom_token_2').value.trim();
+  const wrap = document.getElementById('repeatWrap');
+  const hint = document.getElementById('matchHint');
+  wrap.style.display = t1.length > 0 ? 'block' : 'none';
+  if (!t1) {{ hint.textContent = ''; return true; }}
+  if (t1.length < 16) {{
+    hint.style.color = '#B45309';
+    hint.textContent = 'Caracteres: ' + t1.length + '/16 (faltan ' + (16 - t1.length) + ')';
+    return false;
+  }}
+  if (!t2) {{
+    hint.style.color = '#475467';
+    hint.textContent = 'Repetí la frase clave arriba para confirmar (' + t1.length + ' caracteres).';
+    return false;
+  }}
+  if (t1 !== t2) {{
+    hint.style.color = '#B42318';
+    hint.textContent = '❌ Las frases clave no coinciden.';
+    return false;
+  }}
+  hint.style.color = '#0B6E4F';
+  hint.textContent = '✅ Las frases clave coinciden (' + t1.length + ' caracteres).';
+  return true;
+}}
 document.getElementById('f').addEventListener('submit', async (e) => {{
   e.preventDefault();
   const msg = document.getElementById('msg');
   const urlsBox = document.getElementById('urls');
   urlsBox.style.display = 'none';
+  const t1 = document.getElementById('custom_token').value.trim();
+  if (t1 && !checkMatch()) {{
+    msg.style.color = '#B42318';
+    msg.textContent = '❌ Verificá que la frase clave tenga al menos 16 caracteres y coincida en ambos campos.';
+    return;
+  }}
   msg.style.color = '#0B1320';
   msg.textContent = 'Cifrando y generando acceso privado...';
   const res = await fetch('/api/v1/vincular', {{
