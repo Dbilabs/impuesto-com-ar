@@ -1,0 +1,77 @@
+{
+  "publisher": "impuesto.com.ar",
+  "built_at": "2026-11-26T14:38:03Z",
+  "total_skills": 6,
+  "mcp_endpoints": [
+    "https://claude.impuesto.com.ar",
+    "https://chatgpt.impuesto.com.ar",
+    "https://gemini.impuesto.com.ar",
+    "https://copilot.impuesto.com.ar",
+    "https://cursor.impuesto.com.ar",
+    "https://perplexity.impuesto.com.ar",
+    "https://mcp.impuesto.com.ar",
+    "https://api.impuesto.com.ar"
+  ],
+  "skills": [
+    {
+      "slug": "auditoria-deuda-real",
+      "uri": "skill://impuesto/auditoria-deuda-real",
+      "name": "impuesto-auditoria-deuda-real",
+      "description": "Audita el estado de cuenta y deuda real en ARCA sin falsos negativos cruzando CCMA, Mis Facilidades (capital remanente y cuota día 16), todas las CUITs representadas, SCT y Portal Monotributo, con Sello de Verificación.",
+      "version": "2.2.0",
+      "perfil_objetivo": "todos",
+      "sha256": "eba4023a34bd",
+      "download_url": "https://impuesto.com.ar/skills/auditoria-deuda-real/SKILL.md"
+    },
+    {
+      "slug": "cierre-mensual-pyme",
+      "uri": "skill://impuesto/cierre-mensual-pyme",
+      "name": "impuesto-cierre-mensual-pyme",
+      "description": "Orquesta el cierre impositivo mensual de Responsables Inscriptos y PyMEs (SRL/SA/SAS): IVA, F. 931, proveedores e-APOC, retenciones, Certificado MiPyME F. 1272 y análisis CFO.",
+      "version": "2.0.0",
+      "perfil_objetivo": "pyme_sociedad",
+      "sha256": "c1626a7de28b",
+      "download_url": "https://impuesto.com.ar/skills/cierre-mensual-pyme/SKILL.md"
+    },
+    {
+      "slug": "estudio-contable-b2b",
+      "uri": "skill://impuesto/estudio-contable-b2b",
+      "name": "impuesto-estudio-contable-b2b",
+      "description": "Opera el Modo Estudio Contable B2B: gestión de cartera multi-cliente, tablero por terminación de CUIT, detección automática de desvíos >30%, flujo Junior→Socio y reportes Marca Blanca.",
+      "version": "2.0.0",
+      "perfil_objetivo": "estudio_contable",
+      "sha256": "fdada7c49c03",
+      "download_url": "https://impuesto.com.ar/skills/estudio-contable-b2b/SKILL.md"
+    },
+    {
+      "slug": "ganancias-y-bbpp",
+      "uri": "skill://impuesto/ganancias-y-bbpp",
+      "name": "impuesto-ganancias-y-bbpp",
+      "description": "Audita y planifica Ganancias Personas Humanas (F. 711 y F. 2711 Simplificada RG 5692), SiRADIG Trabajador y Bienes Personales (F. 762) con cruce de Nuestra Parte y SCT.",
+      "version": "2.0.0",
+      "perfil_objetivo": "empleado_relacion_dependencia",
+      "sha256": "4edd0c8a9eda",
+      "download_url": "https://impuesto.com.ar/skills/ganancias-y-bbpp/SKILL.md"
+    },
+    {
+      "slug": "monotributo-y-recategorizacion",
+      "uri": "skill://impuesto/monotributo-y-recategorizacion",
+      "name": "impuesto-monotributo-y-recategorizacion",
+      "description": "Gestiona Monotributo en ARCA: control de tope de categoría, prevención de exclusión, deuda CCMA, débito automático, facturación Factura C/E y calendario de vencimientos.",
+      "version": "2.0.0",
+      "perfil_objetivo": "monotributo",
+      "sha256": "200d346cb662",
+      "download_url": "https://impuesto.com.ar/skills/monotributo-y-recategorizacion/SKILL.md"
+    },
+    {
+      "slug": "onboarding-contador-de-cabecera",
+      "uri": "skill://impuesto/onboarding-contador-de-cabecera",
+      "name": "impuesto-onboarding-contador-de-cabecera",
+      "description": "Define el comportamiento de Contador Agéntico de Cabecera desde la primera sesión: seguridad y confianza, plan de trabajo ordenado en 3 fases (Hoy, Esta Semana, Todos los Meses), memoria persistente y activación de automatizaciones.",
+      "version": "2.2.0",
+      "perfil_objetivo": "todos",
+      "sha256": "3b6b23d1d8fd",
+      "download_url": "https://impuesto.com.ar/skills/onboarding-contador-de-cabecera/SKILL.md"
+    }
+  ]
+}

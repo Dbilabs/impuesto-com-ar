@@ -1,0 +1,17 @@
+name = "impuesto"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-11-01"
+
+[vars]
+BOT_PROVIDER = "afipsdk"   # "mock" para pruebas
+
+[[d1_databases]]
+binding = "DB"
+database_name = "impuesto-iva"
+database_id = "8fefa09f-313e-4a44-8ae5-1e507b811fab"
+
+# Secretos (no van en este archivo). Cargalos en Cloudflare → Pages → Settings → Variables and secrets, o con:
+#   npx wrangler pages secret put CRED_KEY          (base64 de 32 bytes: openssl rand -base64 32)
+#   npx wrangler pages secret put AFIPSDK_TOKEN
+#   npx wrangler pages secret put SHEETS_WEBHOOK_URL
+#   npx wrangler pages secret put SHEETS_SECRET

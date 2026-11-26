@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skills Oficiales — impuesto.com.ar</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<style>
+:root{--ink:#0B1320;--muted:#475467;--line:#E3E7EC;--bg:#F8FAFC;--acc:#0B6E4F;--acc2:#074F39;--tint:#E7F5EF;--font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font);color:var(--ink);background:var(--bg);padding:40px 20px;line-height:1.6}
+.wrap{max-width:920px;margin:0 auto}
+.hero{background:#fff;border:1px solid var(--line);border-radius:18px;padding:32px;margin-bottom:24px;box-shadow:0 12px 32px rgba(15,27,45,.05)}
+.pill{background:var(--tint);color:var(--acc2);font-weight:700;font-size:12.5px;padding:4px 12px;border-radius:99px;display:inline-block;margin-bottom:10px}
+h1{margin:0 0 10px;font-size:30px;letter-spacing:-.025em}
+p{color:var(--muted);margin:0 0 16px}
+.cmd{background:#0B1320;color:#E7F5EF;padding:14px 18px;border-radius:12px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13.5px;display:flex;justify-content:space-between;align-items:center;gap:12px;overflow-x:auto}
+.cmd button{background:var(--acc);color:#fff;border:0;padding:8px 12px;border-radius:8px;font-weight:600;cursor:pointer;white-space:nowrap}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px;display:flex;flex-direction:column;justify-content:space-between}
+.meta{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:12px}
+.badge{background:var(--tint);color:var(--acc2);font-weight:700;padding:2px 8px;border-radius:99px;text-transform:uppercase}
+.ver{color:var(--muted);font-family:ui-monospace,monospace}
+h3{margin:0 0 8px;font-size:17px}
+.card p{font-size:14px;margin-bottom:16px}
+.actions{display:flex;flex-direction:column;gap:8px}
+.btn{background:var(--acc);color:#fff;text-decoration:none;text-align:center;padding:9px 14px;border-radius:9px;font-weight:600;font-size:13.5px}
+.btn:hover{background:var(--acc2)}
+.uri{font-size:12px;color:var(--muted);background:#F4F6F9;padding:5px 8px;border-radius:6px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hero">
+    <span class="pill">Single Source of Truth · Sincronizado con los 8 servidores MCP</span>
+    <h1>Skill Packs Oficiales de impuesto.com.ar</h1>
+    <p>Todos los skills se sirven en vivo vía <strong>MCP Resources</strong> (cero instalación requerida en Claude/ChatGPT/Gemini) y también podés instalarlos localmente en 1 comando para Claude Code, Gemini CLI, Antigravity, Cursor o Codex:</p>
+    <div class="cmd">
+      <span>curl -fsSL https://impuesto.com.ar/skills/install.sh | bash</span>
+      <button onclick="navigator.clipboard.writeText('curl -fsSL https://impuesto.com.ar/skills/install.sh | bash');this.innerText='¡Copiado!'">Copiar</button>
+    </div>
+  </div>
+  <div class="grid">
+      <div class="card">
+        <div class="meta"><span class="badge">todos</span> <span class="ver">v2.2.0 · eba4023a34bd</span></div>
+        <h3>impuesto-auditoria-deuda-real</h3>
+        <p>Audita el estado de cuenta y deuda real en ARCA sin falsos negativos cruzando CCMA, Mis Facilidades (capital remanente y cuota día 16), todas las CUITs representadas, SCT y Portal Monotributo, con Sello de Verificación.</p>
+        <div class="actions">
+          <a class="btn" href="/skills/auditoria-deuda-real/SKILL.md" download="impuesto-auditoria-deuda-real.md">Descargar SKILL.md</a>
+          <code class="uri">skill://impuesto/auditoria-deuda-real</code>
+        </div>
+      </div>
+      <div class="card">
+        <div class="meta"><span class="badge">pyme_sociedad</span> <span class="ver">v2.0.0 · c1626a7de28b</span></div>
+        <h3>impuesto-cierre-mensual-pyme</h3>
+        <p>Orquesta el cierre impositivo mensual de Responsables Inscriptos y PyMEs (SRL/SA/SAS): IVA, F. 931, proveedores e-APOC, retenciones, Certificado MiPyME F. 1272 y análisis CFO.</p>
+        <div class="actions">
+          <a class="btn" href="/skills/cierre-mensual-pyme/SKILL.md" download="impuesto-cierre-mensual-pyme.md">Descargar SKILL.md</a>
+          <code class="uri">skill://impuesto/cierre-mensual-pyme</code>
+        </div>
+      </div>
+      <div class="card">
+        <div class="meta"><span class="badge">estudio_contable</span> <span class="ver">v2.0.0 · fdada7c49c03</span></div>
+        <h3>impuesto-estudio-contable-b2b</h3>
+        <p>Opera el Modo Estudio Contable B2B: gestión de cartera multi-cliente, tablero por terminación de CUIT, detección automática de desvíos >30%, flujo Junior→Socio y reportes Marca Blanca.</p>
+        <div class="actions">
+          <a class="btn" href="/skills/estudio-contable-b2b/SKILL.md" download="impuesto-estudio-contable-b2b.md">Descargar SKILL.md</a>
+          <code class="uri">skill://impuesto/estudio-contable-b2b</code>
+        </div>
+      </div>
+      <div class="card">
+        <div class="meta"><span class="badge">empleado_relacion_dependencia</span> <span class="ver">v2.0.0 · 4edd0c8a9eda</span></div>
+        <h3>impuesto-ganancias-y-bbpp</h3>
+        <p>Audita y planifica Ganancias Personas Humanas (F. 711 y F. 2711 Simplificada RG 5692), SiRADIG Trabajador y Bienes Personales (F. 762) con cruce de Nuestra Parte y SCT.</p>
+        <div class="actions">
+          <a class="btn" href="/skills/ganancias-y-bbpp/SKILL.md" download="impuesto-ganancias-y-bbpp.md">Descargar SKILL.md</a>
+          <code class="uri">skill://impuesto/ganancias-y-bbpp</code>
+        </div>
+      </div>
+      <div class="card">
+        <div class="meta"><span class="badge">monotributo</span> <span class="ver">v2.0.0 · 200d346cb662</span></div>
+        <h3>impuesto-monotributo-y-recategorizacion</h3>
+        <p>Gestiona Monotributo en ARCA: control de tope de categoría, prevención de exclusión, deuda CCMA, débito automático, facturación Factura C/E y calendario de vencimientos.</p>
+        <div class="actions">
+          <a class="btn" href="/skills/monotributo-y-recategorizacion/SKILL.md" download="impuesto-monotributo-y-recategorizacion.md">Descargar SKILL.md</a>
+          <code class="uri">skill://impuesto/monotributo-y-recategorizacion</code>
+        </div>
+      </div>
+      <div class="card">
+        <div class="meta"><span class="badge">todos</span> <span class="ver">v2.2.0 · 3b6b23d1d8fd</span></div>
+        <h3>impuesto-onboarding-contador-de-cabecera</h3>
+        <p>Define el comportamiento de Contador Agéntico de Cabecera desde la primera sesión: seguridad y confianza, plan de trabajo ordenado en 3 fases (Hoy, Esta Semana, Todos los Meses), memoria persistente y activación de automatizaciones.</p>
+        <div class="actions">
+          <a class="btn" href="/skills/onboarding-contador-de-cabecera/SKILL.md" download="impuesto-onboarding-contador-de-cabecera.md">Descargar SKILL.md</a>
+          <code class="uri">skill://impuesto/onboarding-contador-de-cabecera</code>
+        </div>
+      </div>
+  </div>
+</div>
+</body>
+</html>

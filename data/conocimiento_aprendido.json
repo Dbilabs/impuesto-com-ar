@@ -1,0 +1,35 @@
+[
+  {
+    "id": "KNOW-20261126-1848D3",
+    "cuit_origen": "sistema_doublecheck",
+    "pregunta": "Por que SCT Estado de Cumplimiento muestra deuda $0 cuando el contribuyente debe plata en ARCA",
+    "contexto_cliente": "incidente_real_verificacion",
+    "estado": "resuelta_y_aprendida",
+    "respuesta_clara": "REGLA CRITICA DE DOUBLE-CHECK: Nunca afirmar 'Deuda $0' ni 'Al dia' mirando solo SCT > Estado de Cumplimiento. Motivos: (1) SCT solo abarca ventana de 1 ano e impuestos generales DGI; (2) Monotributo (020/021/024) y Autonomos (AUT) viven exclusivamente en CCMA (Calculo de Deuda); (3) Cuando una deuda entra en un Plan de Pagos (Mis Facilidades), SCT y CCMA acreditan 'Credito por PFP Mis Facilidades' y dejan el saldo en $0,00 ocultando millones en cuotas vigentes. SIEMPRE auditar los 4 modulos: CCMA + Mis Facilidades (Seguimiento de Presentacion) + SCT (Estado de Cumplimiento + Deuda Consolidada + Incumplimientos) + Portal Monotributo, y advertir siempre que AGIP/ARBA/Municipios estan fuera de ARCA.",
+    "normativa_oficial": "ARCA: SCT + CCMA + Mis Facilidades (RG 5321/5629/5711) + Portal Monotributo",
+    "creada": "2026-11-26T07:41:21.038719",
+    "resuelta": "2026-11-26T07:41:21.038912"
+  },
+  {
+    "id": "KNOW-20261126-97C91F",
+    "cuit_origen": "sistema_doublecheck",
+    "pregunta": "Por que F.711 muestra Ganancias 2025 como pendiente/vencida cuando ya esta presentada",
+    "contexto_cliente": "incidente_real_verificacion",
+    "estado": "resuelta_y_aprendida",
+    "respuesta_clara": "REGLA CRITICA DE DOUBLE-CHECK GANANCIAS PH: Desde 2025 conviven F.711 (Regimen General) y F.2711 (Declaracion Jurada Simplificada RG 5692). Si el contribuyente presento en F.2711, el portal de F.711 sigue mostrando el vencimiento como pendiente. SIEMPRE verificar ambos aplicativos (#/declaraciones.anteriores en F.711 y #/declaracion.presentadas + Ratificacion Anual en F.2711).",
+    "normativa_oficial": "RG ARCA 5692 (F.2711 Declaracion Jurada Simplificada) + F.711",
+    "creada": "2026-11-26T07:41:21.039072",
+    "resuelta": "2026-11-26T07:41:21.039188"
+  },
+  {
+    "id": "KNOW-20261126-31788A",
+    "cuit_origen": "sistema_doublecheck",
+    "pregunta": "Por que Bienes Personales Web parece vacio o SCT mezcla CUITs representadas",
+    "contexto_cliente": "incidente_real_verificacion",
+    "estado": "resuelta_y_aprendida",
+    "respuesta_clara": "REGLA CRITICA DE DOUBLE-CHECK BBPP Y MULTI-CUIT: (1) En Bienes Personales Web (F.762), nunca concluir 'sin presentaciones' desde #/inicio; navegar siempre a #/declaraciones.anteriores. (2) En SCT y Mis Facilidades, el selector de CUIT (<select>) lista todas las CUITs representadas (personas y sociedades) en orden variable; seleccionar SIEMPRE por texto/label exacto de la CUIT consultada, nunca por indice 0.",
+    "normativa_oficial": "ARCA: F.762 Web + SCT + Mis Facilidades",
+    "creada": "2026-11-26T07:41:21.039315",
+    "resuelta": "2026-11-26T07:41:21.039544"
+  }
+]

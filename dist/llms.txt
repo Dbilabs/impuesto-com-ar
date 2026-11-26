@@ -1,0 +1,47 @@
+# impuesto.com.ar
+
+> Impuestos claros y el contador indicado para tu caso. Guías actualizadas sobre impuestos en Argentina (Monotributo, ARCA, Ingresos Brutos, auditoría, precios de transferencia) y diagnóstico gratuito que conecta a personas y empresas con estudios contables aliados.
+
+Última actualización: 2026-11-23. Las cifras citan su vigencia y su fuente oficial.
+
+## Empresas: impuestos y auditoría
+- [Impuestos bien llevados: plata que vuelve a tu empresa](https://impuesto.com.ar/empresas/): Impuestos bien llevados son plata que vuelve a tu empresa: saldos a favor, planificación fiscal, auditoría, fiscalizaciones de ARCA y Convenio Multilateral.
+- [Saldos a favor de Ingresos Brutos e IVA: cuánto tenés atrapado y cómo recuperarlo](https://impuesto.com.ar/empresas/saldos-a-favor/): Por qué se acumulan saldos a favor de Ingresos Brutos e IVA, cuánto capital inmovilizan y qué opciones hay para reducirlos, compensarlos o pedir la devolución.
+- [Auditoría de estados contables: cuándo la necesitás y cómo es el proceso](https://impuesto.com.ar/empresas/auditoria-de-estados-contables/): Cuándo una empresa necesita estados contables auditados en Argentina (IGJ, bancos, SGR, licitaciones, casa matriz), cómo es el proceso y cuándo contratar al auditor.
+- [¿Tu empresa resistiría una fiscalización de ARCA? Checklist de riesgo](https://impuesto.com.ar/empresas/fiscalizacion-arca/): Checklist de 8 puntos para saber si tu empresa resistiría una fiscalización de ARCA y qué hacer si recibís un requerimiento o una inspección.
+- [Convenio Multilateral de Ingresos Brutos: cómo funciona y errores comunes](https://impuesto.com.ar/empresas/convenio-multilateral/): Qué es el Convenio Multilateral, cuándo corresponde, cómo se calcula el coeficiente unificado y qué errores generan saldos a favor o ajustes en Ingresos Brutos.
+- [Precios de transferencia: quién está obligado y umbrales vigentes](https://impuesto.com.ar/empresas/precios-de-transferencia/): Qué son los precios de transferencia, quién debe presentar el F.2668 y el estudio de precios de transferencia con los umbrales de la RG ARCA 5903/2026.
+- [Cómo elegir un estudio contable para tu empresa (con plantilla de pedido de propuesta)](https://impuesto.com.ar/empresas/como-elegir-estudio-contable/): Criterios para elegir o cambiar de estudio contable y de auditoría, preguntas para la entrevista y una plantilla de pedido de propuesta para comparar estudios.
+
+## Responsables inscriptos e IVA
+- [Calculadora de IVA del mes: cuánto vas a pagar y cómo planificarlo](https://impuesto.com.ar/iva/): Conectá tu CUIT y nuestro robot consulta ARCA y te dice cuánto IVA viene este mes, con tiempo para planificar compras. Sin subir archivos ni llamar al contador.
+- [Responsable inscripto: qué impuestos pagás y cómo planificarlos](https://impuesto.com.ar/responsables-inscriptos/): Guía para responsables inscriptos: IVA, Ganancias, autónomos e Ingresos Brutos, obligaciones de cada mes y cómo planificar para pagar lo justo.
+- [Cómo protegemos tu clave fiscal](https://impuesto.com.ar/iva/seguridad/): Cómo ciframos, usamos y borramos tu acceso a ARCA en el servicio de IVA automático.
+
+## Ingresos Brutos, Ganancias y Retenciones
+- [Ingresos Brutos para empresas: cómo pagar lo justo en cada provincia](https://impuesto.com.ar/iibb/): Cómo funciona Ingresos Brutos para empresas: alícuotas por provincia, Convenio Multilateral, regímenes de retención y percepción, padrones y saldos a favor.
+- [Impuesto a las Ganancias: escala, anticipos y cómo planificarlo](https://impuesto.com.ar/ganancias/): Ganancias para sociedades y responsables inscriptos: escala 2026 del 25% al 35%, anticipos, reducción de anticipos y planificación para pagar lo justo.
+- [Retenciones y percepciones: cómo controlarlas y dejar de financiar al fisco](https://impuesto.com.ar/retenciones/): Qué son las retenciones y percepciones de IVA, Ganancias e Ingresos Brutos, cómo controlarlas en Mis Retenciones y cómo pedir exclusión o reducción.
+
+## Monotributo y contador
+- [Monotributo: guía completa para 2026](https://impuesto.com.ar/monotributo/): Guía del monotributo en Argentina: tabla de categorías vigente, cuánto pagás por mes, cuándo recategorizarte (5 de febrero de 2027) y cómo evitar la exclusión.
+- [Categorías del monotributo 2026: tabla oficial y calculadora](https://impuesto.com.ar/monotributo/categorias/): Tabla oficial de categorías del monotributo vigente hasta enero 2027: topes de facturación y cuota mensual de la A a la K. Calculá tu categoría.
+- [Recategorización del monotributo: fechas, paso a paso y qué pasa si no la hacés](https://impuesto.com.ar/monotributo/recategorizacion/): Cuándo y cómo recategorizarte en el monotributo. La próxima vence el 5 de febrero de 2027. Qué pasa si no lo hacés y cómo apelar una recategorización de oficio.
+- [Exclusión del monotributo: por qué pasa y qué hacer](https://impuesto.com.ar/monotributo/exclusion/): Por qué ARCA te puede excluir del monotributo, qué pasa después (IVA y Ganancias) y cómo apelar en 15 días. Señales de alerta para actuar a tiempo.
+- [¿Monotributo o responsable inscripto? Cuándo conviene cada uno](https://impuesto.com.ar/monotributo/monotributo-o-responsable-inscripto/): Diferencias entre monotributo y responsable inscripto: impuestos, facturación, costos y en qué casos conviene pasarse al régimen general.
+- [¿Tu contador está haciendo bien las cosas? Hacé el test](https://impuesto.com.ar/contador/tu-contador-lo-hace-bien/): Test gratuito de 8 preguntas para saber si tu contador cumple lo básico: recategorizaciones, vencimientos, Domicilio Fiscal Electrónico y comunicación.
+- [¿Cuánto cobra un contador? Qué define el precio y qué debería incluir](https://impuesto.com.ar/contador/cuanto-cobra-un-contador/): De qué depende cuánto cobra un contador para monotributistas, responsables inscriptos y empresas, qué debería incluir el abono y cómo pedir una cotización.
+- [Cómo cambiar de contador sin perder información (paso a paso)](https://impuesto.com.ar/contador/como-cambiar-de-contador/): Paso a paso para cambiar de contador: qué documentación pedir, cómo revocar y delegar servicios en ARCA y qué revisar en el traspaso.
+
+## General
+- [Tus impuestos bien llevados te hacen ganar plata](https://impuesto.com.ar/): Segunda opinión gratis sobre tus impuestos: IVA, Ganancias, saldos a favor, auditoría y fiscalizaciones de ARCA. Calculadora de IVA del mes y diagnóstico.
+- [Diagnóstico impositivo gratis](https://impuesto.com.ar/diagnostico/): Respondé 4 preguntas y un especialista revisa tus impuestos: IVA, Ganancias, saldos a favor, auditoría o fiscalizaciones de ARCA. Gratis y sin compromiso.
+- [Calculadoras y tests de impuestos gratis](https://impuesto.com.ar/herramientas/): Herramientas gratis: calculadora de IVA del mes, estimador de saldos a favor, test de auditoría, riesgo ante ARCA, test de tu contador y monotributo.
+- [Calendario fiscal: vencimientos clave para monotributistas y empresas](https://impuesto.com.ar/calendario-fiscal/): Vencimientos clave: cuota del monotributo (día 20), recategorización (5 de febrero de 2027), IVA, Ingresos Brutos, Ganancias y balances.
+- [Glosario de impuestos en Argentina](https://impuesto.com.ar/glosario/): Glosario de impuestos: ARCA, monotributo, recategorización, Ingresos Brutos, Convenio Multilateral, saldos a favor, precios de transferencia, auditoría y más.
+- [Quiénes somos](https://impuesto.com.ar/quienes-somos/): impuesto.com.ar explica los impuestos en Argentina con datos oficiales y conecta a personas y empresas con estudios contables aliados.
+- [Metodología editorial](https://impuesto.com.ar/metodologia-editorial/): Cómo elaboramos y actualizamos el contenido: fuentes oficiales, revisión profesional, fechas de vigencia y corrección de errores.
+- [Política de privacidad](https://impuesto.com.ar/privacidad/): Cómo tratamos tus datos personales según la Ley 25.326 de Protección de Datos Personales.
+- [Términos y condiciones](https://impuesto.com.ar/terminos/): Condiciones de uso del sitio y del servicio de diagnóstico.
+- [Conectá tu propio WhatsApp con tu Copiloto de ARCA](https://impuesto.com.ar/whatsapp/): Guía paso a paso para hablarle a tu estudio contable por WhatsApp: emitir facturas, pedir QR de pago y auditar impuestos desde tu chat habitual con Claude o ChatGPT.
+- [Automatizá tu Estudio Contable desde Claude y ChatGPT](https://impuesto.com.ar/estudios/): Plataforma B2B para estudios contables en Argentina: gestioná 100+ clientes desde Claude o ChatGPT con flujo Junior → Socio, detector de anomalías, Certificado MiPyME, e-APOC y reportes Marca Blanca.

@@ -1,0 +1,20 @@
+{
+  "vigencia_desde": "2026-08-01",
+  "vigencia_hasta": "2027-01-31",
+  "vigencia_texto": "del 1 de agosto de 2026 al 31 de enero de 2027",
+  "proxima_recategorizacion": "5 de febrero de 2027",
+  "fuente": "https://www.arca.gob.ar/monotributo/categorias.asp",
+  "categorias": [
+    {"cat": "A", "tope": 12009410.45, "servicios": 49527.18, "venta": 49527.18},
+    {"cat": "B", "tope": 17595182.74, "servicios": 56379.08, "venta": 56379.08},
+    {"cat": "C", "tope": 24670494.31, "servicios": 66020.12, "venta": 64530.58},
+    {"cat": "D", "tope": 30628651.43, "servicios": 84612.93, "venta": 82564.81},
+    {"cat": "E", "tope": 36028231.33, "servicios": 119811.45, "venta": 108267.51},
+    {"cat": "F", "tope": 45151659.41, "servicios": 150784.21, "venta": 129930.65},
+    {"cat": "G", "tope": 53995798.87, "servicios": 230312.94, "venta": 158815.05},
+    {"cat": "H", "tope": 81924660.37, "servicios": 522706.68, "venta": 317895.01},
+    {"cat": "I", "tope": 91699761.90, "servicios": 963747.86, "venta": 474992.78},
+    {"cat": "J", "tope": 105012519.20, "servicios": 1167299.76, "venta": 580793.69},
+    {"cat": "K", "tope": 126610838.75, "servicios": 1614446.04, "venta": 702103.24}
+  ]
+}

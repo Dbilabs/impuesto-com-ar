@@ -1,0 +1,33 @@
+# Secrets, Encrypted Vault & Certificates (NEVER COMMIT)
+.env
+.env.*
+data/boveda/
+*.enc
+*.key
+*.pem
+*.crt
+*.csr
+*.p12
+.vault_key
+.bot_secret
+
+# Personal one-off local test scripts & local data
+PUBLICACION-ESTADO.md
+bot/consultar_bbpp_personal.py
+bot/test_arca_tirenostic_bbpp.py
+bot/buscar_ddjj_historicas_bbpp.py
+data/estudio_contable.json
+data/perfiles_contribuyentes.json
+data/test_*.json
+*.pdf
+
+# Python / Node / Cloudflare / OS
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+node_modules/
+.wrangler/
+.DS_Store
+*.log
+/tmp/

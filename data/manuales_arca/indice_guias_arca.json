@@ -1,0 +1,1775 @@
+{
+  "version_base": "2026.1.0",
+  "descripcion": "Base de conocimiento operacional de ARCA / AFIP: manuales oficiales, flujos de SPA y lógica tributaria.",
+  "total_guias_oficiales_indexadas": 245,
+  "guias_oficiales": [
+    {
+      "titulo": "Guías paso a paso",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/default.aspx",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Guías de trámites",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/inicio.aspx",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo declarar correctamente el monto reintegrado de retenciones agropecuarias? ACTIVIDADES AGROPECUARIAS Clave: reintegro de retenciones agropecuarias, retenciones agropecuarias, declaración jurada de IVA, SISA, Portal IVA, devolución de retenciones, RG 4310, régimen de reintegro de retenciones agropecuarias, monto reintegrado, acreditación bancaria, cuenta corriente SISA, retenciones y percepciones, declaración de reintegros, consulta de reintegros",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/Como-declarar-correctamente-el-monto-reintegrado-de-retenciones-agropecuarias.pdf",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo informo los granos en stock de terceros en explotación propia? ACTIVIDADES AGROPECUARIAS Clave: granos, stock, tenencia, terceros, explotacion, campo, propio, informar, existencia, acopio, cereal, cosecha, granos terceros, stock granario, tenencia granaria, explotacion propia, campo propio, tenencia de terceros, informar granos",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=90",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo genero y consulto la Liquidación Mensual Única Comercial e Impositiva (LU) por internet? ACTIVIDADES AGROPECUARIAS Clave: liquidacion, mensual, unica, comercial, impositiva, LU, generar, consultar, internet, tramite, consulta, emision, liquidacoin, liqudiacion, impositva, mensaul, comerical, genear, consutlar, interent",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=94",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo se registran los contratos de compraventa de granos utilizando el procedimiento de Firma Digital? ACTIVIDADES AGROPECUARIAS Clave: contratos, compraventa, registracion, registrar, digital, firma, procedimiento, pasos, contrato, compraventas, registracionar, compravemta, registrr, firna, dijital, procediminto, pasoss",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=165",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo efectúo la registración de contratos por internet? ACTIVIDADES AGROPECUARIAS Clave: efectuo, realizar, informamos, efectuo, efectar, realizr, informams",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=166",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo se utiliza el servicio \"Liquidación sector pecuario\"? ACTIVIDADES AGROPECUARIAS Clave: liquidacion, sector, pecuario, servicio, herramienta, liqudiacion, liqidacion, pecurio, pecuaro, servcio, herraminta, herrmienta",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=179",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo me inscribo en el Registro Fiscal de Operadores de la Cadena Cárnica? ACTIVIDADES AGROPECUARIAS Clave: inscribo, inscripcion, operadores, cadena, carnica, inscribirse, faena, haciendas, carnes, cueros, bovinas, bubalinas, porcinas, rfo, rfocb, rfocp, inscripsion, inscripto, operadoresr, carnicaa, haciendasr",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/Inscripcion-Reg-Fiscal-Operadores-Cadena-Carnica.pdf",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo doy de alta o de baja a un autorizado para la gestión de hacienda en pie? ACTIVIDADES AGROPECUARIAS Clave: alta, baja, autorizado, gestion, hacienda, pie, dar, habilitar, deshabilitar, autorizacion, altas, bajas, autorizdo, autorisado, hcienda, gsetion, habiltar, deshabilitarr",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=259",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo doy de baja actividades del Registro Fiscal de Operadores de la Cadena Cárnica? ACTIVIDADES AGROPECUARIAS Clave: actividades, fiscal, operadores, cárnica, retirar, eliminacion, faena, comercializacion, animales, cueros, retenciones, percepciones, pagos, IVA, actividdes, fiscl, comercalizacion, retencones, percepciones, eliminaciona",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=261",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo realizo consultas en el Registro Fiscal de Operadores de la Cadena Cárnica? ACTIVIDADES AGROPECUARIAS Clave: operaciones, control, operacoines, operacioens, contorl, contrl",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=262",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Remito Cárnico - REC ACTIVIDADES AGROPECUARIAS Clave: remito, carnico, comprobantes, traslado, automotor, carnes, subproductos, bovinos, porcinos, administrar, remitos, comprobate, trasaldo, automotror, subproducots, bovino, poricnos, administar",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=280",
+      "categoria": "FACTURACION",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo realizo la liquidación primaria de granos anticipada? ACTIVIDADES AGROPECUARIAS Clave: liquidacion, primaria, granos, anticipada, realizar, compraventa, ampara, liqudiacion, liqidacion, primara, grnaos, anticipdao, compravemta, realziar, amparaa",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=291",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "SISA - Información productiva ACTIVIDADES AGROPECUARIAS Clave: SISA, informacion, productiva, presentacion, sistema, simplificado, agricola, pasos, clave, fiscal, informacoin, prodcutiva, presnetacion, simplifcado, agrciola, presntacion, fiscla",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=298",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo efectúo la generación, ajuste o la consulta de la liquidación avícola? ACTIVIDADES AGROPECUARIAS Clave: avicola, generacion, ajuste, rectificar, rectificacion, avicolaa, rectifcar, rectficar, ajustee, genracion, consultarr, avicolaa",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=310",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo gestiono un Remito Electrónico Harinero? ACTIVIDADES AGROPECUARIAS Clave: harinero, electronico, gestionar, procedimiento, harineroe, harineroo, elecronico, eletronico, gestino, prosedimiento, remitoharinero",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=315",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo se gestiona la anulación de una Liquidación Primaria de Granos? ACTIVIDADES AGROPECUARIAS Clave: anulacion, cancelar, cancelacion, invalidar, invalidez, anulr, anulaicon, cancelr, cancelacoin, invaldar, inavlidar, anula, anulable",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=318",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo genero la liquidación electrónica para compra de caña de azúcar? ACTIVIDADES AGROPECUARIAS Clave: caña, azucar, electronica, compra, generar, generacion, liquidacion, cana, azucarrr, electornica, comprra, genear, genracion, liquidacoion",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=324",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo genero un Remito Electrónico para Retiro de Azúcar y Derivados? ACTIVIDADES AGROPECUARIAS Clave: retiro, derivados, procedimiento, remitoelectronico, retirado, derivado, retirar, deribados, retoro, procedimieto, derivdaos, retirro",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=343",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo autorizo el Remito Electrónico para retiro de azúcar y derivados cuando el ingenio traslada productos de mi propiedad? ACTIVIDADES AGROPECUARIAS Clave: autorizacion, ingenio, traslada, productos, propiedad, traslado, autorizar, autorizarse, autorizacionr, autrorizacion, ingeno, ingeinio, traslda, tralsada, produtcos, propiedaad, trasladoo, autorizaro",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=344",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo acepto un Remito Electrónico de retiro de Azúcar y Derivados? ACTIVIDADES AGROPECUARIAS Clave: aceptar, aceptacion, conformidad, recibir, recepcion, aprobacion, aceptarr, acpetar, aceptcion, recepcio, aprobacionn, conformidd, recibirr, aprovacion",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=345",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo solicito el beneficio del programa \"Impulso tambero\"? ACTIVIDADES AGROPECUARIAS Clave: impulso, tambero, beneficio, programa, asistencia, solicitar, acceder, productores, acceso, solicitud, benefico, impulsso, impuslo, tambreo, asitencia, solictar, accder, producotres, acceos, solicutd",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=457",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "REH: ¿Cómo realizo el control en ruta? ACTIVIDADES AGROPECUARIAS Clave: REH, control, ruta, consulta, estado, remito, QR, escanear, verificacion, controlr, rta, consutla, estdao, remtio, verifcacion, escanearr",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=508",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "REH: ¿Cómo realizo el control en ruta por la app? ACTIVIDADES AGROPECUARIAS Clave: app, Remitos, remitos, aplicacion, estado, QR, escaneo, movil, controlr, escanear, remtios, aplicacionn, escaneao, movli, consutlar",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=509",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo vincular una factura electrónica con un remito electrónico cárnico - REC? ACTIVIDADES AGROPECUARIAS Clave: vincular, factura, electronica, remito, cárnico, REC, enlace, asociar, facturacion, vincularr, vinclar, elecronica, remtio, carnico, asocair, facturacoin, asocacion, vincualr",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/GPP_Vinculac-REC-FE.pdf",
+      "categoria": "FACTURACION",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "Registro de operadores de comercialización de granos ACTIVIDADES AGROPECUARIAS Clave: registro,registracion,registrar,rejistro,regsitro,operadores,operador,comercializadores,operdores,opreadores,comercializacion,compraventa,venta,comercializcion,comercialisacion,granos,grano,cereales,garanos,grnaos,contrato,contratos,acuerdo,contarto,conrtato,siembra,sembrado,cultivo,simebra,seimbra",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/VerGuia.aspx?tr=58",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo realizo la descarga e instalación de aplicativos? APLICATIVOS Clave: descarga, instalacion, aplicativos, descargar, instalar, liquidacion, impuestos, aplicatvios, instalacin, descagar, instalr, liquidacoion, impuetsos, aplicatibos",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=140",
+      "categoria": "GENERAL",
+      "estado_vigencia": "historico_logica_base",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Error en la visualización de tablas SIRE APLICATIVOS Clave: SIRE, visualizacion, tablas, archivo, blanco, descargar, visualizar, error, descarga, visualisacion, tabals, archvio, blnaco, descagar, visulaizar, errror",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=468",
+      "categoria": "GENERAL",
+      "estado_vigencia": "historico_logica_base",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo realizo la activación del token a través de cajero automático? APPS Y HERRAMIENTAS Clave: activacion, token, cajero, automatico, funciones, procedimiento, activar, usar, habilitacion, activacionn, tokken, cajerro, autmatico, funcionnes, proceimiento, actviar, usarr, habilitacionn",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=373",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo realizo la activación del token de forma presencial? APPS Y HERRAMIENTAS Clave: presencial, token, funciones, activacion, habilitar, habilitacion, activar, presenciall, tokenn, funcioens, activr, habilitarr, activacoin, presensial",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=386",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo utilizo el facturador? APPS Y HERRAMIENTAS Clave: facturador, facturar, tickets, ventas, consumidores, finales, monotributistas, emitir, emision, facturacin, tiket, tique, facturadorr, emitirr, consumidoresf, monotributsta, monotributoo, venats, emsion",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/Guia-Facturador.pdf",
+      "categoria": "MONOTRIBUTO",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "ARCA MOVIL: ¿Cómo registro mis datos biométricos? APPS Y HERRAMIENTAS Clave: biometricos, datos, prueba, vida, identidad, contribuyente, registrar, validar, biometria, biometrcos, biometrico, biometrcia, identidd, identiddad, registar, regstro, valdar, validr, prueva, vidda",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/Como-registro-mis-datos-biometricos.pdf",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "ARCA MOVIL: ¿Cómo consulto el Domicilio Fiscal Electrónico? APPS Y HERRAMIENTAS Clave: domicilio, virtual, correo, electronico, telefono, celular, obligatorio, constituir, cargar, seguro, gratis, direccion, consulta, consultar, domiclio, domcilio, virutal, corrreo, telofono, celualr, obligatrio, constitur, caragr, direccoin, consutlar",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/ARCA-Movil-Domicilio-Fiscal-Electronico.pdf",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "ARCA MOVIL: ¿Cómo realizo el pago del monotributo? APPS Y HERRAMIENTAS Clave: arca movil, obligaciones, aplicación, cumplimiento, cancelacion, tributo, monotributoo, pagaar, aplicacionn, obligacoines, cumpliminto, tributto, cancelacoin",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=429",
+      "categoria": "MONOTRIBUTO",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "ARCA MOVIL: ¿Cómo consulto mi deuda? APPS Y HERRAMIENTAS Clave: deuda, saldo, adeudo, pendiente, obligaciones, estado, fiscal, aplicacion, movil, consulta, consultar, adeudoo, salddo, pendientee, obligacoines, estdao, consutar, fiscl, aplicacoin, movli",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/Guia-Como-Consulto-Mi-Deuda.pdf",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo pagar un VEP por E-Pagos? APPS Y HERRAMIENTAS Clave: VEP, E-Pagos, pago, aplicación, QR, CUIT, número, escanear, manualmente, epagos, pagarr, aplicacionn, escanearr, cuit, nmero, manulamente, escanearq, pagoo, aplicacoin, vepp",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=479",
+      "categoria": "PAGOS",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Alta Ya: ¿Cómo dar el alta definitiva de una nueva relación laboral? APPS Y HERRAMIENTAS Clave: Alta Ya, alta definitiva, relacion laboral, nueva relacion, registrar, registro, aplicacion, empleador, empleado, alta, definitva, relacoin, labroal, registrr, aplicacoin, empledo, empleadorr, registracion",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=485",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Alta Ya: ¿Cómo realizar el alta provisoria de una nueva relación laboral? APPS Y HERRAMIENTAS Clave: provisoria, provisional, prealta, vinculacion, contratacion, vincular, contratar, relacionprovisoria, provisora, provisorio, prealtaa, vincualcion, contrataion, provisroria, provsional, contrtacion",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=486",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo declaro, modifico o elimino una CBU desde la aplicación \"ARCA Móvil\"? APPS Y HERRAMIENTAS Clave: CBU, bancaria, terceros, claves, editar, administrar, declaro, modifico, desvincular, modificacion, bancario, bancarias, cbuu, cbuu, terceors, tercerso, edtiar, adnimistrar, declaroa, modifcio, desvincluar, modificacionn, bancaira, clvaes",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=522",
+      "categoria": "PAGOS",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Trabajadores autónomos: ¿Cómo me categorizo y cómo efectúo la recategorización anual? AUTÓNOMOS Clave: categorizacion, recategorizacion, anual, inicial, encuadramiento, clasificacion, reencuadramiento, categorias, categorizr, recategorizr, anualidad, incial, encuadramineto, clasifcacion, reencuadraminto, categorais, recategorizacon",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/Autonomos-como-me-categorizo-como-efectio-recategorizacion-anual.pdf",
+      "categoria": "MONOTRIBUTO",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo presento la declaración jurada de Bienes Personales? BIENES PERSONALES Clave: bienespersonales, patrimoniales, patrimonio, exterior, pais, diciembre, impuesto, jurada, presentar, presentacion, declaracion, tributario, declaracon, patrimono, extreior, dicimbre, impuetso, jurrada, presentr, presentcion, declracion, tributairo",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/Como-presento-la-declaracion-jurada-de-Bienes-Personales.pdf",
+      "categoria": "GANANCIAS_Y_BIENES",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "Nuevo Pacto Fiscal: ¿Cómo adhiero al Régimen Especial de Ingreso del Impuesto sobre los Bienes Personales (REIBP)? (Por bienes no incluidos en la regularización de activos) BIENES PERSONALES Clave: REIBP, regimen especial, ingreso, bienes personales, pacto fiscal, adhesion, pago inicial, declaracion jurada, saldo, impuesto, regularizacion, activos, reibp, especial, ingresoo, adheson, inicial, saldoo, regularizacin, activoss, pactoo, fiscal, confeccionar, confecionar, pagar, pagaar, adhesr, regularizar",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=500",
+      "categoria": "GANANCIAS_Y_BIENES",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Nuevo Pacto Fiscal: ¿Cómo designo un responsable por deuda ajena? BIENES PERSONALES Clave: responsable, ajena, designar, designacion, responsabilidad, obligado, tercero, representacion, mandatado, responsble, desiganr, designacin, responsablidad, obliagdo, represntacion, mandatrio",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=507",
+      "categoria": "GANANCIAS_Y_BIENES",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo doy de alta a un trabajador de casas particulares? CASAS PARTICULARES Clave: trabajador, casas, particulares, registrar, regimen, empleada, domestico, servicio, laboral, registracion, trabajdor, casass, partciulares, regimne, registar, empleda, domsetico, servcio, laborla, registracon",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/alta-de-trabajador-de-casas-particulares.pdf",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo realizo el pago a una trabajadora o trabajador del Régimen de Casas Particulares? CASAS PARTICULARES Clave: remuneracion, salario, haberes, paga, retribucion, abonar, pago, trabajadora, trabajador, domestica, empleada, jornada, liquidacion, remuneracoin, salairo, habrees, retribucoin, abnoar, abonar, domsetica, emplaeda, jornadda, liqudiacion",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=254",
+      "categoria": "PAGOS",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo genero el recibo de sueldo para un trabajador de Casas Particulares? CASAS PARTICULARES Clave: recibo, sueldo, portal, pasos, generar, comprobante, salarial, liquidacion, emision, recibosueldo, reciboo, suledо, poratl, pasoss, genear, comporbante, salraial, emsion, liqdiacion, portla",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/guia-RecibodeSueldo.pdf",
+      "categoria": "FACTURACION",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo doy de baja a un trabajador en el Régimen de Casas Particulares? CASAS PARTICULARES Clave: cese, desvinculacion, finalizacion, cesantia, egreso, bajaempleado, finalizar, desvincular, ceseempleo, desvincluacion, finalziacion, cesanta, egerso, bajatrabajador, finalziar, desvincualr, cesea, egreso, empelado, desvinvular",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/baja-trabajador-casas-particulares.pdf",
+      "categoria": "SUELDOS_Y_SEGURIDAD_SOCIAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "Trabajador de casas particulares: ¿Cómo consulto mis aportes? ¿Cómo realizo el pago de adicionales? CASAS PARTICULARES Clave: aportes, obra, social, jubilacion, ART, adicionales, cumplimiento, empleador, verificar, corresponde, conceptos, contribuciones, previsionales, cobertura, aportesobligatorios, jubilacionn, adicionaless, cumplimieto, empledaor, verificr, correspondd, contribucinoes, previsonal, coberturra, jubilaciona, obar, socail, art, verifcar",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/Casas-particulares-como-consulto-aportes-pago-adicionales.pdf",
+      "categoria": "SUELDOS_Y_SEGURIDAD_SOCIAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "Trabajador de Casas Particulares: ¿Cómo consulto mis recibos de sueldo? CASAS PARTICULARES Clave:",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/como-consulto-mis-recibos-sueldo.pdf",
+      "categoria": "SUELDOS_Y_SEGURIDAD_SOCIAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo uso la clave fiscal y cómo agrego nuevos servicios? CLAVE FISCAL Clave: acceso, servicios, alta, utilizar, agregar, uso, ingreso, incorporacion, accesos, agregarr, utilisar, utilizarr, ingerso, incoporacion, incroporar, serivicios",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/verguia.aspx?id=26",
+      "categoria": "CLAVE_FISCAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo acepto los datos biométricos? CLAVE FISCAL Clave: aceptacion, huellas, rostro, identidad, validacion, confirmar, conformidad, biometria, verificacion, aceptar, verificar, operar, fiscal, huelas, rostor, identdiad, valdiacion, confirmra, conformdiad, biometriaa, verifciar, operrar",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/como-acepto-datos-biometricos.pdf",
+      "categoria": "CLAVE_FISCAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo delego servicios para que los utilicen en mi nombre y cómo se acepta esa delegación? CLAVE FISCAL Clave: delegar, delegacion, servicios, autorizacion, representante, apoderado, aceptar, delegante, delegado, otorgar, permiso, acceso, delegar, delegacon, autorizacin, represnetante, apoderaod, aceptr, delegante, delegdao, otorgar, permso, aceso",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/Como-delego-servicios-para-que-utilicen-en-mi-nombre-como-se-acepta-delegacion.pdf",
+      "categoria": "CLAVE_FISCAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo recupero la clave fiscal a través de homebanking? CLAVE FISCAL Clave: recuperar, olvidaste, homebanking, recuperarclave, restablecer, reponer, recuperacion, restablecimiento, reponerclave, bancario, banca, olvidasteclave, recuparar, olbidaste, homabanking, restablcer, repner, recupracion, bancraio, bancaa, olvidadte, recuperra, restableciminto",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/Guia-como-recupero-CF-homebanking.pdf",
+      "categoria": "CLAVE_FISCAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo solicito la Clave de Inversores del Exterior (CIE)? CLAVE FISCAL Clave: CIE, inversores, exterior, clave, inversiones, financieras, juridicas, agrupaciones, entes, residente, jurisdiccion, GAFI, solicitar, solicitus, inversore, exterir, inverciones, finacieras, juridca, agrupacones, jurisciccion, resdiente, jurisdiicion, solcitar",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=192",
+      "categoria": "CLAVE_FISCAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo recupero la clave fiscal a través de cajero automático Link? CLAVE FISCAL Clave: Link, cajero, automatico, olvido, recuperacion, clavefiscal, restablecer, reponer, banca, recuperr, cajreo, autmatico, olvdo, recuparacion, restablcer, repner, clvefiscal, cajerro, bancaa, olbido",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=202",
+      "categoria": "CLAVE_FISCAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo cambio la clave fiscal? CLAVE FISCAL Clave: actualizar, seguridad, cambio, cambiar, renovar, clavefiscal, contrasena, actualizacion, fortalecimiento, actulizar, segurdad, camibar, renvoar, clvefiscal, contrasnea, actulizacion, fortaleciminto, renvovar",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/Guia-cambio-CF.pdf",
+      "categoria": "CLAVE_FISCAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo utilizo el portal de clave fiscal? CLAVE FISCAL Clave: nuevo, sirve, portalclave, funcion, funcionl, nuebo, sirbe, portla, funcino",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=308",
+      "categoria": "CLAVE_FISCAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo recupero la clave fiscal a través de cajero automático Banelco? CLAVE FISCAL Clave: Banelco, recuperarclave, olvidada, extraviada, recuperacionbancaria, restituir, reposicion, banelcco, recuparar, olvidadda, extraviadaa, restitir, reposicon, bancaaria",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/recupero-CF-cajero-banelco.pdf",
+      "categoria": "CLAVE_FISCAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo recupero la clave fiscal a través de cajero automático de la red LINK? CLAVE FISCAL Clave: red, medio, recuperarla, recuperacionlink, recuperarclavered, cajeroLink, mediocajero, recuperarla, recupararla, recuperacoin, cajerroLink, cajerored, rede, medoi, recuparacionlink",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/recupero-CF-cajero-link.pdf",
+      "categoria": "CLAVE_FISCAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo solicito o recupero mi clave fiscal? CLAVE FISCAL Clave: solicito, obtener, aplicacion, movil, generarclave, tramitacion, consecucion, recobrar, obtenr, aplicacionmovil, tramit, consecusion, recobrr, generaclave, solictar, obtnener, recuprar, movilapp",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/Guia-como-solicitar-clave-fiscal.pdf",
+      "categoria": "CLAVE_FISCAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "Solicitud de datos biométricos CLAVE FISCAL Clave: biometricos,biometria,biometrico,biometircos,biometrcos,datos,informacion,registrodatos,daots,dtaos,solicitar,pedir,requerir,solictar,solictiar,huella,huellas,dactilar,huela,hulla,foto,fotografia,imagen,fotgrafia,fotogrfia,firma,firmar,rubrica,frima,fimra",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/VerGuia.aspx?tr=93",
+      "categoria": "CLAVE_FISCAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Solicitud de clave fiscal CLAVE FISCAL Clave: clave,fiscal,clavefiscal,solicitudclave,solicitudclavefiscal,obtener,sacar,generar,crear,clvae,calve,ficsal,fisacl,clavefisacl,claveficsal,obtenerclave,sacarclave,generarclave,crearclave,obtenerclavefiscal,sacarclavefiscal,generarclavefiscal,crearclavefiscal,obtenerclvae,sacarcalve,generarclvae,crearcalve",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/VerGuia.aspx?tr=16",
+      "categoria": "CLAVE_FISCAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Administrador de Relaciones CLAVE FISCAL Clave: administrador,relaciones,administradorrelaciones,administrar,gestion,vinculacion,adminsitrador,adminstrador,relacoines,realciones,administrarrelaciones,gestionarrelaciones,vincularrelaciones,administradorrelacoines,adminstradorrelaciones",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/VerGuia.aspx?tr=19",
+      "categoria": "CLAVE_FISCAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Clave fiscal nivel 4 CLAVE FISCAL Clave: nivel,nivel4,niveles,nivelcuatro,nviel,nielv,seguridad,seguro,autenticacion,seguriad,segurdad,clave4,fiscal4,clavenivel4,clavefiscal4,clavenivelcuatro,clavefiscalnivel4,clavenivle4,clavefiscalnvel4,token,softtoken,toekn,tokne",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/VerGuia.aspx?tr=38",
+      "categoria": "CLAVE_FISCAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Solicitud de Clave de Identificación - CDI CLAVE FISCAL Clave: identificacion,cdi,claveidentificacion,solicitudcdi,solicitudclaveidentificacion,identificar,identificador,identifiacion,identifcacion,cedi,cid,clavedeidentificacion,claveidentifiacion,claveidentifcacion,pedircdi,requerircdi,obtenercdi,pedricdi,obtenercedi",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/VerGuia.aspx?tr=17",
+      "categoria": "CLAVE_FISCAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Modificaciones de datos CLAVE FISCAL Clave: modificaciones,modificacion,modificar,cambio,actualizacion,modifcaciones,modificacoines,cambios,actualizar,correccion,actualziacion,actulizacion,modificardatos,cambiardatos,actualizardatos,corregirdatos,modifcardatos,modificardtaos,cambiardtaos,actualizardtaos",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/VerGuia.aspx?tr=18",
+      "categoria": "CLAVE_FISCAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo me inscribo como prestador de ISTA (Iniciativa de Seguridad en Tránsito Aduanero)? COMERCIO EXTERIOR Clave: ISTA, prestador, iniciativa, transito, aduanero, requisitos, inscripcion, inscribirse, seguridad, inscribite, istas, prestadoor, inicitiva, transiot, aduaneroo, requsitos, inscripcon, inscribr, aduanera, transitoista",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=141",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo realizo en el Sistema Malvina la afectación de fondos de la Cuenta Única Recaudadora Aduanera a una liquidación? COMERCIO EXTERIOR Clave: Malvina, afectacion, fondos, cuenta, unica, recaudadora, aduanera, liquidacion, pagos, tributos, importaciones, exportacion, derechos, franquicias, afectar, imputacion, sistema, malvinaa, afectacoin, fondso, recaudadoraa, liquidacoion, tributosaduaneros, importacoines, exportacoin, franquicaias, afectr, imputacoin",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=225",
+      "categoria": "PAGOS",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo consulto los beneficios de exportación en Mis Operaciones Aduaneras? COMERCIO EXTERIOR Clave: beneficios, exportadores, operaciones, aduaneras, Mis, Operaciones, Aduaneras, controlar, control, tramiteestado, incentivos, ventajas, beneficiios, exportadr, operacoines, aduanerasr, controalr, incetivos, ventajs, beneficiis, exportacdor, aduanero, aduaneraa, operacionesaduaneras",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=227",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo consulto el PAUT de un transportista? COMERCIO EXTERIOR Clave: PAUT, transportista, transportistas, empresas, verificar, consulta, estado, inscripcion, consultar, pautt, transprotista, trasportista, emrpesas, verifciar, consutla, inscripcoin, transportiista, empersas",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=252",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Procedimiento de control de descarga de contenedores en zona portuaria COMERCIO EXTERIOR Clave: descarga, contenedores, portuaria, procedimiento, rutina, controladuanero, descargar, contenedor, puerto, controles, descargaa, contenedroes, portuariaa, procediminto, rutnia, controal, descargarr, contenodres, puertoo",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=303",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo doy de alta y utilizo el nuevo aplicativo Courier - Envíos Personales Consignatarios? COMERCIO EXTERIOR Clave: Courier, envios, personales, consignatarios, aplicativo, alta, utilizar, uso, mensajeria, encomiendas, courierenvios, personaless, consignatarioos, aplicativoo, altta, utilisar, mensajeriaa, encomiendass, courer, consignatrio, aplicatibo",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=328",
+      "categoria": "GENERAL",
+      "estado_vigencia": "historico_logica_base",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo emito una Nota de Crédito/Débito de Exportación del Régimen \"Exporta Simple\"? COMERCIO EXTERIOR Clave: nota, credito, debito, exportacion, Exporta, Simple, emitir, emision, ECSI, consumo, simple, notas, comercial, operacion, exportar, acreditacion, acreditacoin, debitoo, exportacoin, emtir, emisionn, exportaSimple, consumoo, operacoin, comerical, exporta, simlpe",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/402-Como-emito-una-nota-de-credito-debito-de-exportacion-del-Regimen-Exporta-Simple.pdf",
+      "categoria": "PAGOS",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo genero un comprobante fiscal si soy usuario de \"Exporta Simple\", el Régimen de Exportación Simplificada? COMERCIO EXTERIOR Clave: comprobante, fiscal, factura, facturas, cargar, emitir, generacion, regimen, simplificado, ECSI, comprobantes, facturacion, carga, emision, generacionfiscal, comprobantte, fiscaal, factrua, cargarr, emtir, generaar, simplifcado, facturass",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/403-Como-genero-un-comprobante-fiscal-si-soy-usuario-de-Exporta-simple-el-Regimen-de-Exportacion-Simplificada.pdf",
+      "categoria": "FACTURACION",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo se presenta la declaración jurada que determina el derecho de exportación a ingresar? COMERCIO EXTERIOR Clave: determina, importe, ingresar, concepto, determinacion, ingreso, cuantia, monto, determinar, ingresarr, importee, conceptoo, determinacionn, ingresoo, cuantiaa, montoo, determinarr, declaracionjurada, derechosexportacion, exportacionderechos",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=299",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo firmar digitalmente el F4501 de Precios de Transferencia? COMERCIO EXTERIOR Clave: Adobe, Acrobat, Reader, archivos, recibidos, navegador, configurar, inconveniente, documento, firma, certificada, version9, certificado9, acrobat9, autenticidad, archivos9, navegador9, configuracion9, adobee9, acrobaat9, recividos9, navegadr9, confgurar9, inconveiente9, documeto9, certifcada9, firmadigital9",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=448",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Devolución de impuestos para turistas COMERCIO EXTERIOR Clave: devolucion,reintegro,reembolso,devolucionimpuestos,devolcuion,devolcion,impuestos,tributos,tasas,impeustos,impuetos,turistas,viajeros,visitantes,tursitas,turitsas",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/VerGuia.aspx?tr=35",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Viajeros - Régimen de Equipaje COMERCIO EXTERIOR Clave: equipaje,equipajes,bagaje,equipje,equpaje,regimen,normativa,sistema,regiemn,regmien,franquicia,franquicias,exencion,franquisia,franqicia,aduana,aduanero,aduanera,aduanna,aduanra,viaje,viajar,ingreso,egreso,entrada,salida,frontera,fronterizo,fronteras,frontrera,frontrea",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/VerGuia.aspx?tr=36",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Depositario fiel COMERCIO EXTERIOR Clave: depositario,fiel,deposito,custodio,depositraio,deposiatrio,fieles,custodia,resguardo,custdoia,custodiaa",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/VerGuia.aspx?tr=59",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Importación de restos humanos COMERCIO EXTERIOR Clave: importacion,importar,internacion,importcion,improtacion,cadaver,cadaveres,cuerpo,cadver,cadavre,traslado,trasladar,transporte,trasaldo,trasldo,repatriacion,repatriar,retorno,repatracion,repatraicion,funerario,mortuorio,funebre,funerraio,funerairo",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/VerGuia.aspx?tr=79",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Mudanzas de importación - exportación COMERCIO EXTERIOR Clave: mudanza,mudanzas,traslado,trasladar,mudnaza,mudnzas,internacional,internacionales,exterior,internacinal,internacioanl,menaje,enseres,mobiliario,meneje,maneje,domicilio,residencia,casa,domcilio,domiclio,radicacion,radicarse,radicar,radiccion,radicaion",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/VerGuia.aspx?tr=88",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Nacionalización de vehículos usados COMERCIO EXTERIOR Clave: nacionalizacion,nacionalizar,nacionalizado,nacionalisacion,nacionlaizacion,vehiculos,autos,automoviles,vehiculosusados,vehciulos,veihculos,usados,usado,segunda mano,uasdos,usdaso,nacionalizacionvehicular,nacionalizacionautos,nacionalizacionautomoviles,nacionalizacionvehiculos,nacionalizcionvehicular,nacionalizacionvehciulos",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/VerGuia.aspx?tr=82",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo registro las altas y bajas de impuestos o regímenes? CUIT E INSCRIPCIONES Clave: inscripcion, registral, unico, tributario, regimenes, registrar, altasbajas, sistma, registar, inscripcoin, regimnes, tributairo, registrla, registar, sistemaa, uncio, inscripcon, regitrar",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/alta-baja-impuestos.pdf",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo solicito el cambio de estado administrativo de la CUIT? CUIT E INSCRIPCIONES Clave: administrativo, estado, cambio, solicitar, solicitud, modificacion, actualizacion, administratvo, estdao, camibo, solcitar, solictud, modifcacion, actulizacion",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/Como-solicito-el-cambio-de-estado-administrativo-de-la-CUIT.pdf",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "SIPER ¿Cómo consultar categoria asignada y cómo manifestar la disconformidad? CUIT E INSCRIPCIONES Clave: SIPER, categoria, asignada, disconformidad, comportamiento, fiscal, conocer, manifestar, categoriaSIPER, asiganada, disconformiad, comportamineto, conoscer, manifestr, cateogria, siperr",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=440",
+      "categoria": "MONOTRIBUTO",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Dónde consulto el Estado Administrativo de la CUIT? CUIT E INSCRIPCIONES Clave: cuit, estadoadministrativo, consulta, padron, reactivada, situacion, condicion, estdoadministrativo, consutla, padronpuc, reactivcion, cuittt, situacoin, condicon, estao, reactivdaa, puc, consultarcuit, cuitadministrativa",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/estado-administrativo-de-la-CUIT.pdf",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo obtengo la CUIT y me inscribo en los impuestos? CUIT E INSCRIPCIONES Clave: obtenercuit, cuit, inscripcionimpositiva, impuestos, altaactividad, actividadimpositiva, inscripcion, clavefiscal, obtencion, tributacion, obtnercuit, inscripcoinimpositiva, impuetsos, altactividad, activdadimpositiva, inscribirse, obtencioncuit, tributos, fiscals, cuitobtener, altaimpuestos",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/verguia.aspx?id=317",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo utiliza el Registro Único Tributario un contribuyente inscripto? CUIT E INSCRIPCIONES Clave: registro, unico, tributario, contribuyente, inscripto, utilizar, uso, sistema, padrón, registracion, utilizacion, inscriptoRUT, contribuyentee, registrro, unicco, tributaro, inscriptoa, utiliar, utilzacion, contribuyentte, inscriptto, padronn, registacion, usoo",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/como-utilizo-el-registro-%C3%BAnico-tributario-un-contribuyente-inscripto.pdf",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo consultar caracterizaciones en el Sistema Registral? CUIT E INSCRIPCIONES Clave: caracterizaciones, Sistema, Registral, categorizacion, asignada, conocer, consulta, consultar, caracterizacion, caracterizacoines, registral, categorizr, asignadaa, conocerr, consutlar, caracterizacoin, categorizacon, asignacoin, registrr, sistma, categorisacion, asignaada",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/consultar-caracterizaciones-en-el-Sistema-Registral.pdf",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo consultar el certificado artículo 80 LCT 20.744? CUIT E INSCRIPCIONES Clave: certificado, articulo, 80, LCT, 20744, empleadores, digital, descargar, pdf, listado, generados, aplicacion, certificado80, art80, certificadoart80, consultacertificado, descargacertificado, certficado, artculo, empledores, digtal, descagar, listdao, generdao, aplciacion, certficado80, art80lct, 20744lct",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=528",
+      "categoria": "SUELDOS_Y_SEGURIDAD_SOCIAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo genero el certificado del art. 80 LCT? CUIT E INSCRIPCIONES Clave: articulo, 80, LCT, 20744, generar, generacion, mecanismo, ley, certificadoart80, art80lct, generarcertificado, generacon, mecnismo, mecanisimo, artciulo, leyy, 20744lct, generarr, genracion, mecanizmo, certficacion",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/certificado-art.80LCT.pdf",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo inscribo una persona jurídica a través de la web? CUIT E INSCRIPCIONES Clave: personajuridica, entidad, sociedad, inscribir, inscripcion, web, linea, solicitud, iniciar, alta, registro, juridica, entdad, sociedaad, inscirbir, inscripcon, solicutd, inicair, regsitro, enlinea, personajuridca, inscripir, entidaad, sociedd, solicitr, inicairse, altajuridica",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=378",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo modifico los datos de inscripción de una persona jurídica? CUIT E INSCRIPCIONES Clave: persona, juridica, datos, inscripcion, modificaciones, modificar, actualizar, rectificar, registro, sistema, online, modificaciondatos, rectificacion, actualizaciondatos, personajuridica, personajuridca, jurdica, datoss, inscripcoin, modifcar, actulizar, rectifciar, registtro, sistma, onlien, modificacoin, rectifcacion, actualizacin, personajuridcia",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=385",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo me inscribo en el Registro de Beneficios Fiscales en el Impuesto sobre los Créditos y Débitos en cuentas bancarias y otras operatorias? CUIT E INSCRIPCIONES Clave: beneficios, fiscales, creditos, debitos, cuentas, bancarias, operatorias, registro, inscribirme, inscripcion, requisitos, beneficiofiscal, creditosbancarios, debitosbancarios, cuentasbancarias, operatoriasbancarias, beneficiios, fisclales, credtios, debittos, cuentass, bancarrias, opertatorias, regsitro, inscribrme, inscripcon, requisittos",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/Como-inscribo-RegBenefFiscales-ImpCredDeb-cuentas-bancarias.pdf",
+      "categoria": "PAGOS",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "Grupo de Entidades Multinacionales - Presentación del Empadronamiento CUIT E INSCRIPCIONES Clave: grupo, entidades, multinacionales, empadronamiento, integrantes, EMN, obligados, presentacion, registro, inscripcion, grupos, entidad, multinacional, empadronar, empadronado, empadronaminto, multinacinoales, integrnates, oblgiados, presentacionn, registtro, inscripcon, emn, empadronarce, entidaes, multinacinal",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=264",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Registro de Responsables Sustitutos - Sustituido CUIT E INSCRIPCIONES Clave: sustitutos, sustituido, responsables, futuro, sustitucion, reemplazo, reemplazado, activo, inactivo, vigencia, cinco, años, quinquenio, periodo, perido, sustituttos, sustituiddo, futruo, activvo, inactivvo, vigenncia, quinquenoo, anios, sustitucionn, reemplaszo",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/272-Registro-de-Responsables-Sustitutos-Sustituido.pdf",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "Registro de Responsable Sustituto que estuvo o está activo en el Impuesto a los Bienes Personales CUIT E INSCRIPCIONES Clave: responsable, sustituto, bienes, personales, activo, estuvo, estuvoactivo, impuesto, cinco, años, actualidad, antecedente, historico, sustitutoactivo, responsble, sustiuto, biennes, personalles, actvio, estubo, impuetso, cino, anios, actualiadad, antcedente, historicoo",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=273",
+      "categoria": "GANANCIAS_Y_BIENES",
+      "estado_vigencia": "historico_logica_base",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Sistema de Protección Integral: Adquisición de Automotores para Personas con Discapacidad CUIT E INSCRIPCIONES Clave: proteccion,integral,adquisicion,adquirir,compra,adquiscion,adqusicion,automotores,automotor,vehiculo,automotres,automtores,discapacidad,discapacitado,discapacitados,discapcidad,discapacidadad,beneficiario,beneficiarios,titular,beneficario,beneficirio,franquiciaautomotor,beneficioautomotor,exencionautomotor,franquisiaautomotor,franqiciaautomotor",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/VerGuia.aspx?tr=65",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Reafectación de Pagos- Régimen General CUIT E INSCRIPCIONES Clave: reafectacion,reafectar,reasignacion,reafectra,reafectcion,pagos,pago,imputacion,paogs,pgaos,reasignarpagos,reimputarpagos,reafectarpagos,reasiganrpago,reimputarpgaos,reafectacionpagos,reafectacionpago,reafectacionregimengeneral,reafectcionpagos,reafectacionpaogs",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/VerGuia.aspx?tr=21",
+      "categoria": "PAGOS",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Cancelación de inscripción ante ARCA CUIT E INSCRIPCIONES Clave: cancelacion,cancelar,anulacion,cancelcion,cacnelacion,bajaarca,cancelarinscripcion,anularinscripcion,ceseinscripcion,bajainscripcion,cancelarinscripcon,anularinscrpcion,cese,cerrarinscripcion,cancelacionarca,cancelacioninscripcion,cancelacioninscripcon,cancelacioninscrpcion",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/VerGuia.aspx?tr=23",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo presento la declaración jurada patrimonial integral? DECLARACIONES JURADAS Clave: patrimonial, integral, funcionarios, publicos, candidatos, cargos, electivos, nacionales, obligados, declaracion, jurada, patrimonio, funcionariospublicos, candidatospublicos, cargospublicos, presentacion, patrimoniall, integrall, funcionrios, publicoss, candidattos, electivoss, nacionles, obligadoss, declaracionjuraa, juraddaa",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=86",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo confecciono la declaración jurada del IVA? DECLARACIONES JURADAS Clave: confecciono, confeccionar, confeccioniva, valor, agregado, valoragregado, djiva, formularioiva, liquidariva, determinacioniva, confeccoino, confecionar, confeccoiniva, valro, agregdao, valoragreagdo, djivaa, formularoiva, liquidraiva, determinacoiniva",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=98",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo se confecciona el libro de IVA digital? DECLARACIONES JURADAS Clave: libroivadigital, libroiva, ivadigital, confeccionlibro, confeccionardigital, librofiscaldigital, registracioniva, registraciondigital, librodigitaliva, confecionlibro, libroivadigitial, ivadigitial, confeccionlibroo, confeccionardigitial, librofiscaldigitial, registracionivaa, registraciondigitial, librodigitialiva",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=319",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo se cumple con las obligaciones de IVA a través de la herramienta IVA listo? DECLARACIONES JURADAS Clave: ivalisto, obligacionesiva, metodoivalisto, herramientaivalisto, presentacionivalisto, ddjjivalisto, cumpliriva, valoragregadolisto, ivalistoo, ivalsito, obligacoinesiva, metodivalisto, herramietnaivalisto, presentacoinivalisto, ddjjivalistoo, cumplriva, valoragregadolstoi",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=320",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo solicitar la devolución de las percepciones por operaciones en moneda extranjera? DECLARACIONES JURADAS Clave: percepcionesmonedaextranjera, devolucionpercepciones, monedaextranjera, operacionesmonedaextranjera, percepcionespracticadas, solicitarpercepciones, reintegropercepciones, recuperopercepciones, restitucionpercepciones, percepcionesexterior, percepcionesmonedaextranjerra, devolucionpercepcioens, monedaextranegra, operacionesmonedaextranjerra, percepcionespractciadas, solicitarpercepcioens, reintegropercepcioens, recuperopercepcioens, restitucionpercepcioens, percepcionesexteroir",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=380",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Certificado de Ventajas Impositivas DECLARACIONES JURADAS Clave: certificado,certificacion,certificar,certifcado,ceritficado,ventajas,beneficios,beneficio,ventjas,venatjas,impositivas,fiscales,tributarias,impostivas,impositvas",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/VerGuia.aspx?tr=60",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo denuncio una irregularidad en comercios? DENUNCIAS Clave: irregularidad, comercios, denuncio, denunciacomercial, irregularidadfiscal, comercioirregular, reportarcomercio, infraccioncomercial, denunciocomercio, irregularidadescomerciales, irregualridad, comerciosr, denucnio, denunciacomercail, irregularidadfiscl, comercioirregualr, reportarcomerico, infraccioncomercail, denunciocomerico, irregularidadescomercailes",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=459",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "ARCA MOVIL: ¿Cómo realizo una denuncia? DENUNCIAS Clave: denuncia, denunciar, reportar, reporte, aplicativo, movil, realizar, denuncai, denunica, denuciar, reportrar, reportee, realizr, aplicativoo, moviil",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/ARCA-movil-denuncias.pdf",
+      "categoria": "GENERAL",
+      "estado_vigencia": "historico_logica_base",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo realizo la modificación del domicilio fiscal? DOMICILIO FISCAL ELECTRÓNICO Clave: modificacion, domicilio, fiscal, modificar, cambio, actualizar, actualizacion, domiclio, modifcacion, modifciar, camibo, actulizar, actualizacin, fiscalr, domcilio, modificacin, actualisar, domicliofiscal, domicliofiscl",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/79-Como-realizo-la-modificacion-del-domicilio-fiscal.pdf",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo constituyo el domicilio fiscal electrónico y dónde consulto las notificaciones? DOMICILIO FISCAL ELECTRÓNICO Clave: notificaciones, canal, comunicacion, constituye, constituirlo, consulta, mensajes, avisos, notficaciones, canall, comunicacoin, consttuye, constituirlo, conslta, mensjaes, avsios",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/guia_como_constituyo_DFE.pdf",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo consulto las comunicaciones de mis representados en el Domicilio Fiscal Electrónico? DOMICILIO FISCAL ELECTRÓNICO Clave: representados, comunicaciones, domicilio, fiscal, electronico, sitio, informatico, seguro, personalizado, valido, constituir, ingresar, correo, direccion, telefono, celular, consultar, representadoos, comunicacoines, domiclio, electrnico, informtatico, personalizdo, constitur, ingresr, coreo, direccoin, telefonoo, celualr",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=277",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Qué hacer si los archivos recibidos en el Domicilio Fiscal Electrónico no reconocen el certificado de autenticidad de ARCA? Adobe Acrobat Reader 9 DOMICILIO FISCAL ELECTRÓNICO Clave: Adobe, Acrobat, Reader, archivos, recibidos, navegador, configurar, inconveniente, documento, firma, certificada, version9, certificado9, acrobat9, autenticidad, archivos9, navegador9, configuracion9, adobee9, acrobaat9, recividos9, navegadr9, confgurar9, inconveiente9, documeto9, certifcada9, firmadigital9",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=288",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Qué hacer si los archivos recibidos en el Domicilio Fiscal Electrónico no reconocen el certificado de autenticidad de ARCA? Adobe Acrobat Reader 10 o superior DOMICILIO FISCAL ELECTRÓNICO Clave: certificado, autenticidad, Adobe, Acrobat, Reader, archivos, recibidos, navegador, configurar, inconveniente, documento, firma, certificada, certificadoARCA, autenticidadARCA, acrobatreader, configuracion, archivo, navegadorconfigurado, autenticiad, certficado, adobee, acrobaat, recividos, navegadr, confgurar, inconveiente, documeto, certifcada, firmadigital",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=289",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo proceden los representantes y los representados para constituir el Domicilio Fiscal Electrónico? DOMICILIO FISCAL ELECTRÓNICO Clave: constitucion, constituyente, representacion, representado, apoderamiento, apoderados, conformacion, domiciliofiscalelectronico, constituciondfe, dfe, actuacion, actuarr, constitucionr, representacin, representadoo, apoderaminto, conformacon, domciliofiscalelectronico, constituciondfe, actuacionr",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/306-Como-representantes-y-representados-constituir-Domicilio-Fiscal-Electronico.pdf",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "Cumplimiento Voluntario: ¿Cómo responder un requerimiento electrónico? DOMICILIO FISCAL ELECTRÓNICO Clave: cumplimientovoluntario, requerimientoelectronico, responderrequerimiento, solicitudesinformacion, hechosimponibles, respuestaelectronica, requerimientoarca, responder, requerimiento, cumplimientovoluntairo, requerimientoelectornico, responderrequeriminto, solicitudesinformacoin, hechosimponibels, respuestaelectornica, requerimintoarca, respodner, requerimietno",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=523",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Cumplimiento Voluntario: ¿Cómo responder una fiscalización electrónica? DOMICILIO FISCAL ELECTRÓNICO Clave: fiscalizacionelectronica, responderfiscalizacion, inconsistencias, desvios, controles, cruces, informacion, fiscalizacionarca, respuestafiscalizacion, fiscalizarelectronica, fiscalizacionelectornica, responderfiscalizacoin, incosistencias, desvioss, controels, crucess, informacoin, fiscalizacionacra, respuestafiscalizacoin, fiscalizarelectornica",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=524",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Cumplimiento Voluntario: ¿Cómo solicitar una prórroga para cumplir un requerimiento electrónico y/o una fiscalización electrónica? DOMICILIO FISCAL ELECTRÓNICO Clave: prorroga, solicitarprorroga, prorrogarequerimiento, prorrogafiscalizacion, cumplirrequerimiento, cumplirfiscalizacion, extensionplazo, ampliacionplazo, plazoextra, prorrogarelectronica, prorrogaa, proroga, solicitarproroga, prorrogarequeriminto, prorrogafiscalizacoin, cumplirrequeriminto, cumplirfiscalizacoin, extensionplazoo, ampliacionplazoo, plazoextraa",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=525",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Cumplimiento Voluntario: ¿Cómo consultar el estado y/o hacer el seguimiento de un requerimiento electrónico o de una fiscalización electrónica? DOMICILIO FISCAL ELECTRÓNICO Clave: seguimiento, consultar, estado, seguimientoelectronico, estadorequerimiento, estadofiscalizacion, seguimientorequerimiento, seguimientofiscalizacion, consultarestado, consultaestado, seguimineto, consutlar, estdao, seguimientoelectornico, estadorequeriminto, estadofiscalizacoin, seguimientorequeriminto, seguimientofiscalizacoin, consultarestdao, consultaestdao",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=526",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo consulto con clave fiscal mis aportes en línea y si estoy registrado en mi trabajo? EMPLEADOS Clave: aportesenlinea, trabajoenblanco, registrado, empleadoringresa, aporteslaborales, registradolaboral, empleoformal, consultaraportes, verificarregistro, aportesregulares, aportesenliena, trabajoenblnaco, registrdao, empleadoringrsea, aporteslabroales, registradolabroal, empleoformall, consultaraportse, verificarregsitro, aportesregualres",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=104",
+      "categoria": "SUELDOS_Y_SEGURIDAD_SOCIAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo consulto sin clave fiscal mis aportes en línea y si estoy trabajando en blanco? EMPLEADOS Clave: sinclavefiscal, aportessinclave, trabajosinclave, trabajoregistrado, consultaaporteslibre, verificartrabajo, empleoenblanco, aportesonline, consultalaboral, registradotrabajo, sinclvefiscal, aportessinclve, trabajosinclve, trabajoregistrdao, consultaaportselibre, verificrtrabajo, empleoenblnaco, aportesonlien, consultalabroal, registradotrabjo",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=124",
+      "categoria": "SUELDOS_Y_SEGURIDAD_SOCIAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo consultar el pago de aportes a la seguridad social desde el home banking de la Red Link? EMPLEADOS Clave: pagoseguridadsocial, aportesredlink, consultapagoaportes, redlinkaportes, habilitarconsulta, banconacion, homebankingnacion, seguridadsociallink, pagosaportes, consultalink, pagosegurdiadsocial, aportesredlnik, consultapagoaportse, redlnikaportes, habiltiarconsulta, banconacoin, homebankingnacoin, seguridadsocailink, pagosaportse, consultalnik",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=470",
+      "categoria": "SUELDOS_Y_SEGURIDAD_SOCIAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Mi liquidación digital - ¿Cómo acceder? EMPLEADOS Clave: miliquidaciondigital, liquidacionsueldosdigital, sueldodigital, empleadossectorprivado, accederliquidacion, consultarsueldo, recibodigital, liquidacionmovil, herramientamovil, sueldosprivados, miliquidacondigital, liquidacionsueldodigitial, sueldodigitial, empleadossectorprivdao, accederliquidacoin, consultarsuleddo, recibodigitial, liquidacionmovli, herramietnamovil, sueldosprivdaos",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=511",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Mi liquidación digital - ¿Cómo visualizar las contribuciones abonadas por tu empleador? EMPLEADOS Clave: contribucionesabonadas, visualizarcontribuciones, contribucionesempleador, aportesempleador, cargaspatronales, contribucionespatronales, pagosdelEmpleador, consultacontribuciones, visualizaraportes, contribucionespagadas, contribucinoesabonadas, visualziarcontribuciones, contribucionesempledaor, aportesempledaor, cargaspatronlaes, contribucionespatronlaes, pagosdelempledaor, consultacontribucinoes, visualziaraportes, contribucionespagdas",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=514",
+      "categoria": "SUELDOS_Y_SEGURIDAD_SOCIAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo realizo la certificación de servicios y remuneraciones? EMPLEADORES Clave: certificacionservicios, certificacionremuneraciones, serviciosremuneraciones, relaciondependencia, trabajadoresdependencia, certificarservicios, certificarremuneraciones, constanciaservicios, constanciaremuneraciones, servicioscumplidos, certificaconservicios, certificacionremuneracoines, serviciosremuneracoines, relaciondepndencia, trabajadoresdependnecia, certficarservicios, certficarremuneraciones, constanciaservcios, constanciaremuneracoines, servicioscumpldos",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=139",
+      "categoria": "SUELDOS_Y_SEGURIDAD_SOCIAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Simplificación Registral: ¿Cómo realizar un alta, modificación o baja de personal? EMPLEADORES Clave: simplificacionregistral, simplificacionregistralempleadores, altapersonal, modificacionpersonal, bajapersonal, declararpersonal, declarartrabajadores, movimientospersonal, novedadespersonal, simplificacionregsitral, simplificaconregistral, altapersonall, modificacionpersonall, bajapersonall, declararpersonall, declarartrabajdores, movimientospersonall, novedadespersonall",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=143",
+      "categoria": "SUELDOS_Y_SEGURIDAD_SOCIAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo realizo la declaración en línea de seguridad social para empleadores? EMPLEADORES Clave: seguridadsocial, empleadores, declaracionenlinea, trabajadores, registrartrabajadores, empleador, registracionlaboral, declaracionlaboral, seguridadsocialempleador, declararempleados, segurdadsocial, empleadroes, declaracionenliena, trabajdores, registrrtrabajadores, empledor, registracionlabroal, declaracionlabroal, declararempledos, seguridasocial",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=158",
+      "categoria": "SUELDOS_Y_SEGURIDAD_SOCIAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿En qué consisten las Sentencias y Acuerdos Homologados en Juicios Laborales (SEAH)? EMPLEADORES Clave: SEAH, sentencias, acuerdos, homologados, juicios, laborales, tribunales, trabajo, comunicacionjudicial, sentenciaslaborales, acuerdoslaborales, juiciolaboral, seahh, sentecnias, acure dos, homologdaos, jucios, labroales, tribunlaes, comunicacionjudicail, sentenciaslabroales, acuerdoslabroales, juciolaboral",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=164",
+      "categoria": "SUELDOS_Y_SEGURIDAD_SOCIAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Simplificación Registral: ¿Cómo modifico los datos de mis empleados de forma manual? EMPLEADORES Clave: simplificacionmanual, datosempleados, modificardatos, modificacionmanual, datoslaborales, empleadosmanual, editarempleados, actualizardatosempleados, correcciondatos, cambiosmanuales, simplificaconmanual, datosempledaos, modifcardatos, modificacionmanuall, datoslabroales, empleadosmanuall, editarempledaos, actulizardatosempleados, correciondatos, cambiosmanuaels",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/360-Simplificacion-Registral-Como-modifico-los-datos-de-mis-empleados-de-forma-manual.pdf",
+      "categoria": "SUELDOS_Y_SEGURIDAD_SOCIAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "Simplificación Registral: ¿Cómo realizar el alta de empleados de forma masiva? EMPLEADORES Clave: altamasiva, empleadosmasivos, cargamasiva, altamasivaempleados, incorporacionmasiva, registracionmasiva, personalmasivo, cargaempleados, incorporarempleados, altalote, altamasvia, empleadosmasvios, cargamasvia, altamasivaempledaos, incorporacionmasvia, registracionmasvia, personalmasvio, cargaempledaos, incorporarempledaos, altalote",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=361",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Alta Ya: ¿Cómo confirmar un alta provisoria? EMPLEADORES Clave: confirmaralta, confirmacionalta, altaprovisoriaconfirmar, confirmarprovisoria, validacionalta, validarprovisoria, ratificaralta, ratificarprovisoria, confirmacionprovisoria, altaYaconfirmar, confirmrarlta, confirmacoin alta, altaprovisoriaconfirmr, confirmarprovisora, validacoin alta, validarprovisora, ratificarlta, ratificarprovisora, confirmacionprovisora, altayaconfirmr",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=487",
+      "categoria": "SUELDOS_Y_SEGURIDAD_SOCIAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Alta Ya: ¿Cómo consultar el registro de altas provisorias? EMPLEADORES Clave: altasprovisorias, registroprovisorio, consultaraltas, consultaaltasprovisorias, historialaltas, altasprovisoriasmovil, registroaltasprovisorias, altayaconsulta, consultarregistro, provisoriasregistradas, altasprovisroias, registroprovisroio, consultarlatas, consultaaltasprovisroias, historialaltass, altasprovisroiasmovil, registroaltasprovisroias, altayaconsutla, consultarregsitro, provisoriasregsitadas",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=488",
+      "categoria": "SUELDOS_Y_SEGURIDAD_SOCIAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Alta Ya: ¿Cómo anular un alta provisoria pendiente de confirmación? EMPLEADORES Clave: anularaltaprovisoria, anulacionalta, altapendiente, pendienteconfirmacion, cancelaralta, cancelacionprovisoria, invalidaralta, eliminarprovisoria, altayapendiente, anulacionprovisoria, anularaltaprovisora, anulacoin alta, altapendietne, pendienteconfirmacoin, cancelarlta, cancelacionprovisora, invalidarlta, eliminarprovisora, altayapendietne, anulacionprovisora",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=489",
+      "categoria": "SUELDOS_Y_SEGURIDAD_SOCIAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Simplificación Registral: ¿Cómo modificar los datos de empleados de forma masiva? EMPLEADORES Clave: modificacionmasivaempleados, datosmasivoslaborales, editarmasivoempleados, actualizacionmasivaempleados, cambiosmasivospersonal, correccionmasivaempleados, modificardatosmasivos, empleadosactualizacionmasiva, modificacionporlote, datosempleadosmasivos, modificacionmasviaempleados, datosmasvioslaborales, editarmasvioempleados, actualizacionmasviaempleados, cambiosmasviospersonal, correccionmasviaempleados, modifcardatosmasivos, empleadosactualizacionmasvia, modificacionporltoe, datosempleadosmasvios",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=498",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Simplificación Registral - Altas y bajas de relaciones laborales EMPLEADORES Clave: registral,simplificacionregistral,registracionlaboral,registrallaboral,registrla,regsitral,altas,alta,incorporacion,atla,atals,bajas,baja,desvinculacion,bjas,baajs,laborales,laboral,empleo,labroales,laboarles,relacionlaboral,relacioneslaborales,vinculolaboral,relacionlabroal,relacionlaboarl,empleador,empleadores,patronal,empledaor,empleadro,trabajador,trabajadores,empleado,trabajdor,trabjaador",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/VerGuia.aspx?tr=47",
+      "categoria": "SUELDOS_Y_SEGURIDAD_SOCIAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo solicito el certificado MiPyME y los beneficios fiscales? EMPRESAS Clave: mipyme, certificadomipyme, beneficiosmipyme, registromipyme, solicitudmipyme, ingresomipyme, solicitarcertificado, obtenercertificado, beneficiosfiscalesmipyme, mipymes, mipime, mipyyme, certificadomipime, certificadomipymee, registromipime, solicitudmipyyme, ingresomipime, solicitarcertificdao, obtenercertificdao, beneficiosfiscalesmipime",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/Certificado-MiPyME%20.pdf",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "Registros Fiscales Mineros EMPRESAS Clave: mineros, empresasmineras, proveedoresmineros, permisosdeexploracion, cateo, titularespermisos, registrofiscalminero, proveedoresdemineria, exploracionminera, empresasdemineria, mineors, empresasminerras, proveedoresmineors, permisosdeexploracoin, cateoo, titularespermisso, registrofiscalmineor, proveedoresdeminreia, exploracionminera, empresasdeminreia",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=191",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Inversiones de Bienes de Uso - Régimen de Devolución ¿Cómo genero la Pre - Solicitud? EMPRESAS Clave: inversiones, bienes, uso, regimen, devolucion, pre, solicitud, generar, adherir, capital, equipamiento, inversion, devoucion, pre-solicitud, solicutd, adheir, regimne, equipaminto, inverison, devolucionn",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=321",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo realizo la gestión de autorizaciones electrónicas de Firma Digital? EMPRESAS Clave: autorizaciones, gestion, electronicas, firmadigital, permisos, aprobaciones, habilitaciones, gestionar, autorizar, validar, autorizacoines, electronicasr, firmadijital, permios, aprobacoines, habilitacoines, gestinoar, autroizar, valdiar, autorizacioness, firmadgital",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/Como-realizo-gestion-electronicas-Firma-Digital.pdf",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo consulto el estado de una devolución? EMPRESAS Clave: estadodevolucion, devolucionesiva, ivaexportacion, recuperoivaexportacion, consultarrecupero, seguimientodevolucion, devolucionexportador, estadoivaexportacion, consultaexportacion, recuperoexportador, estadodevolucoin, devolucionesivaa, ivaexportacoin, recuperoivaexportacoin, consultarrecuperoo, seguimientodevolucoin, devolucionexportadr, estadoivaexportacoin, consultaexportacoin, recuperoexportadr",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=228",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Combustibles líquidos - ¿Cómo solicito la devolución del remanente? EMPRESAS Clave: combustibles, liquidos, devolucion, remanente, empresas, transporte, automotor, internacional, carga, saldo, libre, disponibilidad, impuesto, solicitar, combustibleliquido, reintegro, remanenteimpositivo, devolucionsaldo, transportistas, transportee, automotror, internacinoal, cargaa, salddo, disponible, impuetso, solictar, combustiblse, remanentte, devolvcion",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=376",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo realizo la descarga e impresión de los formularios? EMPRESAS Clave: descarga, descargar, impresion, imprimir, formularios, formulario, horario, horarios, descagar, desargar, impirmir, imprmir, formualrios, formularois",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=134",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Residencia en el exterior: ¿Cómo acredito la pérdida de la condición de residente en el país? EMPRESAS Clave: residencia, exterior, acreditar, perdida, condicion, residente, pais, radicacion, residenciafiscal, residnecia, residenica, exteiror, extreior, acrediatr, acrditar, peridda, pe rdida, condicon, conidcion, resdiente, residnete",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=370",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo dar de alta o baja caracterizaciones? EMPRESAS Clave: caracterizaciones, caracterizacion, altacaracterizacion, bajacaracterizacion, gestionarcaracterizaciones, caracterizacoines, caracterizacioens, caracterizcion, caracteizacion, altacaracterizcion, altacaracterizaicon, bajacaracterizcion, bajacaracterizaicon, gestionarcaracterizciones, gestionarcacterizaciones",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/alta-baja-caracterizaciones.pdf",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "Reorganización de sociedades EMPRESAS Clave: reorganizacion,reorganizar,reestructuracion,reorganzacion,reorganiacion,sociedades,sociedad,empresas,socieddaes,sociedaes,fusion,fusionar,absorcion,fuison,fuision,escision,escindir,division,escicion,esicion,transformacion,transformar,reconversion,trasnformacion,tranformacion,reorganizacion societaria,reestructuracion societaria,reorganizacion empresarial,reorganzacion societaria,reorganiacion empresarial",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/VerGuia.aspx?tr=61",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Inscripción ante ARCA - Obtención de CUIT - Simple Asociación EMPRESAS Clave: inscripcion,inscribir,altaarca,inscripcon,inscrpcion,cuit,cuuit,cit,obtencioncuit,sacarcuit,generarcuit,obtenercuit,obtencioncuuit,sacarcit,asociacion,asociaciones,asociacion simple,asociacion civil,asociacionsimple,asociacionsimple,asociacioncivi,asociacioncivl,simpleasociacion,simpleasocacion,simpleasociacon",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/VerGuia.aspx?tr=90",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Registro de operadores de productos gravados exentos por destino industrial EMPRESAS Clave: productosgravados,gravados,gravado,gravamen,gravdaos,grvados,destinoindustrial,industrial,industria,destinoindustral,destnoindustrial,operadoresindustriales,operadorindustrial,operadoresproductos,operdoresindustriales,opreadoresproductos,registroindustrial,registroproductos,registrooperadoresindustriales,rejistroindustrial,regsitroproductos,exentospordestino,exentodestino,exenciondestino,exentospordestno,exentodestnio",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/VerGuia.aspx?tr=67",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo registro la recepción del trabajo de impresión? FACTURACIÓN Clave: recepcionimpresion, trabajoimpresion, registrarrecepcion, impresionrecibida, recepciontrabajo, registroimpresion, confirmarimpresion, trabajorecibido, recepcionimprenta, registratrabajoimpresion",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=49",
+      "categoria": "FACTURACION",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo solicito el Código de Autorización de Impresión -CAI-? FACTURACIÓN Clave: cai, codigoautorizacionimpresion, solicitarcai, obtenercai, impresionfacturas, caifacturas, autorizacionimpresioncai, documentosimpresos, caidocumentos, codigoimpresion, caii, codigoautorizacionimpresoin, solictarcai, obtnercai, impresionfactruas, caifactruas, autorizacionimpresoincai, documentosimprseos, caidocumetos, codigoimpresoin",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=138",
+      "categoria": "FACTURACION",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo emito la factura electrónica? FACTURACIÓN Clave: facturaelectronica, comprobanteelectronico, facturacion, emisionfactura, documentofiscal, comprobante, facturar, emision, comprobantefiscal, facturacionelectronica, emitr, facturarrr, facturacionelectronicaa, comprobantee, emisionfacturaa",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/Guia-Como-emito-factura-electronica-y-punto-de-venta.pdf",
+      "categoria": "FACTURACION",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo doy de alta un Controlador Fiscal de nueva tecnología? FACTURACIÓN Clave: controladorfiscal, nuevatecnologia, altacontroladorfiscal, controladoresfiscales, habilitarcontrolador, registracontrolador, controladorfiscalnuevo, altacontrolador, controladorfiscaldigital, controladorfiscalr, nuevatecnolgia, altacontroladorfiscl, controladoresfisclaes, habilitarcontroladr, registracontroladr, controladorfisclnuevo, altacontroladr, controladorfiscaldigitial",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/281-Como-doy-de-alta-un-Controlador-Fiscal-de-nueva-tecnologia.pdf",
+      "categoria": "FACTURACION",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo doy de baja un Controlador Fiscal de nueva tecnología? FACTURACIÓN Clave: bajacontroladornuevatecnologia, controladorbaja, deshabilitarcontroladorfiscal, bajacontroladorfiscal, retirarcontrolador, cesarcontrolador, controladorfiscalbaja, nuevatecnologiabaja, desactivarcontrolador, eliminacioncontrolador",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=282",
+      "categoria": "FACTURACION",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo doy de baja a un controlador fiscal sin archivo SBF? FACTURACIÓN Clave: bajacontroladorsinsbf, controladorsbf, archivosbf, bajasbf, informesbf, confeccionarinformesbf, generarbajacontrolador, bajasinarchivo, controladorfiscalsbf, informebajacontrolador, bajacontroladorsinsfb, controladorsfb, archivosfb, bajasfb, informesfb, confecionarinformesbf, genearbajacontrolador, bajasinarchvio, controladorfisclasbf, informebajacontroladr",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=283",
+      "categoria": "FACTURACION",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Emisor: ¿Cómo se utiliza el Registro de facturas de crédito electrónicas MiPyME? FACTURACIÓN Clave: emisorfcem, emitirfacturacredito, registrofcememisor, facturacreditoemisor, gestionfcememisor, comprobantecreditoemisor, emisionfcem, emisorfacturamipyme, registromipymeemisor, facturacreditoelectronicaemisor",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=301",
+      "categoria": "FACTURACION",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Receptor: ¿Cómo se utiliza el Registro de facturas de crédito electrónicas MiPyME? FACTURACIÓN Clave: receptorfacturacredito, facturacreditomipyme, registrofacturascredito, receptorfcem, aceptarfacturacredito, rechazarfacturacredito, retencionesfcem, cancelacionfcem, comprobantesasociados, facturasemitidasreceptor, receptorfacturacredtio, facturacreditomipymme, registrofacturascredtio, receptorfcemm, aceptarfacturacredtio, rechazarfacturacredtio, retencionesfcemm, cancelacionfcemm, comprobantesasocoados, facturasemitidasrecpetor",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=302",
+      "categoria": "FACTURACION",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo anulo un comprobante en el facturador? FACTURACIÓN Clave: anulo, anular, anulacion, dispositivo, comprobantes, anulr, anluar, anulcaion, dispostivo, dispotivo, anulacio, anullr",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/anular-comprobante.pdf",
+      "categoria": "FACTURACION",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo consultar el resultado de la evaluación cuatrimestral que determina la clase de comprobante a emitir y cómo solicitar un reproceso? FACTURACIÓN Clave: evaluacioncuatrimestral, clasecomprobante, reprocesocomprobante, resultadocuatrimestral, evaluacionfacturacion, comprobanteemitir, solicitarreproceso, reprocesoevaluacion, clasefactura, evaluacioncomprobantes",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=495",
+      "categoria": "FACTURACION",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo se solicita la habilitación de facturas A, A con leyenda \"Pago en CBU informada o\" A con leyenda \"Operación sujeta a retención\" siendo una persona jurídica? FACTURACIÓN Clave: habilitacionfacturasa, facturaaconleyenda, pagocbuinformada, operacionsujetaretencion, personajuridicafactura, facturacioncondicional, solicitarhabilitacionfactura, habilitarfacturaa, facturaretencion, facturacbu, habilitacionfacturasa a, facturaaconleyendaa, pagocbuinforamda, operacionsujetaretencoin, personajuridicafactrua, facturacioncondicinoal, solicitarhabilitacionfactrua, habilitarfactruaa, facturaretencoin, facturacbuu",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/comoSolicito-habFacA-ALeyenPagoCBUinfo-ALeyenOperSujetReten-PJ.pdf",
+      "categoria": "FACTURACION",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo se solicita la habilitación de facturas A, A con leyenda \"Pago en CBU informada\" o A con leyenda \"Operación sujeta a retención\" siendo una persona humana? FACTURACIÓN Clave: habilitacionfacturashumana, facturaahumana, pagocbuinformadahumana, retencionfacturahumana, personahumanafactura, facturacioncondicionalhumana, solicitarfacturahumana, habilitarfacturahumana, facturaaretencionhumana, facturacbuhumana",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/habilitacion-facturas-en-CBU-informada-siendo-una-persona-humana.pdf",
+      "categoria": "FACTURACION",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo anular una factura de crédito electrónica? FACTURACIÓN Clave: anularfacturacredito, anulacionfcem, cancelarfacturacredito, invalidarfcem, anulacionfacturacredito, eliminarfcem, cancelarfcemfactura, facturacreditoanulada, anulacioncredito, anularemisionfcem",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=432",
+      "categoria": "FACTURACION",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo consultar e imputar los bonos electrónicos? FACTURACIÓN Clave: boprealbonos, bonoselectronicos, imputarbonos, consultarbonos, dacionenpago, podercancelatorio, obligacionesbopreal, impuestosbopreal, aduanabopreal, interesesbopreal, multasbopreal, accesoriosbopreal, boprealbonso, bonoselectornicos, imputarbonso, consutlarbonos, dacionenpagoo, podercancelatroio, obligacionesbopreall, impuetsosbopreal, aduanabopreall, intersesbopreal, multasbopreall, accesoriosbopreall",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=517",
+      "categoria": "FACTURACION",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "SiRADIG: ¿Cómo se presenta? GANANCIAS Clave: siradig, presentasiradig, enviarsiradig, remitirsiRADIG, cargarsiradig, siradigg, sirdaig, siradgi, presentarsiradig, presentacionship, remitirsiradig, enviarsiradigg",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=120",
+      "categoria": "GANANCIAS_Y_BIENES",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo solicito la devolución de las percepciones de la RG 3819? GANANCIAS Clave: rg3819, percepciones3819, devolucion3819, devolverpercepciones3819, solicitar3819, reintegro3819, recupero3819, restitucion3819, percepcionrg3819, solicitudrg3819, rg38199, percepcioens3819, devolucoin3819, devolverpercepcioens3819, solictar3819, reintegroo3819, recupeor3819, restitucino3819",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=159",
+      "categoria": "GANANCIAS_Y_BIENES",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo presento la declaración jurada del período 2016 del Impuesto a las Ganancias a través del servicio Ganancias Personas Humanas Web? GANANCIAS Clave: ganancias2016, periodofiscal2016, personashumanasweb, gananciaspersonashumanas, declaracioninformativa, generar2016, continuar2016, rectificar2016, consultar2016, declaracionganancias2016, gananciasweb, ddjj2016, ganacias2016, perido2016, personashumnasweb, declaracioninformtiva, genear2016, continar2016, rectifcar2016, consutlar2016, gananicasweb, ddjjj2016",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=201",
+      "categoria": "GANANCIAS_Y_BIENES",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo presento la declaración jurada del \"Régimen General\" de Ganancias Período 2017 y posteriores? GANANCIAS Clave: regimengeneralganancias, ganancias2017, posteriores2017, determinativa, informativa, plataformaunificada, confeccionarGanancias, presentarGanancias, reemplazaSIAP, presentaciondeterminativa, presentacioninformativa, regimengenerall, gananicas2017, posteriroes2017, determinatvia, informatvia, plataformunificada, confecionarGanancias, presentrGanancias, remplazaSIAP, presentaciondeterminaitva, presentacioninformatvia",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/265-Como-presento-DDJJ-Regimen-General-Ganancias-Periodo-2017-y-posteriores.pdf",
+      "categoria": "GANANCIAS_Y_BIENES",
+      "estado_vigencia": "historico_logica_base",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo presento la declaración jurada de Ganancias mediante la opción \"Régimen Simplificado\" (ex art. 15 RG 4003)? (Derogado) GANANCIAS Clave: regimensimplificadoganancias, regimenSimplificado, exarticulo15, RG4003, derogado, gananciasSimplificadas, declaracionsimplificada, plataformaGanancias, confeccionSimplificada, presentacionSimplificada, simplificadoganancias, regimensimplifcado, exart15, rg4003a, derogdao, gananciassimplificdas, declaracionsimplifcada, plataformaganacias, confeccionsimplifcada, presentacionsimplifcada",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=274",
+      "categoria": "GANANCIAS_Y_BIENES",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Incentivos fiscales: ¿Cómo obtener beneficios por realizar donaciones? GANANCIAS Clave: incentivosfiscales, donaciones, entidadeshabilitadas, deducciondonaciones, deducirdonaciones, cincoPorciento, ingresosnetos, beneficiodonacion, donacionganancias, deducciongananciasdonacion, incentivofiscaldonacion, donacoines, entidadeshabilitdas, deducciondonacoines, deducirdonacoines, cincoporcietno, ingresosnetso, beneficiodonacoin, donaciongananicas, deducciongananciasdonacoin",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=278",
+      "categoria": "GANANCIAS_Y_BIENES",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Impuesto Cedular: ¿Cómo realizo la declaración jurada? GANANCIAS Clave: cedular, impuestocedular, ddjjcedular, presentarcedular, confeccionarcedular, liquidarcedular, cedularr, cedulaar, impuestocedulaar, impuestocedualr, ddjjcedulaar, presentrcedular, confecionarcedular, liquidrcedular",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/verguia.aspx?id=307",
+      "categoria": "GANANCIAS_Y_BIENES",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Impuesto cedular - presentación simplificada con VEP - pago único GANANCIAS Clave: cedularsimplificado, presentacionsimplificadavep, pagounico, rentasfinancieras, 200000, noinscriptos, procedimientoSencillo, opcioncedular, topedoscientosmil, rentafinanciera, pagoUnicoVEP, cedularsimplifcado, presentacionsimplifcadavepp, pagouncio, rentasfinacieras, noinscripptos, procedimintosencillo, opcioncedulaar, topedoscientosmiil, rentafinaciera",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=311",
+      "categoria": "GANANCIAS_Y_BIENES",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo solicito el Certificado de exención del Imp. a las Ganancias para Bomberos voluntarios y Cooperadoras Hospitalarias o Escolares través de Presentaciones Digitales? GANANCIAS Clave: exencionbomberos, bomberovoluntario, cooperadorashospitalarias, cooperadorasescolares, certificadoexencionganancias, exencioncooperadoras, gananciasbomberos, gananciascooperadoras, gestionarcertificadoexencion, certificadoexentoganancias, exencionbomberros, bomberovoluntairo, cooperadorashospitalraias, cooperadorasescolraes, certificadoexenciongananicas, exencioncooperadoars, gananciasbomberros, gananciascooperadoars, gestionarcertificadoexencoin, certificadoexentogananicas",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=368",
+      "categoria": "GANANCIAS_Y_BIENES",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "SIRADIG: ¿Cómo cargar la deducción por gastos de educación? GANANCIAS Clave: siradigeducacion, deduccioneducacion, gastoseducacion, cargareducacion, gastos educativos, deducireducacion, educacionganancias, deducciongastosEducativos, cargagastoseducativos, gastosEscolares, siradigeducacoin, deduccioneducacoin, gastoseducacoin, cargareducacoin, gastoseducativos, deducireducacoin, educaciongananicas, deducciongastoseducatvios, cargagastoseducatvios, gastosescolraes",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/siradig-Gastos-Educacion.pdf",
+      "categoria": "GANANCIAS_Y_BIENES",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "SIRADIG: ¿Cómo cargar la deducción por gastos médicos? GANANCIAS Clave: siradigmedicos, deduccionmedica, gastosmedicos, cargamedicos, gastosmedicina, deducirgastosmedicos, honorariosmedicos, asistenciamedica, deduccionmedicos, cargagastosmedicos, siradigmedcios, deduccionmedcia, gastosmedcios, cargamedcios, gastosmedciina, deducirgastosmedcios, honorariosmedcios, asistenciamedcia, deduccionmedcios, cargagastosmedcios",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/deduccion_medico.pdf",
+      "categoria": "GANANCIAS_Y_BIENES",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "SIRADIG: ¿Cómo cargar la deducción por alquiler de vivienda? GANANCIAS Clave: siradigalquiler, deduccionalquiler, alquilerdevivienda, cargadeduccionalquiler, deduciralquiler, locatarioalquiler, locadoralquiler, gananciasalquiler, deduccionvivienda, alquilerlocatario, siradigalqiuler, deduccionalqiuler, alqiulerdevivienda, cargadeduccionalqiuler, deduciralqiuler, locatarioalqiuler, locadoralqiuler, gananicasalquiler, deduccionvivenda, alquilerlocatairo",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/SIRADIG-deduccion-alquiler-vivienda.pdf",
+      "categoria": "GANANCIAS_Y_BIENES",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "SIRADIG: ¿Cómo informar las cargas de familia? GANANCIAS Clave: siradigcargasfamilia, cargasfamilia, familiaresacargo, informarcargasfamilia, cargafamiliares, deduccionfamilia, familiaresdeducibles, conyugeacargo, hijosacargo, deduccionesfamiliares, siradigcargasfamlia, cargasfamlia, familiaresacragо, informarcargasfamlia, cargafamiliaers, deduccionfamlia, familiaresdeducibels, conyugeacragо, hijosacragо, deduccionesfamiliaers",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=467",
+      "categoria": "GANANCIAS_Y_BIENES",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Certificado de Exención en el Impuesto a las Ganancias Régimen Simplificado GANANCIAS Clave: exencion,exento,eximir,exencionganancias,exnecion,exencoin,ganancias,renta,ganancia,ganacnias,gananicas,simplificado,simplificacion,simple,simplifcado,simplifciado,regimensimplificado,certificadoexencion,certificadoexencionganancias,certifcadoexencion,ceritficadoexencion",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/VerGuia.aspx?tr=32",
+      "categoria": "GANANCIAS_Y_BIENES",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Certificado de Exención en el Impuesto a las Ganancias Régimen General GANANCIAS Clave: general,ordinario,comun,generalganancias,gneral,genreal,regimengeneral,regimenganancias,regimengeneralganancias,regiemngeneral,regimnegeneral,exenciongeneral,exencionimpuesto,exenciontributaria,exneciongeneral,exencoinimpuesto,gananciasgeneral,impuestoganancias,impuestoalasganancias,ganaciasgeneral,impuestoganacnias",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/VerGuia.aspx?tr=33",
+      "categoria": "GANANCIAS_Y_BIENES",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Locadores de inmuebles: ¿Cómo efectúo el Régimen de Información de un contrato? INMUEBLES Clave: locadores, inmuebles, contratoalquiler, regimeninformacioninmuebles, informarcontrato, alquilerinmueble, locacioninmueble, contratoarrendamiento, informaralquiler, locadorinmueble, locadroes, inmuebel s, contratoalqiuler, regimeninformacioninmuebel s, informarcontratto, alquilerinmuebel, locacioninmuebel, contratoarrendamietno, informaralqiuler, locadorinmuebel",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=152",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "RELI: ¿Cómo declaro un contrato de alquiler? INMUEBLES Clave: relideclararcontrato, declararalquilerreli, contratoalquilerreli, registrarlocacionreli, altaalquilerreli, informarcontratoreli, declararlocacion, registrarlocacion, contratoRELI, alquilerRELI",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=383",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "RELI: ¿Cómo acepto un contrato de alquiler declarado? INMUEBLES Clave: reliaceptarcontrato, aceptarcontratoreli, aceptacionalquilerreli, conformidadcontratoreli, validarcontratoreli, aprobaralquilerreli, contratoaceptadoreli, aceptaralquilerreli, aceptarreli, conformarreli, reliaceptarcontratto, aceptarcontratorelli, aceptacionalqiulerreli, conformidadcontratorelli, validarcontratorelli, aprobaralqiulerreli, contratoaceptadorelli, aceptaralqiulerreli, aceptarrreli, conformarrelli",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=384",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "RELI ¿Cómo delega el servicio una persona jurídica? INMUEBLES Clave: relipersonajuridica, delegarreli, delegacionreli, personajuridicareli, servicioreli, autorizarreli, representantereli, apoderadoreli, otorgarreli, permisoreli",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=387",
+      "categoria": "CLAVE_FISCAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "RELI. ¿Cómo consulto los contratos de alquiler? INMUEBLES Clave: reli, contratosalquilerreli, consultarreli, modificareli, renovarreli, bajareli, alquilerespais, consultacontratosreli, modificarcontratosreli, renovarcontratosreli, relia, relli, contratosalqiulerreli, consutlarreli, modifcareli, renvoarreli, bajarreli, alqiulerespais, consultacontratosrelli, renovarcontratosrelli",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/RELI-Como-consulto-los-contratos-de-alquiler.pdf",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "RELI: Alquileres de espacios y superficies fijas o móviles. ¿Cómo dar de alta un complejo? INMUEBLES Clave: relicomplejo, altacomplejo, espaciossuperficies, superficiesfijas, superficiesmoviles, alquilerespacios, declararcomplejo, roladministradorreli, complejoalquiler, contratoespacios, relicomplejoo, altacomplejoo, espaciossuperficiesr, superficiesfijass, superficiesmoviless, alquilerespacois, declararcomplejoo, roladministradorrelli, complejoalqiuler, contratoespacois",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=394",
+      "categoria": "CLAVE_FISCAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "RELI - Juzgados: Denuncia de contratos de locación INMUEBLES Clave: relijuzgados, denunciacontratoslocacion, juzgadosalquileres, denunciarlocacion, contratoslocacionjuzgado, denunciajudicialreli, juzgadosreli, locaciondenunciada, denunciacontratoreli, relidenunciajudicial, relijuzgdaos, denunciacontratoslocacoin, juzgadosalqiuleres, denunciarlocacoin, contratoslocacionjuzgdao, denunciajudicailreli, juzgdaosreli, locaciondenuncidaa, denunciacontratorelli, relidenunciajudicail",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=414",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Incentivo a la construcción: ¿Cómo presento la declaración jurada del \"Régimen Informativo de Normalización? INMUEBLES Clave: incentivoconstruccion, regimeninformativonormalizacion, normalizacionconstruccion, proyectosinmobiliarios, copi, copivi, inversionesinmobiliarias, tenenciasnormalizadas, ley27613, normalizaciontenencia, montosinversion, fechainversion, incentivoconstrucion, regimeninformativonormalizacoin, normalizacionconstrucion, proyectosinmobiliairos, copii, copivii, inversionesinmobiliairas, tenenciasnormalizdas, leyy27613, normalizaciontenecia, montosinverison, fechainverison",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=445",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "SIR - Período de pruebas: ¿Cómo presento la solicitud de recupero de IVA por exportaciones? IVA Clave: SIR, recupero, IVA, exportaciones, solicitud, presentar, periodo, pruebas, devolucion, reintegro, requerimiento, recuperoiva, exportadora, presentacion, sirr, recupeor, exportacoines, solictud, presnetar, periodoo, prubas, devolucoin, reintegroo, requermiento",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/SIR-Como-presento-la-solicitud-de-recupero-de-IVA-por-exportaciones.pdf",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "SIR - Certificación profesional de la solicitud de recupero de IVA por exportaciones IVA Clave: certificacionprofesionalsir, profesionalcontable, validarrecuperoiva, validarsolicitudsir, certificacionrecuperoexportador, contadorcertificante, validacioncontable, certificacionsolicitudiva, profesionalrecuperoiva, datosrecuperoexportacion, certificacionprofesionalsirr, profesionalcontabel, validarrecuperoivaa, validarsolicitudsirr, certificacionrecuperoexportadr, contadorcertificnate, validacioncontabel, certificacionsolicitudivaa, profesionalrecuperoivaa, datosrecuperoexportacoin",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=460",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo confecciono la declaración jurada a través de IVA simple? IVA Clave: ivasimple, declaracionivasimple, ddjjivasimple, confeccionarivasimple, confeccionivasimple, presentarivasimple, liquidarivasimple, valoragregado simple, formularioivasimple, determinacionivasimple, ivasimplle, ivasimlpe, declaracionivasimlpe, ddjjivasimlpe, confecionarivasimple, confeccionivasimlpe, presentrivasimple, liquidrivasimple, formularoivasimple, determinacoinivasimple",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=518",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "SIR - ¿Cómo responder a un requerimiento? IVA Clave: requerimientosir, responderSIR, respuestasir, requerimientorecupero, contestarsir, requerimientoivaexportacion, responderrecupero, sirrequerimiento, contestarrequerimientoSIR, respuestarecupero",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=463",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Recategorización de Monotributo MONOTRIBUTO Clave: recategorizacionmonotributo, recategorizar, recategorizacion, categoria, categoriasmonotributo, cambiarcategoria, actualizarcategoria, recategorizarse, recategorizacionanual, recategorizacionsemestral, recategorizacionmonotirbuto, recategorisar, recategorizacoin, cateogria, categoriasmonotirbuto, cambiarcateogria, actulizarcategoria, recategorisarse",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/Recategorizacion-monotributo.pdf",
+      "categoria": "MONOTRIBUTO",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo consulto mi estado de cuenta y genero volantes de pago si soy Monotributista o Autónomo? MONOTRIBUTO Clave: CCMA, cuenta, estado, volantes, pago, monotributista, autonomo, datos, gestiones, utilizar, generar, consultaar, volantespago, autnomo, monotributistta, estdao, cuetna, gestinoes, utilizr, generarr",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=100",
+      "categoria": "MONOTRIBUTO",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Qué es el sistema SICAM? MONOTRIBUTO Clave: SICAM, sistema, utilizar, paso, pasos, sicaam, sicm, utilisar, utilziar, passo, pasoo, sistemaSICAM, SICAMs, sicamm, utilizacion, utilizacin, pasoporpaso",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/SICAM.pdf",
+      "categoria": "MONOTRIBUTO",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "Monotributistas y exentos - ¿Cómo habilito los puntos de venta? MONOTRIBUTO Clave: puntosdeventa, habilitarpuntos, monotributistasexentos, puntoventa, habilitacionpuntos, puntosfacturacion, habilitarventa, exentospuntos, monotributopuntos, altapuntoventa, puntosdeventaa, habilitarpuntso, monotributistasexentso, puntoventaa, habilitacionpuntso, puntosfacturacoin, habilitarvetna, exentospuntso, monotributopuntso, altapuntovetna",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=135",
+      "categoria": "MONOTRIBUTO",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo me adhiero al monotributo? MONOTRIBUTO Clave: adhesionmonotributo, adherirmonotributo, altamonotributo, inscribirmonotributo, ingresomonotributo, registrarmonotributo, incorporacionmonotributo, monotributoadhesion, adherirsemonotributo, adhesionmonotirbuto, adherirmonotirbuto, altamonotirbuto, inscribirmonotirbuto, ingresomonotirbuto, registrarmonotirbuto, incorporacionmonotirbuto, monotributoadhecion, adherirsemonotirbuto",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/Guia-como-me-adhiero-monotributo.pdf",
+      "categoria": "MONOTRIBUTO",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo adhiero al débito automático desde el Portal Monotributo? MONOTRIBUTO Clave: adhiero, adherir, debito, automatico, portal, opcion, adherencia, débitoautomatico, adheir, adhrir, debiot, autmoatico, portla, opcionn",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/como-me-adhiero-debito-automatico-monotributo.pdf",
+      "categoria": "MONOTRIBUTO",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo me doy de alta en el Monotributo unificado? MONOTRIBUTO Clave: monotributounificado, altamonotributounificado, adherirunificado, inscripcionunificada, regimenunificado, ingresarunificado, monotributounificdao, altamonotributounificdao, adherirunificdao, inscripcionunificdaa, regimenunificdao, ingresarunificdao",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/guia-alta-monotributo-unificado.pdf",
+      "categoria": "MONOTRIBUTO",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "Monotributo: ¿cómo obtengo el certificado mipyme? MONOTRIBUTO Clave: monotributocertificado, certificadoparomonotributo, gestioncertificadomonotributo, obtenermipymeMonotributo, gestionarMiPyMEMonotributo, constanciamipymeMonotributo, acreditacionmipymeMonotributo, monotributocertificdao, certificadomonotirbuto, gestioncertificadomonotirbuto, obtenermipymemonotirbuto, gestionarmipymemonotirbuto, constanciamipymemonotirbuto, acreditacionmipymemonotirbuto",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=346",
+      "categoria": "MONOTRIBUTO",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo reimputo saldos a favor en Monotributo o Autónomos? MONOTRIBUTO Clave: reimputo, saldos, favor, cancelar, deuda, cuenta, corriente, contribuyentes, utilizar, monotributistas, autonomos, reimputacion, imputacion, compensar, compensacion, remputo, reimputacion, saldso, favro, cancelr, deudaa, corrinte, contribuyentes, autnomos",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/Reimputacion-saldos-a-favor-monotributo.pdf",
+      "categoria": "MONOTRIBUTO",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "Proceso de exclusión en Monotributo y acceso al régimen general con beneficios MONOTRIBUTO Clave: exclusion, regimen, general, beneficios, IVA, Ganancias, monotributo, alta, acceder, exclusionmonotributo, regimenfeneral, beneficos, gananicas, exlcusion, regimengeneral, beneficcios, accederbeneficios, altiva, altaganancias, monotributoo",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/407-Proceso-de-exclusion-en-monotributo-y-acceso-al-regimen-general-con-beneficios.pdf",
+      "categoria": "MONOTRIBUTO",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "Monotributo social: ¿cómo imprimo la credencial de pago? MONOTRIBUTO Clave: credencialmonotributosocial, imprimircredencialsocial, credencialpagoSocial, pagomonotributosocial, monotributosocialcredencial, impresioncredencialsocial, descargacredencialsocial, credencialsocialpago, credencialmonotirbutosocial, imprmircredencialsocial, credencialpagosocail, pagomonotirbutosocial, monotributosocialcredencail, impresioncredencialsocail, descargacredencialsocail",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=441",
+      "categoria": "MONOTRIBUTO",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Monotributo social: ¿cómo uso el portal con clave fiscal? MONOTRIBUTO Clave: portalmonotributosocial, clavefiscalmonotributosocial, usarportalsocial, ingresomonotributosocial, accederportalsocial, gestionmonotributosocial, portalclavesocial, portalmonotirbutosocial, clavefisclmonotributosocial, usarportalsocail, ingresomonotirbutosocial, accederportalsocail, gestionmonotirbutosocial, portalclavesocail",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=442",
+      "categoria": "MONOTRIBUTO",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo realizo el cambio de prestador de salud? MONOTRIBUTO Clave: prestadorsalud, cambioprestador, cambiarprestador, salud, coberturamedica, cambiarcobertura, prestadormedico, cambiarsalud, cambioprestadorsalud, prestador, prestadorslaud, cambioprestdaor, cambiarprestadro, saludd, coberturamedcia, cambiarcoberturra, prestadormedcio, cambiarslaud, cambioprestadorslaud, prestdor",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=444",
+      "categoria": "MONOTRIBUTO",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo me doy de baja del monotributo? MONOTRIBUTO Clave: cese, monotributista, desvincular, renuncia, finalizacion, ceseimpositivo, cesemonotributo, salirmonotributo, desinscripcion, desafiliacion, cesar, monotributistta, desvinculr, renunca, finalizacon, ceseimpostivo, cesemonotibuto, desinscripcon, desafiliacon, cesr",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=446",
+      "categoria": "MONOTRIBUTO",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo pagar un VEP por Mercado Pago? MONOTRIBUTO Clave: Mercado Pago, VEP, pago, aplicacion, QR, CUIT, numero, escanear, manualmente, mercadopago, mercadpago, meracdo, epago, pagarr, escanearr, nmero, manulamente, escanearq, aplicacoin, vepp",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=478",
+      "categoria": "MONOTRIBUTO",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo obtengo la CUIT y me inscribo en monotributo promovido? MONOTRIBUTO Clave: promovido, trabajador, independiente, alta, actividad, inscripcion, monotributo, obtener, cuit, monotributopromovido, trabajadorindependiente, independientepromovido, altapromovido, inscripcionpromovida, obtner, trabjador, indepediente, inscripcon, monotributopromovido, promovdio, altadeactividad, cuitpromovido",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/obtener-cuit-inscripcon-monotributo.pdf",
+      "categoria": "MONOTRIBUTO",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo uso la calculadora de pagos para monotributistas promovidos? MONOTRIBUTO Clave: calculadorapromovidos, calculadorapagos, pagosmonotributopromovido, calcularpagoPromovido, calculomonotributo, simuladorpagospromovido, calcularcuotapromovido, calculadoramonotributoPromovido, calculadorapromovdios, calculadorapagso, pagosmonotributopromovdio, calcularpagopromovdio, calculomonotirbuto, simuladorpagospromovdio, calcularcuotapromovdio, calculadoramonotributopromovdio",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=492",
+      "categoria": "MONOTRIBUTO",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Monotributo: ¿Cómo obtengo el beneficio de exención de locador de hasta 2 inmuebles? MONOTRIBUTO Clave: exencionlocador, locador2inmuebles, dosinmuebles, beneficioexencionlocador, exencionmonotributolocador, alquileresexentos, locadorexento, beneficiolocador, hasta2inmuebles, exencionalquileres, exencionlocadro, locador2inmuebes, dosinmuebes, beneficioexencionlocadro, exencionmonotributolocadro, alquileresexetnos, locadorexetno, beneficiolocadro, hasta2inmuebes, exencionalqiuleres",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/exencion-LOCADOR.pdf",
+      "categoria": "MONOTRIBUTO",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "Recategorización simplificada: ¿Cómo realizo el procedimiento? MONOTRIBUTO Clave: recategorizacionsimplificada, recategorizarsimplificada, procedimientosimplificado, recategorizacionfacil, categoriasimplificada, tramitesimplificado, recategorizacionsimplifcada, recategorisarsimplificada, procedimintosimplificado, recategorizacionfaccil, categoriasimplifcada, tramitesimplifcado",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=515",
+      "categoria": "MONOTRIBUTO",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Reempadronamiento del Monotributo Social MONOTRIBUTO Clave: reempadronamiento,reempadronar,empadronamiento,reempadronamieto,reempadronamineto,monotributosocial,monotributistasocial,monotributistasociales,monotributosocail,monotributosoical,empadronarsocial,reempadronarsocial,actualizarmonotributosocial,empadronarsocail,reempadronarsocail",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/VerGuia.aspx?tr=94",
+      "categoria": "MONOTRIBUTO",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Adherir al monotributo social MONOTRIBUTO Clave: adherir,adhesion,incorporarse,adherirse,aderir,adheir,adhesionmonotributosocial,adherirmonotributosocial,altamonotributosocial,inscribirsemonotributosocial,adhesionmonotributosocail,adherirmonotributosoical,monotributistasocialnuevo,ingresomonotributosocial,incorporacionmonotributosocial",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/VerGuia.aspx?tr=95",
+      "categoria": "MONOTRIBUTO",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Reintegro por cumplimiento de pago MONOTRIBUTO Clave: cumplimiento,cumplir,cumplidor,cumplimineto,cumplimeinto,reintegropago,reintegrocumplimiento,reintegrocumplidor,bonificacion,devolucionpago,reintegropgaos,reintegrocumplimineto,bonificiacion,bonficacion,devolucionpaogs,pagoatiempo,puntualidad,pagopuntual,pagoatimepo,pagoputnual",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiadetramites/VerGuia.aspx?tr=69",
+      "categoria": "MONOTRIBUTO",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo efectúo el pago de mis obligaciones a través de un Volante Electrónico de Pagos -VEP-? PAGOS Y FACILIDADES Clave: efectuo, obligaciones, Volante, Electronico, Pagos, tributarias, pago, efectuar, cancelar, abonar, volanteelectronico, volantepago, pagosvep, efectur, efectar, obligacoines, electroncio, tributraias, cancealr, abnoar, volnate, pagso, tributarais",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=66",
+      "categoria": "PAGOS",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo declaro la CBU? PAGOS Y FACILIDADES Clave: registrar, editar, eliminar, desvincular, bancaria, claves, terceros, administracion, sistema, integrada, declaracion, cbu, registarr, edtiar, elimnar, desvincluar, bancarria, clves, terceors, adminstracion, sistmea, integrdao, declracion, cbuu",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=198",
+      "categoria": "PAGOS",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo genero y pago un VEP a otro ciudadano? PAGOS Y FACILIDADES Clave: VEP, confeccionar, pagar, ciudadano, tercero, presentacion, DDJJ, declaraciones, juradas, servicio, ingreso, confeccion, confeccionado, pagador, confeccionarr, pagarr, ciudadno, terccero, presentacionn, declaracoines, jurdaas, servcio, ingresoo, confeccionn, pagadoor",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=226",
+      "categoria": "PAGOS",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo pago desde un cajero de la red Link? PAGOS Y FACILIDADES Clave: pagoredlink, impuestosredlink, cajeroredlink, pagarimpuestoslink, redlinkpago, abonaredlink, cancelarredlink, tributoredlink, pagodesderedlink, cajerolinkpago, pagoredlnik, impuestosredlnik, cajeroredlnik, pagarimpuetsoslink, redlnikpago, abonaredlnik, cancelaredlnik, tributoredlnik, pagodesderedlnik, cajerolnikpago",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/249-Como-pago-desde-un-cajero-de-la-red-Link.pdf",
+      "categoria": "PAGOS",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo pago desde un cajero de la red Banelco? PAGOS Y FACILIDADES Clave: pagobanelco, impuestosbanelco, cajerobanelco, pagarimpuestosbanelco, redbanelcopago, pagocajero, abonarbanelco, cancelarbanelco, tributobanelco, pagodesdecajero, pagobanelcco, impuestosbanelcco, cajerobanelcco, pagarimpuetsosbanelco, redbanelcopagoo, pagocajerro, abonarbanelcco, cancelarbanelcco, tributobanelcco, pagodesdecajerro",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=250",
+      "categoria": "PAGOS",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo ingreso fondos y realizo pagos con la Billetera Electrónica ARCA? PAGOS Y FACILIDADES Clave: billeteraelectronica, fondosbilletera, ingresarfondos, pagosbilletera, billeteraarca, cargarbilletera, saldobilletera, abonarbilletera, billeterafiscal, ingresodineroarca",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=290",
+      "categoria": "PAGOS",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Empleadores de casas particulares: ¿Cómo pago la diferencia de casas particulares mediante un VEP? PAGOS Y FACILIDADES Clave: diferenciacasasparticulares, vepcasasparticulares, pagodiferenciacasas, empleadorescasasparticulares, diferenciaaportesdomesticos, diferenciaVEP, abonardiferenciacasas, pagoadicionalempleador, veppersonalcasas, diferenciaempleadodomestico, diferneciacasasparticulares, vepcasaspartciulares, pagodiferneciacasas, empleadorescasaspartciulares, diferenciaaportesdomseticos, diferneciavep, abonardiferneciacasas, pagoadicionalempledaor, veppersonalcassas, diferenciaempleadodomsetico",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=329",
+      "categoria": "SUELDOS_Y_SEGURIDAD_SOCIAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo ingresar un archivo en SETI y generar el VEP consolidado? PAGOS Y FACILIDADES Clave: seti, archivoseti, vepseti, vepconsolidado, generarvepconsolidado, ingresararchivoseti, cargaseti, consolidarvep, presentacionseti, archivoVEP, setii, archvioseti, vepsetti, vepconsoliddao, generarvepconsoliddao, ingresararchvioseti, cargasetti, consolidarvepp, presentacionsetti, archviovep",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=365",
+      "categoria": "PAGOS",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo genero un VEP a través de la plataforma Pagar? PAGOS Y FACILIDADES Clave: veppagarplataforma, generarveppagar, plataformapagarvep, confeccionveppagar, pagardigitalvep, generarvolantepagar, veppplataforma, genearveppagar, plataformapagarrvep, confeccoinveppagar",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=367",
+      "categoria": "PAGOS",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Pago de facturables en Homebanking Red Link / Pago Mis Cuentas / Plataforma Pagar PAGOS Y FACILIDADES Clave: facturables, pagofacturables, pagomiscuentas, plataformapagar, redlinkfacturables, homebankingfacturables, pagarFacturables, canalesdepago, facturableonline, pagarplataforma, facturabels, pagofacturabels, pagomiscunetas, plataformapagarr, redlnikfacturables, homebankingfacturabels, pagarfacturabels, canalesdepagoo, facturableonlien, pagarplatafroma",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=425",
+      "categoria": "FACTURACION",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo se reimputan los pagos por el Sistema de Cuentas Tributarias? PAGOS Y FACILIDADES Clave: reimputarpagos, cuentastributarias, reimputacionpagos, saldolibredisponible, cancelarobligaciones, obligacioncorrecta, reasignarpago, imputacioncorrecta, trasladarsaldo, corregirpago, reimputarpagso, cuentastrbutarias, reimputacionpagso, saldolibredisponiblidad, cancelarobligacoines, obligacioncorecta, reasignarpagoo, imputacioncorecta, trasladarsalddo, corregirpagoo",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=436",
+      "categoria": "PAGOS",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo pagar un VEP por Cuenta DNI? PAGOS Y FACILIDADES Clave: cuentadni, vepcuentadni, pagarcuentadni, pagovepcuentadni, billeteracuentadni, escanearvepcuentadni, abonarcuntadni, cancelarcuntadni, cuentadnivep, pagocuentadni",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/pagar-vep-cuenta-dni.pdf",
+      "categoria": "PAGOS",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo adherir mi deuda al plan permanente - RG 5321? PAGOS Y FACILIDADES Clave: adherir, deuda, plan, permanente, RG, 5321, incorporar, planes, pago, adhesion, refinanciacion, regularizacion, adherirr, deudaa, permanentee, incorporarr, plannes, pagoo, adhecion, refinanciar, regularisar, 5321r",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=461",
+      "categoria": "PAGOS",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo generar un plan de pagos para deuda proveniente de fiscalización? PAGOS Y FACILIDADES Clave: deudafiscalizacion, planfiscalizacion, ajustesfiscales, multasfiscales, actividadfiscalizadora, deudaajustes, deudamultas, adherirplanfiscalizacion, planpagosfiscalizacion, fiscalizaciondeuda, deudafiscalizacoin, planfiscalizacoin, ajustesfisclaes, multasfisclaes, actividadfiscalizdaora, deudaajustse, deudamultass, adherirplanfiscalizacoin, planpagosfiscalizacoin, fiscalizaciondeudaa",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=469",
+      "categoria": "PAGOS",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo reformular un plan de pagos en el marco del régimen de cancelación de deudas para la AFA, LPF y clubes adheridos? PAGOS Y FACILIDADES Clave: reformularplanafa, reformulacionlpf, clubesadheridos, cancelaciondeudasafa, planvigenteclubes, reformulacionoptativa, deudafutbol, planpagosfutbol, reformularlpf, regimenclubes, reformularplanafa a, reformulacoinlpf, clubesadherdios, cancelaciondeudasaffa, planvigenteclu bes, reformulacionoptatvia, deudafutboll, planpagosfutboll, reformularlpff, regimenclu bes",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=491",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo generar el plan de facilidades de pago para micro, pequeñas o medianas empresas y pequeños contribuyentes (RG Nº 5629/2024)? PAGOS Y FACILIDADES Clave: rg5629, 5629, facilidades5629, planmipymes5629, microempresas5629, pequenasempresas5629, medianasempresas5629, pequenoscontribuyentes5629, adhesion5629, misfacilidades5629, planfacilidades5629, generarplan5629, rg5629a, facilidaes5629, planmipymes56299, microemrpesas5629, pequeniasempresas5629, medianasempersas5629, pequenoscontribuyetnes5629, adhecion5629, misfacilidaes5629, genearplan5629",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=516",
+      "categoria": "PAGOS",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "SIR - ¿Cómo realizar una compensación de regímenes especiales? PAGOS Y FACILIDADES Clave: compensacion, regímenes, especiales, saldos, reintegros, compensar, compensacionregimenes, saldosreintegros, reintegrosespeciales, compnesacion, regmienes, espeicales, saldosr, reinteggros, compnesar, compesacion, regimenesespeciales, reintegrossaldo",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=452",
+      "categoria": "PAGOS",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "SIR - ¿Cómo realizar una solicitud de devolución de saldos a favor? PAGOS Y FACILIDADES Clave: SIR, devolucion, saldos, favor, solicitud, devolver, provenientes, Sistema, Integral, Recupero, reintegro, restitucion, reembolso, devolucoin, saldso, fvaor, solictud, devovler, provnientes, sistemaa, integrla, recupeor, reintegroo, restitucionn, reembolos",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/SIR-Solicitud-de-devolucion-de-saldos-a-favor.pdf",
+      "categoria": "PAGOS",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "SIR - ¿Cómo realizar una solicitud de transferencia de saldos a favor? PAGOS Y FACILIDADES Clave: SIR, transferencia, saldos, terceros, solicitud, realizar, transferir, transferenciaa, saldoss, terceroo, solictud, realizarr, transferrir, transferncia, saldofavor, terceross, solicutd, realizacion, transferible, transferido",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=454",
+      "categoria": "PAGOS",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Cumplimiento Voluntario: ¿Cómo rehabilitar una fiscalización electrónica? PAGOS Y FACILIDADES Clave: rehabilitarfiscalizacion, rehabilitacionfiscalizacion, fiscalizacionrehabilitada, reactivarfiscalizacion, reactivacionfiscalizacion, habilitarfiscalizacion, recuperarfiscalizacion, fiscalizacionelectronicarehabilitar, rehabilitarcontrolfiscal, reabrirfiscalizacion, rehabilitarfiscalizacoin, rehabilitacionfiscalizacoin, fiscalizacionrehabilitdaa, reactivarfiscalizacoin, reactivacionfiscalizacoin, habilitarfiscalizacoin, recuperarfiscalizacoin, fiscalizacionelectornicarehabilitar, rehabilitarcontrolfiscl, reabrirfiscalizacoin",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=527",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo utilizar el servicio Presentaciones digitales? PRESENTACIONES DIGITALES Clave: presentaciones, digitales, servicio, tramites, dependencia, realizar, gestionar, virtual, remoto, presentacionesdigitales, presentacion, digitalles, servico, tramietes, depedencia, gestinoar, virtul, remtoto, tramitesdigitales, gestoin, presentacoines, digitaless",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=363",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo modificar la representación en Presentaciones Digitales? PRESENTACIONES DIGITALES Clave: representacion, presentaciones, digitales, sociedad, representante, reemplazo, sustituir, modificar, delegacion, representaciones, presentaciondigital, digitaless, representacoin, presentacoines, sociedadd, reprsentante, reemplaszo, sustitur, modficar, delegacoin, represntacion, presentacondigital, sociedaes, sustituirr, representate",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/Como-modificar-representacion-Presentaciones-Digitales.pdf",
+      "categoria": "CLAVE_FISCAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "¿Cómo utilizo el servicio Presentación Única de Balances (PUB)? PRESENTACIONES DIGITALES Clave: PUB, presentacionunicabalances, balances, estadoscontables, situacionrecursosgastos, notacumplimiento, presentarestadoscontables, presentarbalances, estadosfinancieros, balancecontable, pubb, presentacionunicabalanes, balacnes, estadoscontabels, situacionrecursosgatsos, notacumplimietno, presentarestadoscontabels, presentarbalacnes, estadosfinacnieros, balancecontabel",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/como-usar-PUB.pdf",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "Cooperadoras escolares ¿Cómo presentar el estado de situación de recursos y gastos? PRESENTACIONES DIGITALES Clave: cooperadorasescolarespub, recursosygastos, estadosituacioncooperadora, cargarecursosgastos, pubcooperadoras, balancecooperadoraescolar, situacionrecursos, situaciongastos, presentacioncooperadora, estadorecursosgastos, cooperadorasescolarespbu, recursosygatsos, estadosituacioncooperadoar, cargarecursosgatsos, pubcooperadoars, balancecooperadoraescolra, situacionrecusros, situaciongatsos, presentacioncooperadoar, estadorecursosgatsos",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=416",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Organismos y provincias no adheridas al Sistema Integrado Previsional Argentino ¿Cómo se utiliza el servicio Declaración en Línea? SEGURIDAD SOCIAL Clave: organismosnoadheridos, provinciasnoadheridas, sistemaintegradoprevisionalargentino, declaracionenlineasipa, cargasipa, presentacionsipa, cargadeclaraciones, presentardeclaraciones, sipa, previsionalargentino, organismosnoadherdios, provinciasnoadherdias, sistemaintegrdoprevisionalargentino, declaracionenlienasipa, cargarsipa, presentacionsipaa, cargadeclaracoines, presentardeclaracoines, sipaa, previsonalargentino",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=472",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo realizar la delegación y habilitar e-ventanilla? SEGURIDAD SOCIAL Clave: e-ventanilla, habilitar, organismos, seguridad, social, delegacion, ventanilla, habilitacion, organismo, habiltiar, evntanilla, segurdad, socail, delegacin, habilitacin, orgnaismos, ventanila, delegar",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=473",
+      "categoria": "CLAVE_FISCAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo dar de alta y delegar el servicio \"e-ventanilla? SEGURIDAD SOCIAL Clave: eventanilla, altaeventanilla, delegareventanilla, servicioeventanilla, usareventanilla, activarventanilla, otorgareventanilla, eventanilal, eventanila, altaeventanilal, delegareventanilal, servcioeventanilla, usareventanilal, activarventanilal, otorgareventanilal",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=477",
+      "categoria": "IVA",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo solicito un turno para ser atendido en una dependencia? TURNOS Clave: sacar, dependencia, atendido, videollamada, atencion, cita, asistencia, presencialidad, videollamadaa, dependncia, atenddio, sacarr, videollamda, atencoin, asitencia, depedencia, atendr, videollamdaa",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=172",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo consulto, modifico y elimino turnos? TURNOS Clave: turnos, modificar, eliminar, vigentes, historicos, gestion, gestionar, historial, turno, modificacion, eliminacion, vigencia, historico, turnoss, modifciar, elimnar, vigntes, historicos, gestoin, historail, turnoo, modifcacion, eliminacionn, vigenncia, historicoo",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/VerGuia.aspx?id=173",
+      "categoria": "GENERAL",
+      "estado_vigencia": "historico_logica_base",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo solicito un turno para la modalidad de atención virtual? TURNOS Clave: turnovirtual, atencionvirtual, solicitarturnovirtual, citavirtual, videollamadaturno, turnoremoto, atencionremota, reservarturnovirtual, agendarturnovirtual, turnoonline, turnovirutal, atencionvirutal, solictarturnovirtual, citavirutal, videollamadatruno, turnoremtoo, atencionremtoa, reservarturnovirutal, agendarturnovirutal, turnoonlien",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiasPasoPaso/VerGuia.aspx?id=392",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "¿Cómo realizo la declaración del equipaje y/o vehículo al salir del país? VIAJEROS Clave: declaracion, equipaje, vehiculo, salir, pais, salida, declarar, viajero, egreso, pertenencias, equipajee, vehiculoo, declaracionn, salr, pasis, salidoo, declarr, viajerro, egrreso, pertenecias",
+      "url": "https://serviciosweb.afip.gob.ar/genericos/guiaspasopaso/verguia.aspx?id=129",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "guia_web"
+    },
+    {
+      "titulo": "Promoción del Empleo Registrado (PER) Ajuste por remuneración Ley de modernización laboral. Ley 27.802 MODERNIZACIÓN LABORAL Clave: perajusteremuneracion, promocionempleoregistrado27802, ajusteremuneracion27802, modernizacionlaboral27802, remuneracionper, ley27802, ajusteempleoregistrado, promocionlaboral27802, perremuneracion, empleoregistrado27802, perajusteremuneracoin, promocionempleoregisrtado27802, ajusteremuneracoin27802, modernizacionlabroal27802, remuneracoinper, leyy27802, ajusteempleoregisrtado, promocionlabroal27802, perremuneracoin, empleoregisrtado27802",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/PER-ajuste-remuneracion.pdf",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "Régimen de Incentivo a la Formalización Laboral (RIFL) MODERNIZACIÓN LABORAL Clave: rifl, regimenincentivoformalizacionlaboral, incentivoformalizacionlaboral, formalizacionlaboral, regimenrifl, incentivolaboralrifl, formalizarempleo, empleorifl, registracionrifl, rifll, regimenincentivoformalizacoinlaboral, incentivoformalizacoinlaboral, formalizacoinlaboral, regimenrifll, incentivolabroalrifl, formalizarempleoo, empleorifll, registracoinrifl",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/Guia-RIFL.pdf",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "Promoción del Empleo Registrado (PER). Modalidades de contrato MODERNIZACIÓN LABORAL Clave: permodalidadescontrato, promocionempleoregistradocontratos, modalidadescontrato, contratosper, contratacionper, modalidadlaboralper, contratoslaboralesper, empleoregistradocontratos, percontratos, modalidadesper, permodalidadescontratto, promocionempleoregisrtadocontratos, modalidadescontratto, contratospper, contratacoinper, modalidadlabroalper, contratoslabroalesper, empleoregisrtadocontratos, percontrattos, modalidadespper",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/PER-ajuste-remuneracion-Modalidades.pdf",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    },
+    {
+      "titulo": "Servicio e-DDJJ MODERNIZACIÓN LABORAL Clave: eddjj, servicioeddjj, declaracionesjuradaselectronicas, ddjjelectronica, presentacioneddjj, declaracioneddjj, eddjjservicio, gestioneddjj, e-ddjj, eddj, servcioeddjj, declaracoinesjuradaselectronicas, ddjjelectornica, presentacoineddjj, declaracoineddjj, eddjjservcio, gestoineddjj",
+      "url": "https://www.arca.gob.ar/guias/paso-a-paso/Servicio-e-DDJJ.pdf",
+      "categoria": "GENERAL",
+      "estado_vigencia": "vigente",
+      "tipo": "pdf"
+    }
+  ],
+  "manuales_operativos_servicios": {
+    "BIENES_PERSONALES_WEB_F762": {
+      "nombre": "Bienes Personales Web (Formulario 762)",
+      "url_base": "https://siapweb.cloud.afip.gob.ar/f762/",
+      "tecnologia": "Single Page Application (SPA AngularJS con SAML Auth)",
+      "rutas_internas_criticas": {
+        "#/inicio": "Pantalla de bienvenida y alerta de próximo vencimiento anual.",
+        "#/declaraciones.anteriores": "SOLAPA VITAL: Contiene el historial completo de declaraciones juradas presentadas desde 2013 hasta la fecha.",
+        "#/crearDJ": "Asistente para iniciar nueva DDJJ determinativa o informativa seleccionando el año fiscal.",
+        "#/bienes": "Carga de inmuebles, automotores, dinero en efectivo, cuentas bancarias y participaciones sociales."
+      },
+      "reglas_de_negocio": [
+        "Las cuotas de SRL o acciones de SA se declaran bajo 'Acciones y Participaciones Societarias Art. 25.1' y son NO COMPUTABLES (alícuota 0%) en cabeza del socio porque las ingresa la empresa como Responsable Sustituto con F. 8115.",
+        "Cajas de ahorro en pesos y dólares y plazos fijos están 100% EXENTOS por el Art. 21 de la Ley 23.966.",
+        "Mínimo No Imponible Ley 27.743: $100.000.000 general, y $350.000.000 para casa habitación."
+      ],
+      "logica_historica": "Reemplazó al viejo aplicativo SiAP 'Bienes Personales'. Mantiene idénticos conceptos de valuación fiscal de inmuebles y tablas de automotores."
+    },
+    "FACTURACION_COMPROBANTES_EN_LINEA_RCEL": {
+      "nombre": "Comprobantes en Línea (RCEL)",
+      "url_base": "https://fe.afip.gob.ar/rcel/",
+      "tecnologia": "Java Web legacy con popups y selección de empresa representada",
+      "rutas_internas_criticas": {
+        "empresa_representada": "Primer paso obligatorio: elegir si se opera como persona humana o para una sociedad representada.",
+        "punto_de_venta": "Paso 2: Elegir Punto de Venta electrónico habilitado (Tipo 'Factura Electrónica - Monotributo' o 'Factura Electrónica - Web Services').",
+        "datos_comprobante": "Paso 3: Concepto (Servicios, Productos o ambos). Período facturado y vencimiento del pago.",
+        "datos_receptor": "Paso 4: CUIT del cliente. El sistema consulta el padrón en línea y auto-completa la Razón Social.",
+        "emision_final": "Paso 5: Resumen previo. Tras presionar 'Confirmar', ARCA asigna el CAE (Código de Autorización Electrónico) y el Código QR."
+      },
+      "logica_historica": "El servicio utiliza llamadas AJAX ('actualizarDescripcionPVConDelay') que requieren esperar el refresh antes de seleccionar la letra del comprobante."
+    },
+    "IVA_F2002_Y_LIBRO_DIGITAL": {
+      "nombre": "Declaración Jurada de IVA (F. 2002) y Libro de IVA Digital",
+      "url_base": "https://iva.afip.gob.ar/",
+      "tecnologia": "Portal IVA y Aplicativo F. 2002 Web",
+      "rutas_internas_criticas": {
+        "libro_iva_digital": "RG 4597: Importación de comprobantes de ventas y compras emitidos en el mes.",
+        "f2002_debito_credito": "Cálculo del Débito Fiscal menos Crédito Fiscal.",
+        "saldos_primer_parrafo": "Saldo técnico a favor de ARCA o del contribuyente (Art. 24 primer párrafo Ley de IVA).",
+        "saldos_segundo_parrafo": "Saldo de Libre Disponibilidad por retenciones y percepciones bancarias (Art. 24 segundo párrafo)."
+      },
+      "logica_historica": "Reemplazó al Régimen Informativo de Compras y Ventas (CITI Ventas / CITI Compras). Exige cerrar primero el Libro Digital para poder habilitar la presentación del F. 2002."
+    },
+    "MONOTRIBUTO_PORTAL": {
+      "nombre": "Portal Oficial de Monotributo",
+      "url_base": "https://monotributo.afip.gob.ar/",
+      "rutas_internas_criticas": {
+        "admin_mono": "Ficha del contribuyente: categoría actual, facturación acumulada 12 meses y límite de escala.",
+        "recategorizacion": "Habilitado en Enero y Julio para evaluar ingresos de los últimos 12 meses.",
+        "pagos": "Generación de VEP / QR interoperable para pago en bancos o billeteras virtuales."
+      }
+    }
+  }
+}
