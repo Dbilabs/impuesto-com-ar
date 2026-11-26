@@ -797,6 +797,7 @@ def run_mcp_tool(
         return {
             "ok": True,
             "usuario": actor_email,
+            "es_owner_plataforma": es_admin_plataforma(actor_email),
             "origen_llm": origen_llm,
             "empresas_vinculadas": autorizados,
             "cuits_representados_detectados": representadas,

@@ -632,14 +632,14 @@ const MCP_TOOLS = [
   },
   {
     name: "generar_automatizaciones_y_calendario_fiscal",
-    description: "Genera el calendario fiscal personalizado por terminación de CUIT (0-9) y perfil, con automatizaciones, tareas programadas y recordatorios listos para activar en Claude, ChatGPT (Tasks), Gemini/Antigravity (/schedule), Copilot y archivo .ics universal (Google/Apple/Outlook Calendar).",
+    description: "Genera las Tareas Programadas / Automatizaciones nativas del LLM personalizadas por tipo de usuario (monotributo, responsable_inscripto, pyme_sociedad, empleado_relacion_dependencia, estudio_contable u owner_plataforma) y terminación de CUIT (0-9).",
     inputSchema: {
       type: "object",
       properties: {
         perfil: {
           type: "string",
-          enum: ["monotributo", "responsable_inscripto", "pyme_sociedad", "empleado_relacion_dependencia", "estudio_contable"],
-          description: "Perfil del contribuyente o estudio"
+          enum: ["monotributo", "responsable_inscripto", "pyme_sociedad", "empleado_relacion_dependencia", "estudio_contable", "owner_plataforma"],
+          description: "Tipo de usuario: monotributo, responsable_inscripto, pyme_sociedad (empresa), estudio_contable u owner_plataforma (dueño de impuesto.com.ar)"
         },
         cuit: { type: "string", description: "CUIT del contribuyente (opcional; determina los días exactos de vencimiento de IVA, F. 931 y Autónomos)" },
         cliente_ia: {
@@ -2513,6 +2513,7 @@ export async function onRequest({ request, env, params }) {
             if (dEmp && dEmp.ok && dEmp.usuario && Array.isArray(dEmp.empresas_vinculadas) && dEmp.empresas_vinculadas.length > 0) {
               cuentaAutenticada = {
                 usuario: dEmp.usuario,
+                es_owner_plataforma: Boolean(dEmp.es_owner_plataforma),
                 empresas: dEmp.empresas_vinculadas
               };
             }
@@ -2528,16 +2529,20 @@ export async function onRequest({ request, env, params }) {
           const listaCuits = cuentaAutenticada.empresas
             .map(e => `- CUIT **${e.cuit}** (${e.alias || "Contribuyente"} · rol: ${e.rol || "owner"} · modo solo lectura activo)`)
             .join("\n");
+          const bloqueOwner = cuentaAutenticada.es_owner_plataforma
+            ? "\n- **Modo Super-Admin Owner de impuesto.com.ar DETECTADO:** Además de operar como tu Contador de Cabecera personal, tenés habilitado tu **Backoffice SaaS completo** (`admin_tablero_plataforma`, `admin_metricas_growth_saas`, `admin_detectar_oportunidades_y_riesgo`, `admin_listar_clientes_plataforma`, `admin_gestionar_suscripcion_cliente`, `admin_gestionar_feature_flags_y_limites`, `admin_gestionar_cupones_y_referidos`, `admin_gestionar_soporte_y_anuncios`, `admin_exportar_reporte_inversor_markdown`) y automatizaciones de perfil `owner_plataforma`."
+            : "";
           const promptAutenticado = [
             "# Orden Maestra — Usuario YA Autenticado y Vinculado (CERO FRICCIÓN)",
             `El usuario **YA está autenticado** como \`${cuentaAutenticada.usuario}\` desde **${llmPlataforma.toUpperCase()}** y tiene los siguientes CUITs vinculados y listos en la bóveda cifrada:`,
-            listaCuits,
+            listaCuits + bloqueOwner,
             "",
             "## Reglas obligatorias para tu respuesta ahora:",
             "1. **PROHIBIDO** pedirle que se vincule en `impuesto.com.ar/vincular`, **PROHIBIDO** volver a pedirle el CUIT, y **PROHIBIDO** mandarlo a Google Calendar, archivos `.ics`, crear Gems/Projects o copiar prompts.",
             "2. Saludalo breve y ejecutivamente como su Contador de Cabecera y CFO confirmando en 1 línea que ya estás conectado a su cuenta y CUIT(s) arriba listados, con memoria compartida automática entre sesiones y asistentes.",
-            "3. Ofrecele directamente 3–4 acciones concretas para elegir ahora: **(1) Auditoría 360° en ARCA** (aclarando que demora 1 a 10 min en segundo plano), **(2) Activar tus tareas programadas automáticas acá mismo** (Lunes DFE, Día 14 planes, Día 18 cuota/IVA, Día 1 apertura de mes — creadas con las Acciones Programadas / Tasks nativas de este asistente), **(3) Emitir o revisar facturas y DFE**, o **(4) Autorizar a un socio o contador por email**.",
-            "4. Si el usuario ya pidió algo concreto en su primer mensaje, **ejecutalo directamente** sin repreguntar."
+            "3. **Adaptá siempre las opciones y tareas programadas a su tipo exacto de usuario** (`monotributo`, `responsable_inscripto`, `pyme_sociedad` / empresa, `estudio_contable`, o `owner_plataforma` si es Super-Admin). Si aún no sabemos su régimen exacto, preguntalo en 1 línea o inferilo de su perfil/auditoría.",
+            "4. Ofrecele directamente elegir por dónde arrancar hoy: **(1) Auditoría 360° en ARCA** (1 a 10 min en segundo plano), **(2) Activar tus tareas programadas automáticas acá mismo** (adaptadas a Mono / RI / Empresa / Estudio" + (cuentaAutenticada.es_owner_plataforma ? " / Backoffice Owner" : "") + "), **(3) Emitir o revisar facturas y DFE**" + (cuentaAutenticada.es_owner_plataforma ? ", o **(4) Abrir Backoffice SaaS & Growth de impuesto.com.ar** (MRR, clientes, upsell/churn, flags)" : ", o **(4) Autorizar a un socio o contador por email**") + ".",
+            "5. Si el usuario ya pidió algo concreto en su primer mensaje, **ejecutalo directamente** sin repreguntar."
           ].join("\n");
 
           const orgAnual = PROMPTS_MAESTROS["06-organizacion-relacion-anual"] || "";
@@ -2610,6 +2615,11 @@ export async function onRequest({ request, env, params }) {
             { id: "estudio_lunes", titulo: "Tablero Semanal de Vencimientos y DFE Multi-Cliente", cadencia: "Semanal — Lunes 08:30", cron: "30 8 * * 1", prompt: "Abrí `tablero_cartera_estudio` y listame los clientes con vencimientos esta semana, alertas de desvíos >30% y novedades DFE." },
             { id: "estudio_docs", titulo: "Pedido de Documentación a Clientes", cadencia: "Mensual — Día 2", cron: "0 9 2 * *", prompt: "Generá los mensajes de solicitud de extractos bancarios, tarjetas y novedades de nómina para los clientes de la cartera." },
             { id: "estudio_aprobacion", titulo: "Revisión Socio y Reportes Marca Blanca", cadencia: "Mensual — Día 17", cron: "0 10 17 * *", prompt: "Mostrame los cierres en estado 'pendiente_revision_socio' con alertas rojas para aprobar en bloque y emitir reportes Marca Blanca." }
+          ],
+          owner_plataforma: [
+            { id: "owner_pulso_diario", titulo: "Pulso Operativo Diario de impuesto.com.ar", cadencia: "Diario — Lunes a Viernes 08:30", cron: "30 8 * * 1-5", prompt: "Abrí `admin_tablero_plataforma` y `admin_gestionar_soporte_y_anuncios` (listar_tickets): resumime usuarios nuevos, uso por LLM, tickets abiertos y salud del servidor Oracle." },
+            { id: "owner_revops_semanal", titulo: "Radar RevOps Semanal (MRR, Upsell y Churn)", cadencia: "Semanal — Lunes 09:00", cron: "0 9 * * 1", prompt: "Ejecutá `admin_metricas_growth_saas` y `admin_detectar_oportunidades_y_riesgo`: mostrame evolución de MRR/ARR, DAU/WAU/MAU, oportunidades de upsell y cuentas en riesgo de churn." },
+            { id: "owner_reporte_mensual", titulo: "Reporte Ejecutivo / Investor Update Mensual", cadencia: "Mensual — Día 1 a las 09:00", cron: "0 9 1 * *", prompt: "Generá `admin_exportar_reporte_inversor_markdown` y revisá `admin_gestionar_feature_flags_y_limites` y `admin_gestionar_cupones_y_referidos` para el cierre del mes." }
           ]
         };
 
