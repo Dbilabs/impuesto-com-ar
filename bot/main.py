@@ -847,6 +847,7 @@ def run_mcp_tool(
             ambiente=args.get("ambiente", "homologacion"),
             confirmado=bool(args.get("confirmado", False)),
             cbte_asoc=args.get("cbte_asoc"),
+            condicion_iva_receptor_id=args.get("condicion_iva_receptor_id"),
         )
         if bool(args.get("confirmado", False)):
             registrar_evento_historial(actor_email, cuit, origen_llm, "emitir_factura_wsfe", f"Factura WSFE a {args.get('receptor_cuit','')} por ${args.get('importe_neto',0)}")

@@ -314,12 +314,26 @@ def emitir_comprobante_wsfe(
     key_path: Optional[str] = None,
     confirmado: bool = False,
     cbte_asoc: Optional[Dict[str, Any]] = None,
+    condicion_iva_receptor_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Prepara o emite comprobantes electrónicos oficiales (Facturas A/B/C/E/M/FCE, Notas de Crédito y Notas de Débito)
-    desde cualquier Punto de Venta vía WSFEv1 (FECAESolicitar).
+    desde cualquier Punto de Venta vía WSFEv1 (FECAESolicitar), incluyendo CondicionIVAReceptorId obligatorio (RG 5616).
     Si confirmado=False devuelve el borrador completo sin impactar en ARCA.
     """
+    CONDICIONES_IVA_RECEPTOR = {
+        1: "IVA Responsable Inscripto",
+        4: "IVA Sujeto Exento",
+        5: "Consumidor Final",
+        6: "Responsable Monotributo",
+        7: "Sujeto No Categorizado",
+        8: "Proveedor del Exterior",
+        9: "Cliente del Exterior",
+        10: "IVA Liberado – Ley Nº 19.640",
+        13: "Monotributista Social",
+        15: "IVA No Alcanzado",
+        16: "Monotributo Trabajador Independiente Promovido",
+    }
     CBTE_NOMBRES = {
         1: "Factura A", 2: "Nota de Débito A", 3: "Nota de Crédito A",
         6: "Factura B", 7: "Nota de Débito B", 8: "Nota de Crédito B",
@@ -338,6 +352,8 @@ def emitir_comprobante_wsfe(
     imp_total = round(importe_neto + importe_iva, 2)
     hoy = datetime.datetime.now().strftime("%Y%m%d")
 
+    cond_iva_id = condicion_iva_receptor_id if condicion_iva_receptor_id is not None else (5 if doc_tipo == 99 else None)
+
     borrador = {
         "modo": "BORRADOR_SIN_IMPACTO" if not confirmado else "EMISION_OFICIAL_WSFEV1",
         "ambiente": ambiente,
@@ -348,12 +364,20 @@ def emitir_comprobante_wsfe(
         "comprobante_asociado": cbte_asoc,
         "receptor_doc_tipo": doc_tipo,
         "receptor_doc_nro": doc_nro,
+        "condicion_iva_receptor_id": cond_iva_id,
+        "condicion_iva_receptor_nombre": CONDICIONES_IVA_RECEPTOR.get(cond_iva_id) if cond_iva_id else "PENDIENTE_CONSULTA_PADRON",
         "concepto": concepto,
         "fecha": hoy,
         "importe_neto": round(importe_neto, 2),
         "importe_iva": round(importe_iva, 2),
         "importe_total": imp_total
     }
+    if cond_iva_id is None:
+        borrador["advertencia_rg5616"] = (
+            "Obligatorio por ARCA (RG 5616): informar `condicion_iva_receptor_id` "
+            "(1=RI, 4=Exento, 5=Consumidor Final, 6=Monotributo, 9=Exterior, 15=No Alcanzado). "
+            "Consultá el CUIT del receptor en Padrón A5 (`consultar_padron_cuit_ws`) antes de emitir."
+        )
     if cbte_tipo in TIPOS_NC_ND and not cbte_asoc:
         borrador["advertencia_nc_nd"] = (
             "ARCA exige informar el comprobante original asociado (`cbte_asoc: {tipo, pto_vta, nro}`) "
@@ -410,6 +434,8 @@ def emitir_comprobante_wsfe(
             </ar:CbteAsoc>
           </ar:CbtesAsoc>"""
 
+    cond_iva_block = f"<ar:CondicionIVAReceptorId>{int(cond_iva_id)}</ar:CondicionIVAReceptorId>" if cond_iva_id is not None else ""
+
     env_key = "homologacion" if "homo" in ambiente.lower() else "produccion"
     soap = f"""<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ar="http://ar.gov.afip.dif.FEV1/">
@@ -444,6 +470,7 @@ def emitir_comprobante_wsfe(
                   {fechas_serv}
                   <ar:MonId>PES</ar:MonId>
                   <ar:MonCotiz>1</ar:MonCotiz>
+                  {cond_iva_block}
                   {asoc_block}
                   {iva_block}
                </ar:FECAEDetRequest>

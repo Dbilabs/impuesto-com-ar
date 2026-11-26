@@ -396,6 +396,10 @@ const MCP_TOOLS = [
           description: "Código oficial ARCA: 1=Fact A, 2=ND A, 3=NC A, 6=Fact B, 7=ND B, 8=NC B, 11=Fact C, 12=ND C, 13=NC C, 19=Fact E, 20=ND E, 21=NC E, 51=Fact M, 52=ND M, 53=NC M, 201=FCE A, 202=ND FCE A, 203=NC FCE A, 206=FCE B, 211=FCE C"
         },
         receptor_cuit: { type: "string", description: "CUIT/CUIL/DNI del cliente receptor" },
+        condicion_iva_receptor_id: {
+          type: "integer",
+          description: "OBLIGATORIO ARCA (RG 5616): condición frente al IVA del receptor (1=IVA Responsable Inscripto, 4=IVA Sujeto Exento, 5=Consumidor Final, 6=Responsable Monotributo, 7=No Categorizado, 8=Proveedor Exterior, 9=Cliente Exterior, 10=IVA Liberado, 13=Monotributista Social, 15=IVA No Alcanzado, 16=Monotributo Promovido)"
+        },
         importe_neto: { type: "number" },
         importe_iva: { type: "number", default: 0 },
         concepto: { type: "integer", default: 2, description: "1=Productos, 2=Servicios, 3=Ambos" },
