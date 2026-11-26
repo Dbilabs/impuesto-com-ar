@@ -1,14 +1,14 @@
 """
 bot/main.py
-Microservicio Backend Headless de impuesto.com.ar (BOT_API_URL).
+Microservicio Backend Headless Multi-Tenant de impuesto.com.ar (BOT_API_URL).
 
 Expone:
   - GET  /health                    -> Estado del servicio
-  - GET  /vincular                  -> Portal cifrado de vinculación única (WSAA o Solo Lectura)
-  - POST /api/v1/vincular           -> Guarda credenciales/certificados cifrados (AES + HMAC-SHA256)
+  - GET  /vincular                  -> Portal cifrado de vinculación única + generación de Token Multi-LLM
+  - POST /api/v1/vincular           -> Guarda credenciales cifradas (AES+HMAC), asigna Owner y emite Token personal
   - GET  /api/v1/vincular/{cuit}    -> Verifica estado de vinculación (nunca expone secretos)
   - DELETE /api/v1/vincular/{cuit}  -> Revoca acceso en 1 clic
-  - POST /api/v1/mcp/tool           -> Ejecutor headless llamado por los 8 subdominios MCP
+  - POST /api/v1/mcp/tool           -> Ejecutor headless con aislamiento estricto por Email/Token e Historial Cross-LLM
   - POST /api/v1/automations        -> Compatibilidad con jobs asíncronos de Mis Comprobantes
 """
 
@@ -29,15 +29,24 @@ from .boveda_segura import (
     obtener_credenciales_descifradas,
     estado_vinculacion,
     revocar_credenciales,
-    listar_cuits_vinculados,
+    listar_cuits_autorizados,
+    crear_token_usuario,
+    resolver_email_por_token,
+    verificar_permiso_cuit,
+    autorizar_usuario_cuit,
+    revocar_usuario_cuit,
+    listar_accesos_cuit,
+    registrar_evento_historial,
+    obtener_historial_actividad,
     normalizar_cuit,
+    normalizar_email,
 )
 from .auditoria_unificada import auditar_estado_integral_arca
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("arca_api")
 
-app = FastAPI(title="impuesto.com.ar — ARCA Headless Engine", version="2.3.0")
+app = FastAPI(title="impuesto.com.ar — ARCA Headless Multi-Tenant Engine", version="3.0.0")
 executor = ThreadPoolExecutor(max_workers=4)
 jobs: Dict[str, Dict[str, Any]] = {}
 
@@ -67,8 +76,10 @@ class StartRequest(BaseModel):
 
 
 class VincularRequest(BaseModel):
-    cuit: str
+    cuit: Optional[str] = ""
     clave_fiscal: Optional[str] = None
+    email: Optional[str] = ""
+    etiqueta_token: Optional[str] = "principal"
     modo: str = "solo_lectura_cifrada"
     cert_pem: Optional[str] = None
     key_pem: Optional[str] = None
@@ -86,40 +97,81 @@ def _check_secret(x_bot_secret: Optional[str]):
         raise HTTPException(status_code=401, detail="Unauthorized BOT_API_SECRET")
 
 
-def _resolve_creds(args: Dict[str, Any], public_base_url: str):
-    cuit = normalizar_cuit(args.get("cuit") or args.get("cuit_empresa") or args.get("cuit_emisor") or args.get("usuario") or "")
+def _auth_required_error(public_base: str) -> Dict[str, Any]:
+    return {
+        "ok": False,
+        "requiere_autenticacion": True,
+        "acceso_denegado": True,
+        "mensaje": (
+            "Por seguridad multi-usuario, para consultar tu bóveda o ARCA necesitás conectarte con tu URL privada "
+            "(con tu token personal ligado a tu email). "
+            f"Generala en 10 segundos en {public_base}/vincular y pegala en Gemini, Claude o ChatGPT. "
+            "Así solo vos (y los emails que vos autorices) pueden ver tus CUITs y tu historial compartido."
+        ),
+        "url_vinculacion_segura": f"{public_base}/vincular",
+    }
+
+
+def _resolve_creds_authorized(
+    actor_email: str,
+    args: Dict[str, Any],
+    public_base_url: str,
+    nivel: str = "lectura",
+):
+    """Resuelve CUIT + Clave Fiscal verificando SIEMPRE que `actor_email` sea Owner o invitado autorizado."""
+    cuit = normalizar_cuit(
+        args.get("cuit")
+        or args.get("cuit_empresa")
+        or args.get("cuit_emisor")
+        or args.get("usuario")
+        or ""
+    )
     if not cuit:
-        try:
-            vinculados = listar_cuits_vinculados()
-            if len(vinculados) == 1:
-                cuit = vinculados[0]["cuit"]
-        except Exception:
-            pass
-    if not cuit:
-        return None, None, {
+        autorizados = listar_cuits_autorizados(actor_email)
+        if len(autorizados) == 1:
+            cuit = autorizados[0]["cuit"]
+        elif len(autorizados) > 1:
+            return None, None, {
+                "ok": False,
+                "requiere_seleccion_cuit": True,
+                "usuario": actor_email,
+                "cuits_disponibles": [{"cuit": x["cuit"], "rol": x["rol"], "alias": x["alias"]} for x in autorizados],
+                "mensaje": "Tenés más de un CUIT autorizado en tu cuenta. Indicame cuál querés consultar.",
+            }
+        else:
+            return None, None, {
+                "ok": False,
+                "requiere_vinculacion": True,
+                "usuario": actor_email,
+                "mensaje": f"Tu cuenta ({actor_email}) todavía no tiene ningún CUIT vinculado ni autorizado. Vinculá tu CUIT en {public_base_url}/vincular o pedile al Owner que te autorice por email.",
+                "url_vinculacion_segura": f"{public_base_url}/vincular",
+            }
+
+    ok_perm, role, reason = verificar_permiso_cuit(actor_email, cuit, nivel=nivel)
+    if not ok_perm:
+        return cuit, None, {
             "ok": False,
-            "requiere_vinculacion": True,
-            "mensaje": "Indicame tu CUIT (11 dígitos) para consultar en modo solo lectura desde la bóveda segura.",
-            "url_vinculacion_segura": f"{public_base_url}/vincular",
+            "acceso_denegado": True,
+            "cuit": cuit,
+            "usuario": actor_email,
+            "mensaje": reason,
+            "url_vinculacion_segura": f"{public_base_url}/vincular?cuit={cuit}",
         }
+
     rec = obtener_credenciales_descifradas(cuit)
     if rec and rec.get("clave_fiscal"):
         return cuit, rec["clave_fiscal"], None
+
     return cuit, None, {
         "ok": False,
         "requiere_vinculacion": True,
         "cuit": cuit,
-        "mensaje": (
-            f"El CUIT {cuit} todavía no está vinculado a tu bóveda segura. "
-            f"Vinculalo una sola vez en {public_base_url}/vincular (cifrado AES + modo solo lectura, "
-            "o mediante Certificado Digital WSAA sin compartir tu Clave Fiscal). "
-            "Así todas tus consultas corren en segundo plano dentro del chat, sin abrir nunca Chrome."
-        ),
+        "mensaje": f"El CUIT {cuit} no tiene credenciales activas en la bóveda. Vinculalo en {public_base_url}/vincular?cuit={cuit}.",
         "url_vinculacion_segura": f"{public_base_url}/vincular?cuit={cuit}",
     }
 
 
-def _run_auditoria_background(cuit: str, clave: str, entry: Dict[str, Any]) -> None:
+def _run_auditoria_background(cuit: str, clave: str, entry: Dict[str, Any], actor_email: str = "", origen_llm: str = "mcp") -> None:
     try:
         res = auditar_estado_integral_arca(cuit=cuit, clave=clave)
         now = time.time()
@@ -129,6 +181,17 @@ def _run_auditoria_background(cuit: str, clave: str, entry: Dict[str, Any]) -> N
             if isinstance(res, dict) and res.get("ok") is not False:
                 AUDIT_CACHE[cuit] = {"ts": now, "data": res}
             AUDIT_INFLIGHT.pop(cuit, None)
+        if actor_email:
+            ccma_deuda = ((res or {}).get("ccma") or {}).get("saldo_deudor_vencido", 0)
+            planes = ((res or {}).get("mis_facilidades") or {}).get("cantidad_planes_vigentes", 0)
+            registrar_evento_historial(
+                email=actor_email,
+                cuit=cuit,
+                origen_llm=origen_llm,
+                accion="auditoria_360_completada",
+                titulo=f"Auditoría 360° ARCA completada (CUIT {cuit})",
+                detalle=f"CCMA vencido: ${ccma_deuda} · Planes vigentes Mis Facilidades: {planes}",
+            )
     except Exception as e:
         logger.exception(f"Error en auditoria_unificada background para {cuit}")
         with _audit_lock:
@@ -139,8 +202,14 @@ def _run_auditoria_background(cuit: str, clave: str, entry: Dict[str, Any]) -> N
         entry["event"].set()
 
 
-def _ejecutar_auditoria_sin_timeout(cuit: str, clave: str, forzar_refresco: bool = False) -> Dict[str, Any]:
-    """Ejecuta la auditoría 360° con caché de 15 min y espera máx. de 18s para evitar timeouts en Gemini Online / Cloudflare."""
+def _ejecutar_auditoria_sin_timeout(
+    cuit: str,
+    clave: str,
+    forzar_refresco: bool = False,
+    actor_email: str = "",
+    origen_llm: str = "mcp",
+) -> Dict[str, Any]:
+    """Ejecuta la auditoría 360° con caché de 15 min y espera máx. de 6s para evitar timeouts en Gemini Online / Cloudflare."""
     now = time.time()
     with _audit_lock:
         cached = AUDIT_CACHE.get(cuit)
@@ -158,7 +227,7 @@ def _ejecutar_auditoria_sin_timeout(cuit: str, clave: str, forzar_refresco: bool
                 "result": None,
             }
             AUDIT_INFLIGHT[cuit] = inflight
-            executor.submit(_run_auditoria_background, cuit, clave, inflight)
+            executor.submit(_run_auditoria_background, cuit, clave, inflight, actor_email, origen_llm)
 
     finished = inflight["event"].wait(timeout=AUDIT_SYNC_WAIT_SEC)
     if finished and inflight.get("result") is not None:
@@ -192,8 +261,8 @@ def health():
         i_count = len(AUDIT_INFLIGHT)
     return {
         "status": "ok",
-        "version": "2.3.0",
-        "mode": "headless_vault",
+        "version": "3.0.0",
+        "mode": "headless_vault_multitenant",
         "active_jobs": len(jobs),
         "cached_audits": c_count,
         "inflight_audits": i_count,
@@ -209,66 +278,102 @@ def vincular_page(cuit: str = "", tipo: str = ""):
 <html lang="es-AR">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Vinculación Segura ARCA — impuesto.com.ar</title>
+<title>Vinculación Segura Multi-LLM — impuesto.com.ar</title>
 <style>
 :root{{--ink:#0B1320;--muted:#475467;--line:#E3E7EC;--bg:#F8FAFC;--acc:#0B6E4F;--acc2:#074F39;--tint:#E7F5EF;--font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}}
-*{{box-sizing:border-box}} body{{margin:0;font-family:var(--font);color:var(--ink);background:var(--bg);padding:40px 20px;line-height:1.6}}
-.card{{max-width:560px;margin:0 auto;background:#fff;border:1px solid var(--line);border-radius:18px;padding:34px;box-shadow:0 14px 36px rgba(15,27,45,.07)}}
+*{{box-sizing:border-box}} body{{margin:0;font-family:var(--font);color:var(--ink);background:var(--bg);padding:36px 18px;line-height:1.55}}
+.card{{max-width:620px;margin:0 auto;background:#fff;border:1px solid var(--line);border-radius:18px;padding:34px;box-shadow:0 14px 36px rgba(15,27,45,.07)}}
 .badge{{background:var(--tint);color:var(--acc2);font-weight:700;font-size:12px;padding:4px 12px;border-radius:99px;display:inline-block;margin-bottom:12px}}
-h1{{margin:0 0 8px;font-size:25px;letter-spacing:-.02em}} p{{color:var(--muted);font-size:14.5px;margin:0 0 20px}}
+h1{{margin:0 0 8px;font-size:24px;letter-spacing:-.02em}} p{{color:var(--muted);font-size:14.5px;margin:0 0 18px}}
 label{{display:block;font-weight:600;font-size:13.5px;margin:12px 0 6px}}
-input,select{{width:100%;padding:11px 13px;border:1px solid #CBD5E1;border-radius:10px;font-size:15px}}
+input,select{{width:100%;padding:11px 13px;border:1px solid #CBD5E1;border-radius:10px;font-size:14.5px}}
 .btn{{margin-top:20px;width:100%;background:var(--acc);color:#fff;border:0;padding:13px;border-radius:10px;font-weight:700;font-size:15px;cursor:pointer}}
 .btn:hover{{background:var(--acc2)}}
 .sec{{margin-top:18px;background:#F8FAFC;border:1px solid var(--line);border-radius:12px;padding:14px;font-size:13px;color:var(--muted)}}
 .sec strong{{color:var(--ink)}} #msg{{margin-top:14px;font-weight:600;font-size:14px}}
+.urls{{margin-top:16px;display:none;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:12px;padding:16px}}
+.url-row{{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fff;border:1px solid #D1FAE5;border-radius:8px;padding:8px 10px;margin-top:8px;font-size:12.5px;font-family:ui-monospace,monospace}}
+.copy{{background:var(--acc);color:#fff;border:0;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}}
 </style>
 </head>
 <body>
 <div class="card">
-  <span class="badge">🔒 Bóveda Cifrada AES-256 · Modo Solo Lectura</span>
-  <h1>Vinculá tu CUIT con impuesto.com.ar</h1>
-  <p>Vinculá tu acceso una sola vez (contribuyente individual, PyME o Estudio Contable) para que tu Contador Agéntico en Claude, ChatGPT o Gemini audite ARCA 100% en segundo plano dentro del chat, sin abrir nunca ventanas emergentes.</p>
+  <span class="badge">🔒 Bóveda Multi-Tenant AES-256 · Tu Cuenta Única para Todos los LLMs</span>
+  <h1>Conectá tu cuenta de impuesto.com.ar</h1>
+  <p>Tu email es tu identidad única (como GitHub): vinculás tu CUIT una sola vez, obtenés tu enlace privado para Claude, ChatGPT, Gemini, Copilot o Cursor con <strong>historial compartido</strong>, y podés autorizar socios o analistas por email desde el chat sin compartir tu Clave Fiscal.</p>
   <form id="f">
-    <label>CUIT (personal, sociedad o CUIT del Estudio Contable)</label>
-    <input id="cuit" name="cuit" value="{cuit_val}" placeholder="20301234567" required maxlength="13">
-    <label>Tipo de vinculación</label>
-    <select id="modo" name="modo">
-      <option value="solo_lectura_cifrada">Contribuyente / PyME — Modo Solo Lectura Cifrado</option>
-      <option value="estudio_contable_delegado" {sel_estudio}>Estudio Contable B2B — Cartera Multi-Cliente (vía delegaciones ARCA)</option>
-      <option value="delegacion_wsaa">Certificado Digital WSAA (sin Clave Fiscal)</option>
+    <label>Tu Email (dueño de la cuenta o email invitado)</label>
+    <input id="email" name="email" type="email" placeholder="nombre@empresa.com" required>
+    <label>Operación</label>
+    <select id="modo" name="modo" onchange="toggleArca()">
+      <option value="solo_lectura_cifrada">Vincular CUIT nuevo / actualizar Clave Fiscal (Modo Solo Lectura)</option>
+      <option value="estudio_contable_delegado" {sel_estudio}>Estudio Contable B2B — Cartera Multi-Cliente</option>
+      <option value="solo_token_llm">Ya tengo CUIT vinculado (o me invitaron por email) — Solo generar mi Token para otro LLM</option>
     </select>
-    <label>Clave Fiscal ARCA (cifrada en reposo, nunca visible en el chat)</label>
-    <input id="clave" name="clave_fiscal" type="password" placeholder="••••••••" required>
-    <button class="btn" type="submit">Vincular de forma segura</button>
+    <div id="arcaFields">
+      <label>CUIT (11 dígitos)</label>
+      <input id="cuit" name="cuit" value="{cuit_val}" placeholder="20301234567" maxlength="13">
+      <label>Clave Fiscal ARCA (cifrada en reposo, nunca visible en el chat)</label>
+      <input id="clave" name="clave_fiscal" type="password" placeholder="••••••••">
+    </div>
+    <label>Etiqueta del dispositivo / LLM (opcional)</label>
+    <input id="label" name="etiqueta_token" placeholder="Ej: Gemini personal, Claude trabajo, ChatGPT">
+    <button class="btn" type="submit">Vincular y generar mis enlaces privados</button>
     <div id="msg"></div>
   </form>
+  <div id="urls" class="urls">
+    <strong>✅ ¡Listo! Copiá tu enlace privado para el asistente que quieras usar:</strong>
+    <div style="font-size:12.5px;color:#166534;margin-top:4px">Guardá este enlace en un lugar seguro. Podés usar el mismo en todos tus LLMs y mantener un historial unificado.</div>
+    <div id="urlList"></div>
+  </div>
   <div class="sec">
-    <strong>Garantías de seguridad:</strong><br>
-    • Cifrado en reposo AES + HMAC-SHA256.<br>
-    • Operación 100% solo lectura por defecto (ninguna factura, DDJJ ni plan se envía sin tu confirmación explícita).<br>
-    • Podés revocar el acceso en cualquier momento con un clic o cambiando tu Clave Fiscal en ARCA.
+    <strong>Garantías de seguridad Multi-Tenant:</strong><br>
+    • Aislamiento estricto: ningún otro usuario puede consultar tu CUIT aunque conozca el número.<br>
+    • Cifrado en reposo AES + HMAC-SHA256; tokens guardados solo como hash SHA-256.<br>
+    • Desde el chat podés autorizar o revocar socios/analistas por email en 1 segundo.
   </div>
 </div>
 <script>
+function toggleArca() {{
+  const m = document.getElementById('modo').value;
+  document.getElementById('arcaFields').style.display = (m === 'solo_token_llm') ? 'none' : 'block';
+}}
 document.getElementById('f').addEventListener('submit', async (e) => {{
   e.preventDefault();
   const msg = document.getElementById('msg');
-  msg.textContent = 'Cifrando y guardando...';
+  const urlsBox = document.getElementById('urls');
+  urlsBox.style.display = 'none';
+  msg.style.color = '#0B1320';
+  msg.textContent = 'Cifrando y generando acceso privado...';
   const res = await fetch('/api/v1/vincular', {{
     method: 'POST',
     headers: {{'Content-Type': 'application/json'}},
     body: JSON.stringify({{
+      email: document.getElementById('email').value,
       cuit: document.getElementById('cuit').value,
       modo: document.getElementById('modo').value,
-      clave_fiscal: document.getElementById('clave').value
+      clave_fiscal: document.getElementById('clave').value,
+      etiqueta_token: document.getElementById('label').value || 'web'
     }})
   }});
   const data = await res.json();
   if (data.ok) {{
     msg.style.color = '#0B6E4F';
-    msg.textContent = '✅ CUIT ' + data.cuit + ' vinculado con cifrado seguro. Volvé a tu chat en Claude/ChatGPT y decile: "Ya vinculé mi CUIT, hagamos la auditoría 360°".';
+    msg.textContent = '✅ Cuenta ' + (data.email || '') + (data.cuit ? ' · CUIT ' + data.cuit : '') + ' protegida con aislamiento privado.';
     document.getElementById('clave').value = '';
+    if (data.urls_privadas_mcp) {{
+      const list = document.getElementById('urlList');
+      list.innerHTML = '';
+      for (const [k, u] of Object.entries(data.urls_privadas_mcp)) {{
+        const row = document.createElement('div');
+        row.className = 'url-row';
+        row.innerHTML = '<span style="overflow:hidden;text-overflow:ellipsis">' + k.toUpperCase() + ': ' + u + '</span>' +
+          '<button type="button" class="copy">Copiar</button>';
+        row.querySelector('button').onclick = () => {{ navigator.clipboard.writeText(u); row.querySelector('button').textContent = '¡Copiado!'; }};
+        list.appendChild(row);
+      }}
+      urlsBox.style.display = 'block';
+    }}
   }} else {{
     msg.style.color = '#B42318';
     msg.textContent = '❌ ' + (data.error || 'Error al vincular');
@@ -281,14 +386,50 @@ document.getElementById('f').addEventListener('submit', async (e) => {{
 
 @app.post("/api/v1/vincular")
 def api_vincular(req: VincularRequest):
-    return guardar_credenciales_cifradas(
-        cuit=req.cuit,
-        clave_fiscal=req.clave_fiscal,
-        modo=req.modo,
-        cert_pem=req.cert_pem,
-        key_pem=req.key_pem,
-        alias=req.alias,
-    )
+    email = normalizar_email(req.email or "")
+    res: Dict[str, Any] = {"ok": True}
+
+    if req.modo != "solo_token_llm":
+        res = guardar_credenciales_cifradas(
+            cuit=req.cuit or "",
+            clave_fiscal=req.clave_fiscal,
+            modo=req.modo,
+            cert_pem=req.cert_pem,
+            key_pem=req.key_pem,
+            alias=req.alias,
+            owner_email=email or None,
+        )
+        if not res.get("ok"):
+            return res
+
+    if email:
+        tok = crear_token_usuario(email=email, label=req.etiqueta_token or "principal")
+        if not tok.get("ok"):
+            return tok
+        t = tok["token"]
+        res["email"] = email
+        res["token_id"] = tok["token_id"]
+        res["token"] = t
+        res["urls_privadas_mcp"] = {
+            "gemini": f"https://gemini.impuesto.com.ar/?token={t}",
+            "claude": f"https://claude.impuesto.com.ar/?token={t}",
+            "chatgpt": f"https://chatgpt.impuesto.com.ar/?token={t}",
+            "copilot": f"https://copilot.impuesto.com.ar/?token={t}",
+            "cursor": f"https://cursor.impuesto.com.ar/?token={t}",
+        }
+        if res.get("cuit"):
+            registrar_evento_historial(
+                email=email,
+                cuit=res["cuit"],
+                origen_llm="portal_web",
+                accion="vincular_cuit",
+                titulo=f"CUIT {res['cuit']} vinculado bajo propiedad de {email}",
+                detalle=f"Modo: {req.modo} · Token ID: {tok['token_id']}",
+            )
+    elif req.modo == "solo_token_llm":
+        return {"ok": False, "error": "Ingresá tu email para generar tu token personal multi-LLM."}
+
+    return res
 
 
 @app.get("/api/v1/vincular/{cuit}")
@@ -302,14 +443,24 @@ def api_revocar_vincular(cuit: str):
 
 
 @app.post("/api/v1/mcp/tool")
-def run_mcp_tool(req: McpToolRequest, request: Request, x_bot_secret: Optional[str] = Header(default=None)):
+def run_mcp_tool(
+    req: McpToolRequest,
+    request: Request,
+    x_bot_secret: Optional[str] = Header(default=None),
+    x_user_token: Optional[str] = Header(default=None),
+    x_llm_origin: Optional[str] = Header(default="mcp"),
+):
     _check_secret(x_bot_secret)
     tool = req.name
     args = req.arguments or {}
-    logger.info(f"[MCP] tool={tool} keys={list(args.keys())}")
+    origen_llm = (x_llm_origin or "mcp").strip().lower()
     public_base = os.environ.get("PUBLIC_BOT_URL", "https://impuesto.com.ar").rstrip("/")
 
-    # Herramientas sin clave fiscal (públicas / WS)
+    # Resolver identidad multi-tenant del usuario
+    actor_email = resolver_email_por_token(x_user_token)
+    logger.info(f"[MCP] tool={tool} origin={origen_llm} user={actor_email or 'ANON'} keys={list(args.keys())}")
+
+    # Herramientas 100% públicas (no tocan bóveda ni datos de ningún contribuyente)
     if tool == "verificar_estado_servidores_arca_ws":
         from .arca_ws import verificar_estado_servidores_wsfe
         return verificar_estado_servidores_wsfe(ambiente=args.get("ambiente", "produccion"))
@@ -318,33 +469,108 @@ def run_mcp_tool(req: McpToolRequest, request: Request, x_bot_secret: Optional[s
         from .scraper_extras_arca import verificar_proveedor_apocrifo_apoc
         return verificar_proveedor_apocrifo_apoc(args.get("cuit_proveedor", ""))
 
+    # =========================================================================
+    # BARRERA ESTRICTA MULTI-TENANT: a partir de acá EXIGE token válido
+    # =========================================================================
+    if not actor_email:
+        return _auth_required_error(public_base)
+
+    # Herramientas de identidad, permisos (Owner -> invitados) e Historial Cross-LLM
     if tool == "listar_empresas":
-        vinculados = listar_cuits_vinculados()
+        autorizados = listar_cuits_autorizados(actor_email)
         representadas = []
         with _audit_lock:
-            for item in vinculados:
+            for item in autorizados:
                 cached = AUDIT_CACHE.get(item["cuit"])
                 if cached and isinstance(cached.get("data"), dict):
                     sct = cached["data"].get("sct") or {}
                     if isinstance(sct.get("cuits_disponibles"), list):
                         representadas.extend(sct["cuits_disponibles"])
-        if not vinculados:
+        if not autorizados:
             return {
                 "ok": True,
+                "usuario": actor_email,
+                "origen_llm": origen_llm,
                 "empresas_vinculadas": [],
                 "requiere_vinculacion": True,
-                "mensaje": f"Todavía no hay CUITs vinculados en la bóveda segura. Vinculá tu CUIT en {public_base}/vincular.",
+                "mensaje": f"Tu cuenta ({actor_email}) todavía no tiene CUITs vinculados ni autorizados. Vinculá tu CUIT en {public_base}/vincular o pedile al Owner que te autorice por email.",
                 "url_vinculacion_segura": f"{public_base}/vincular",
             }
         return {
             "ok": True,
-            "empresas_vinculadas": vinculados,
+            "usuario": actor_email,
+            "origen_llm": origen_llm,
+            "empresas_vinculadas": autorizados,
             "cuits_representados_detectados": representadas,
-            "nota": "Para relevar todas las empresas representadas en ARCA en tiempo real, ejecutá `auditar_estado_integral_arca`.",
+            "nota": "Mostrando exclusivamente los CUITs donde sos Owner o fuiste autorizado explícitamente.",
         }
 
-    # Herramientas que requieren acceso ARCA desde la Bóveda Cifrada (cero popups)
-    cuit, clave, err = _resolve_creds(args, public_base)
+    if tool == "autorizar_usuario_cuit":
+        out = autorizar_usuario_cuit(
+            owner_email=actor_email,
+            cuit=args.get("cuit", ""),
+            email_invitado=args.get("email_invitado", ""),
+            rol=args.get("rol", "solo_lectura"),
+        )
+        if out.get("ok"):
+            registrar_evento_historial(
+                email=actor_email,
+                cuit=out["cuit"],
+                origen_llm=origen_llm,
+                accion="autorizar_usuario",
+                titulo=f"Autorizó a {out['email_autorizado']} ({out['rol']})",
+                detalle=f"CUIT {out['cuit']}",
+            )
+        return out
+
+    if tool == "revocar_usuario_cuit":
+        out = revocar_usuario_cuit(
+            owner_email=actor_email,
+            cuit=args.get("cuit", ""),
+            email_invitado=args.get("email_invitado", ""),
+        )
+        if out.get("ok"):
+            registrar_evento_historial(
+                email=actor_email,
+                cuit=out["cuit"],
+                origen_llm=origen_llm,
+                accion="revocar_usuario",
+                titulo=f"Revocó acceso a {out['email_revocado']}",
+                detalle=f"CUIT {out['cuit']}",
+            )
+        return out
+
+    if tool == "listar_accesos_cuit":
+        return listar_accesos_cuit(actor_email=actor_email, cuit=args.get("cuit", ""))
+
+    if tool == "ver_historial_actividad":
+        return obtener_historial_actividad(
+            actor_email=actor_email,
+            cuit=args.get("cuit", ""),
+            limite=int(args.get("limite", 25)),
+        )
+
+    if tool == "registrar_nota_historial":
+        cuit_nota = normalizar_cuit(args.get("cuit", ""))
+        if cuit_nota:
+            ok_p, _, reason = verificar_permiso_cuit(actor_email, cuit_nota, nivel="lectura")
+            if not ok_p:
+                return {"ok": False, "acceso_denegado": True, "error": reason}
+        ev = registrar_evento_historial(
+            email=actor_email,
+            cuit=cuit_nota,
+            origen_llm=origen_llm,
+            accion="nota_contador",
+            titulo=args.get("titulo", "Nota guardada"),
+            detalle=args.get("detalle", ""),
+        )
+        return {"ok": True, "evento": ev, "mensaje": "Nota guardada en tu historial compartido multi-LLM (visible desde Claude, ChatGPT, Gemini, Copilot y Cursor)."}
+
+    # Determinar nivel de permiso requerido (escritura solo si confirmado=True en acciones mutantes)
+    es_escritura = (tool in ("emitir_factura_wsfe", "consultar_y_renovar_certificado_mipyme") and bool(args.get("confirmado", False)))
+    nivel_req = "escritura" if es_escritura else "lectura"
+
+    cuit, clave, err = _resolve_creds_authorized(actor_email, args, public_base, nivel=nivel_req)
     if err:
         return err
 
@@ -353,6 +579,8 @@ def run_mcp_tool(req: McpToolRequest, request: Request, x_bot_secret: Optional[s
             cuit=cuit,
             clave=clave,
             forzar_refresco=bool(args.get("forzar_refresco", False)),
+            actor_email=actor_email,
+            origen_llm=origen_llm,
         )
 
     if tool == "consultar_ccma_cuenta_corriente":
@@ -363,17 +591,23 @@ def run_mcp_tool(req: McpToolRequest, request: Request, x_bot_secret: Optional[s
                 if ccma:
                     return {"ok": True, "cuit": cuit, "desde_cache": True, "ccma": ccma}
             if cuit in AUDIT_INFLIGHT:
-                return _ejecutar_auditoria_sin_timeout(cuit=cuit, clave=clave)
+                return _ejecutar_auditoria_sin_timeout(cuit=cuit, clave=clave, actor_email=actor_email, origen_llm=origen_llm)
         from .auditoria_unificada import consultar_ccma_preciso
-        return consultar_ccma_preciso(cuit=cuit, clave=clave)
+        res = consultar_ccma_preciso(cuit=cuit, clave=clave)
+        registrar_evento_historial(actor_email, cuit, origen_llm, "consulta_ccma", f"Consulta CCMA (CUIT {cuit})")
+        return res
 
     if tool == "consultar_bienes_personales_web":
         from .scraper_bbpp import consultar_bienes_personales_web
-        return consultar_bienes_personales_web(usuario=cuit, clave=clave)
+        res = consultar_bienes_personales_web(usuario=cuit, clave=clave)
+        registrar_evento_historial(actor_email, cuit, origen_llm, "consulta_bbpp", f"Consulta Bienes Personales F.762 (CUIT {cuit})")
+        return res
 
     if tool == "consultar_nuestra_parte_arca":
         from .scraper_extras_arca import consultar_nuestra_parte
-        return consultar_nuestra_parte(usuario=cuit, clave=clave)
+        res = consultar_nuestra_parte(usuario=cuit, clave=clave)
+        registrar_evento_historial(actor_email, cuit, origen_llm, "consulta_nuestra_parte", f"Consulta Nuestra Parte (CUIT {cuit})")
+        return res
 
     if tool == "consultar_mis_retenciones_arca":
         from .scraper_extras_arca import consultar_mis_retenciones
@@ -386,17 +620,21 @@ def run_mcp_tool(req: McpToolRequest, request: Request, x_bot_secret: Optional[s
         )
 
     if tool == "consultar_comprobantes_mes":
-        return consultar_mis_comprobantes(
+        res = consultar_mis_comprobantes(
             cuit=cuit,
             usuario=cuit,
             clave=clave,
             tipo="E" if args.get("tipo") == "emitidos" else "R",
             rango_fechas=args.get("rango_fechas", ""),
         )
+        registrar_evento_historial(actor_email, cuit, origen_llm, "consulta_comprobantes", f"Mis Comprobantes {args.get('periodo','')} ({args.get('tipo','ambos')})")
+        return res
 
     if tool == "leer_notificaciones_dfe":
         from .scraper import consultar_notificaciones_dfe
-        return {"ok": True, "notificaciones": consultar_notificaciones_dfe(usuario=cuit, clave=clave, cuit_objetivo=args.get("cuit"))}
+        res = {"ok": True, "notificaciones": consultar_notificaciones_dfe(usuario=cuit, clave=clave, cuit_objetivo=args.get("cuit"))}
+        registrar_evento_historial(actor_email, cuit, origen_llm, "consulta_dfe", f"Revisión DFE (CUIT {cuit})")
+        return res
 
     if tool in ("consultar_estado_monotributo", "consultar_situacion_monotributo"):
         with _audit_lock:
@@ -405,9 +643,7 @@ def run_mcp_tool(req: McpToolRequest, request: Request, x_bot_secret: Optional[s
                 mono = (cached["data"] or {}).get("portal_monotributo")
                 if mono:
                     return {"ok": True, "cuit": cuit, "desde_cache": True, "portal_monotributo": mono}
-            if cuit in AUDIT_INFLIGHT:
-                return _ejecutar_auditoria_sin_timeout(cuit=cuit, clave=clave)
-        return _ejecutar_auditoria_sin_timeout(cuit=cuit, clave=clave)
+        return _ejecutar_auditoria_sin_timeout(cuit=cuit, clave=clave, actor_email=actor_email, origen_llm=origen_llm)
 
     if tool == "consultar_padron_cuit_ws":
         from .arca_ws import consultar_padron_a5
@@ -415,7 +651,7 @@ def run_mcp_tool(req: McpToolRequest, request: Request, x_bot_secret: Optional[s
 
     if tool == "emitir_factura_wsfe":
         from .arca_ws import emitir_comprobante_wsfe
-        return emitir_comprobante_wsfe(
+        res = emitir_comprobante_wsfe(
             cuit_emisor=args.get("cuit_emisor", cuit),
             pto_vta=int(args.get("pto_vta", 1)),
             cbte_tipo=int(args.get("cbte_tipo", 11)),
@@ -426,6 +662,9 @@ def run_mcp_tool(req: McpToolRequest, request: Request, x_bot_secret: Optional[s
             ambiente=args.get("ambiente", "homologacion"),
             confirmado=bool(args.get("confirmado", False)),
         )
+        if bool(args.get("confirmado", False)):
+            registrar_evento_historial(actor_email, cuit, origen_llm, "emitir_factura_wsfe", f"Factura WSFE a {args.get('receptor_cuit','')} por ${args.get('importe_neto',0)}")
+        return res
 
     if tool == "generar_certificado_csr_arca":
         from .arca_ws import generar_csr_arca

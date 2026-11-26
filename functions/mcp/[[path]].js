@@ -664,6 +664,66 @@ const MCP_TOOLS = [
       },
       required: ["perfil"]
     }
+  },
+  {
+    name: "autorizar_usuario_cuit",
+    description: "[SEGURIDAD MULTI-USUARIO · SOLO OWNER] Autoriza a otro usuario (socio, contador, analista o empleado) por su email para consultar u operar un CUIT desde su propio Claude, ChatGPT o Gemini sin compartir nunca tu Clave Fiscal.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cuit: { type: "string", description: "CUIT (11 dígitos) del cual sos Owner" },
+        email_invitado: { type: "string", description: "Email del usuario a autorizar (ej. 'socio@estudio.com')" },
+        rol: { type: "string", enum: ["solo_lectura", "editor", "owner"], default: "solo_lectura", description: "Nivel de permiso otorgado" }
+      },
+      required: ["cuit", "email_invitado"]
+    }
+  },
+  {
+    name: "revocar_usuario_cuit",
+    description: "[SEGURIDAD MULTI-USUARIO · SOLO OWNER] Revoca al instante el acceso de un email autorizado sobre un CUIT en todos los LLMs.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cuit: { type: "string", description: "CUIT (11 dígitos)" },
+        email_invitado: { type: "string", description: "Email del usuario a revocar" }
+      },
+      required: ["cuit", "email_invitado"]
+    }
+  },
+  {
+    name: "listar_accesos_cuit",
+    description: "[SEGURIDAD MULTI-USUARIO] Lista quién es el Owner y qué emails tienen acceso autorizado (y su rol) sobre un CUIT.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cuit: { type: "string", description: "CUIT (11 dígitos)" }
+      },
+      required: ["cuit"]
+    }
+  },
+  {
+    name: "ver_historial_actividad",
+    description: "[HISTORIAL COMPARTIDO CROSS-LLM] Muestra la línea de tiempo unificada de auditorías, consultas, autorizaciones y notas realizadas sobre tus CUITs desde Claude, ChatGPT, Gemini, Copilot o Cursor, para continuar el trabajo desde cualquier asistente.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cuit: { type: "string", description: "CUIT opcional para filtrar (si se omite, muestra el historial de todos tus CUITs autorizados)" },
+        limite: { type: "integer", default: 25, description: "Cantidad máxima de eventos recientes a devolver" }
+      }
+    }
+  },
+  {
+    name: "registrar_nota_historial",
+    description: "[HISTORIAL COMPARTIDO CROSS-LLM] Guarda una nota, decisión o pendiente en el historial compartido de tu cuenta/CUIT para retomarlo después desde otro LLM (ej. guardar en Claude y continuar en Gemini o ChatGPT).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cuit: { type: "string", description: "CUIT relacionado (opcional)" },
+        titulo: { type: "string", description: "Título breve del hito o pendiente" },
+        detalle: { type: "string", description: "Detalle de lo acordado o próximos pasos" }
+      },
+      required: ["titulo"]
+    }
   }
 ];
 
@@ -699,9 +759,11 @@ export async function onRequest({ request, env, params }) {
   // 3. Manejo directo del estándar MCP SSE en el Edge
   if (wantsSse && request.method === "GET") {
     const sessionId = crypto.randomUUID();
+    const qsToken = url.searchParams.get("token") || "";
+    const tokenSuffix = qsToken ? `&token=${encodeURIComponent(qsToken)}` : "";
     const endpointUrl = isDedicatedSubdomain
-      ? `${url.origin}/messages?sessionId=${sessionId}`
-      : `${url.origin}/mcp/messages?sessionId=${sessionId}`;
+      ? `${url.origin}/messages?sessionId=${sessionId}${tokenSuffix}`
+      : `${url.origin}/mcp/messages?sessionId=${sessionId}${tokenSuffix}`;
 
     const { readable, writable } = new TransformStream();
     const writer = writable.getWriter();
@@ -1928,8 +1990,18 @@ export async function onRequest({ request, env, params }) {
       ]);
       if (env.BOT_API_URL && !EDGE_LOCAL_TOOLS.has(toolName)) {
         try {
-          const headers = { "Content-Type": "application/json" };
+          const authHeader = request.headers.get("authorization") || "";
+          const bearerToken = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+          const userToken = bearerToken || (url.searchParams.get("token") || "").trim();
+          const llmOrigin = host.endsWith(".impuesto.com.ar") ? host.split(".")[0] : "mcp";
+
+          const headers = {
+            "Content-Type": "application/json",
+            "X-LLM-Origin": llmOrigin
+          };
           if (env.BOT_API_SECRET) headers["X-Bot-Secret"] = env.BOT_API_SECRET;
+          if (userToken) headers["X-User-Token"] = userToken;
+
           const resp = await fetch(`${env.BOT_API_URL.replace(/\/$/, "")}/api/v1/mcp/tool`, {
             method: "POST",
             headers,

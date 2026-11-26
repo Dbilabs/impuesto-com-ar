@@ -175,6 +175,101 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
             self.assertEqual(calls["n"], 1)
         bot_main.AUDIT_CACHE.pop(test_cuit, None)
 
+    def test_08_aislamiento_multitenant_owner_invitados_e_historial_cross_llm(self):
+        from fastapi.testclient import TestClient
+        from bot.main import app
+        from bot import boveda_segura as bv
+
+        client = TestClient(app)
+        cuit_test = "20333333339"
+        owner_email = "owner_test@impuesto.test"
+        attacker_email = "intruso_test@impuesto.test"
+        socio_email = "socio_test@impuesto.test"
+
+        # 1. Sin token: acceso bloqueado
+        r_anon = client.post("/api/v1/mcp/tool", json={"name": "listar_empresas", "arguments": {}})
+        self.assertEqual(r_anon.status_code, 200)
+        self.assertTrue(r_anon.json().get("requiere_autenticacion"))
+        self.assertTrue(r_anon.json().get("acceso_denegado"))
+
+        # 2. Owner vincula CUIT y obtiene token + URLs privadas
+        r_link = client.post("/api/v1/vincular", json={
+            "email": owner_email,
+            "cuit": cuit_test,
+            "clave_fiscal": "ClaveSoloTest123",
+            "modo": "solo_lectura_cifrada",
+            "etiqueta_token": "gemini_test",
+        })
+        self.assertTrue(r_link.json().get("ok"))
+        tok_owner = r_link.json().get("token")
+        self.assertTrue(tok_owner.startswith("imp_live_"))
+        self.assertIn("gemini", r_link.json().get("urls_privadas_mcp", {}))
+
+        # 3. Intruso con su propio token NO ve el CUIT del Owner ni puede consultarlo
+        tok_attacker = bv.crear_token_usuario(attacker_email, "intruso")["token"]
+        r_att_list = client.post(
+            "/api/v1/mcp/tool",
+            headers={"X-User-Token": tok_attacker, "X-LLM-Origin": "gemini"},
+            json={"name": "listar_empresas", "arguments": {}},
+        )
+        self.assertEqual(r_att_list.json().get("empresas_vinculadas"), [])
+        r_att_audit = client.post(
+            "/api/v1/mcp/tool",
+            headers={"X-User-Token": tok_attacker, "X-LLM-Origin": "gemini"},
+            json={"name": "auditar_estado_integral_arca", "arguments": {"cuit": cuit_test}},
+        )
+        self.assertTrue(r_att_audit.json().get("acceso_denegado"))
+
+        # 4. Owner autoriza a socio por email desde Claude
+        r_auth = client.post(
+            "/api/v1/mcp/tool",
+            headers={"X-User-Token": tok_owner, "X-LLM-Origin": "claude"},
+            json={"name": "autorizar_usuario_cuit", "arguments": {"cuit": cuit_test, "email_invitado": socio_email, "rol": "solo_lectura"}},
+        )
+        self.assertTrue(r_auth.json().get("ok"))
+
+        # 5. Socio genera token y ve el CUIT + deja nota desde ChatGPT -> Owner la ve desde Gemini
+        tok_socio = bv.crear_token_usuario(socio_email, "chatgpt")["token"]
+        r_soc_list = client.post(
+            "/api/v1/mcp/tool",
+            headers={"X-User-Token": tok_socio, "X-LLM-Origin": "chatgpt"},
+            json={"name": "listar_empresas", "arguments": {}},
+        )
+        cuits_socio = [x["cuit"] for x in r_soc_list.json().get("empresas_vinculadas", [])]
+        self.assertIn(cuit_test, cuits_socio)
+
+        r_note = client.post(
+            "/api/v1/mcp/tool",
+            headers={"X-User-Token": tok_socio, "X-LLM-Origin": "chatgpt"},
+            json={"name": "registrar_nota_historial", "arguments": {"cuit": cuit_test, "titulo": "Cierre IVA revisado", "detalle": "Falta VEP"}},
+        )
+        self.assertTrue(r_note.json().get("ok"))
+
+        r_hist = client.post(
+            "/api/v1/mcp/tool",
+            headers={"X-User-Token": tok_owner, "X-LLM-Origin": "gemini"},
+            json={"name": "ver_historial_actividad", "arguments": {"cuit": cuit_test, "limite": 10}},
+        )
+        titulos = [e["titulo"] for e in r_hist.json().get("eventos", [])]
+        self.assertIn("Cierre IVA revisado", titulos)
+
+        # 6. Owner revoca acceso -> Socio bloqueado al instante
+        r_rev = client.post(
+            "/api/v1/mcp/tool",
+            headers={"X-User-Token": tok_owner, "X-LLM-Origin": "gemini"},
+            json={"name": "revocar_usuario_cuit", "arguments": {"cuit": cuit_test, "email_invitado": socio_email}},
+        )
+        self.assertTrue(r_rev.json().get("ok"))
+        r_soc_after = client.post(
+            "/api/v1/mcp/tool",
+            headers={"X-User-Token": tok_socio, "X-LLM-Origin": "chatgpt"},
+            json={"name": "auditar_estado_integral_arca", "arguments": {"cuit": cuit_test}},
+        )
+        self.assertTrue(r_soc_after.json().get("acceso_denegado"))
+
+        # Limpieza de fixture
+        client.delete(f"/api/v1/vincular/{cuit_test}")
+
 
 if __name__ == "__main__":
     unittest.main()
