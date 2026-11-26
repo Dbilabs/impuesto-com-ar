@@ -1,6 +1,7 @@
 // Cloudflare Pages Function: /mcp y /mcp/sse
 // Implementa el conector remoto Model Context Protocol (MCP) para conectar ARCA directamente con Claude, ChatGPT, Gemini, Copilot y Cursor.
 import { SKILLS_BUNDLE, SKILLS_BUILT_AT } from "./skills_bundle.js";
+import { PROMPTS_MAESTROS } from "./prompts_bundle.js";
 
 const MCP_TOOLS = [
   {
@@ -1931,9 +1932,12 @@ export async function onRequest({ request, env, params }) {
             body: JSON.stringify({ name: toolName, arguments: args })
           });
           const result = await resp.json();
-          const outText = (result && typeof result.informe_contador_markdown === "string")
+          let outText = (result && typeof result.informe_contador_markdown === "string")
             ? result.informe_contador_markdown
             : JSON.stringify(result, null, 2);
+          if (toolName === "auditar_estado_integral_arca" && result && result.ok !== false && PROMPTS_MAESTROS["02-post-diagnostico"]) {
+            outText = `${PROMPTS_MAESTROS["02-post-diagnostico"]}\n\n---\n\n${outText}`;
+          }
           return jsonRpcSuccess(id, { content: [{ type: "text", text: outText }] });
         } catch (e) {
           // Manejo inteligente de caídas de ARCA con sugerencia de recordatorio
@@ -2197,42 +2201,18 @@ export async function onRequest({ request, env, params }) {
         const vincularBase = "https://impuesto.com.ar/vincular";
         const vincularUrl = cuitClean ? `${vincularBase}?cuit=${cuitClean}` : vincularBase;
 
+        const etapaKey = sit.includes("estudio")
+          ? "04-estudio-contable"
+          : (perfilGuardado ? "03-seguimiento-mensual" : "01-primera-interaccion");
+        const promptMaestro = PROMPTS_MAESTROS[etapaKey] || PROMPTS_MAESTROS["01-primera-interaccion"] || "";
+        const contextoExtra = perfilGuardado
+          ? `\n\n---\n**Perfil recuperado de memoria:** ${perfilGuardado.razon_social} (CUIT ${perfilGuardado.cuit} · ${perfilGuardado.tipo_personeria} · ${perfilGuardado.ubicacion}).`
+          : `\n\n---\n**Link oficial de vinculación:** ${vincularUrl} (Estudios Contables: ${vincularBase}?tipo=estudio).`;
+
         return jsonRpcSuccess(id, {
           content: [{
             type: "text",
-            text: JSON.stringify({
-              bienvenida: "Soy tu Contador Agéntico de Cabecera y CFO de impuesto.com.ar (49 herramientas conectadas a ARCA con Doble Verificación obligatoria y respaldo opcional de Contador Público Matriculado).",
-              paso_1_vinculacion_segura: {
-                titulo: "Paso 1 — Vinculá tu CUIT en entorno seguro (una sola vez)",
-                url_vinculacion_segura: vincularUrl,
-                url_estudios_contables: `${vincularBase}?tipo=estudio`,
-                para_contribuyentes_y_pymes: "Vinculá tu CUIT en la bóveda cifrada AES-256 (modo solo lectura o Certificado Digital WSAA sin compartir Clave Fiscal). Todas las consultas corren en segundo plano dentro del chat, sin abrir nunca Chrome.",
-                para_estudios_contables: "Si sos un Estudio Contable, vinculá el CUIT del estudio (con los clientes delegados vía Administrador de Relaciones de ARCA): operás toda tu cartera multi-cliente desde un único acceso seguro sin pedir claves fiscales a tus clientes."
-              },
-              paso_2_elegir_perfil: rutaElegida ? RUTAS[rutaElegida] : {
-                titulo: "Paso 2 — Elegí tu perfil para armar tu plan de trabajo de los próximos 12 meses",
-                opciones: [
-                  "1. Monotributista (cuotas, tope de categoría, facturación, CCMA)",
-                  "2. Responsable Inscripto (IVA, Autónomos, Ganancias, MiPyME)",
-                  "3. PyME / Sociedad — SRL, SA, SAS (IVA, F. 931, planes, retiros de socios)",
-                  "4. Relación de Dependencia (Ganancias F. 2711, SiRADIG, Bienes Personales)",
-                  "5. Estudio Contable B2B (cartera multi-cliente, cierres con alertas >30% y reportes Marca Blanca)"
-                ],
-                siguiente_paso: "Apenas vincules tu CUIT en el link seguro y me digas cuál es tu perfil, corro tu Auditoría 360° en segundo plano y dejamos activadas tus automatizaciones mensuales."
-              },
-              perfil_recuperado_de_memoria: perfilGuardado,
-              memoria_persistente_tip: "Tu perfil fiscal se guarda en tu cuenta de impuesto.com.ar: el mes que viene podés abrir un chat limpio y decir 'Hagamos el cierre de este mes' sin volver a explicar tu negocio.",
-              capacidades_principales: CAPACIDADES,
-              garantia_seguridad: "Todas las consultas iniciales son 100% solo lectura. Ninguna factura, DDJJ ni plan se envía a ARCA sin tu confirmación explícita.",
-              skills_oficiales_disponibles: {
-                sincronizado_at: SKILLS_BUILT_AT,
-                como_usarlos: "Los 5 Skill Packs están disponibles en vivo vía MCP Resources (sin instalar nada) y también descargables o instalables en 1 comando para Claude Code / Gemini / Antigravity / Cursor / Codex.",
-                web_hub: "https://impuesto.com.ar/skills/",
-                comando_instalacion_1_linea: "curl -fsSL https://impuesto.com.ar/skills/install.sh | bash",
-                catalogo: SKILLS_BUNDLE.map(s => ({ uri: s.uri, name: s.name, perfil: s.perfil_objetivo, version: s.version, download_url: s.download_url }))
-              },
-              automatizaciones_disponibles: "Apenas confirmes tu perfil y CUIT, ejecutá `generar_automatizaciones_y_calendario_fiscal` para crear tus recordatorios, tareas recurrentes nativas (Claude/ChatGPT/Gemini/Copilot) y calendario .ics."
-            }, null, 2)
+            text: `${promptMaestro}${contextoExtra}`
           }]
         });
       }
