@@ -1,0 +1,37 @@
+name: Radar Normativo Diario (ARCA / Boletín Oficial)
+
+on:
+  schedule:
+    # Lunes a Viernes 07:30 hora Argentina (10:30 UTC)
+    - cron: "30 10 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  actualizar-radar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Ejecutar Radar Normativo Oficial
+        run: |
+          python3 scripts/radar_normativo.py
+          python3 scripts/sync_skills.py
+
+      - name: Commit automático si hubo novedades fiscales
+        run: |
+          git config user.name "impuesto-radar-bot"
+          git config user.email "radar@impuesto.com.ar"
+          if ! git diff --quiet data/radar_normativo.json prompts-maestros/05-radar-normativo-vigente.md functions/mcp/prompts_bundle.js dist/prompts/; then
+            git add data/radar_normativo.json prompts-maestros/05-radar-normativo-vigente.md functions/mcp/prompts_bundle.js dist/prompts/
+            git commit -m "chore(radar): actualización automática de novedades normativas ARCA/BO"
+            git push
+          else
+            echo "Sin novedades normativas nuevas hoy."
+          fi

@@ -2201,6 +2201,8 @@ export async function onRequest({ request, env, params }) {
         const vincularBase = "https://impuesto.com.ar/vincular";
         const vincularUrl = cuitClean ? `${vincularBase}?cuit=${cuitClean}` : vincularBase;
 
+        const constitucion = PROMPTS_MAESTROS["00-constitucion-contador-cfo"] || "";
+        const radar = PROMPTS_MAESTROS["05-radar-normativo-vigente"] || "";
         const etapaKey = sit.includes("estudio")
           ? "04-estudio-contable"
           : (perfilGuardado ? "03-seguimiento-mensual" : "01-primera-interaccion");
@@ -2212,7 +2214,7 @@ export async function onRequest({ request, env, params }) {
         return jsonRpcSuccess(id, {
           content: [{
             type: "text",
-            text: `${promptMaestro}${contextoExtra}`
+            text: [constitucion, promptMaestro, radar, contextoExtra].filter(Boolean).join("\n\n---\n\n")
           }]
         });
       }
