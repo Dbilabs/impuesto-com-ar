@@ -485,4 +485,35 @@ def auditar_estado_integral_arca(cuit: str, clave: str) -> Dict[str, Any]:
             "(3) Cerrá siempre recomendando cuál es el próximo paso concreto."
         ),
     }
+    # Generar un reporte Markdown estructurado de Contador de Cabecera al frente de la respuesta
+    # para que cualquier LLM (ChatGPT/Claude/Gemini) presente el diagnóstico + plan ordenado + espacio de trabajo completo.
+    ccma_d = resultado.get("ccma", {})
+    desg_d = ccma_d.get("desglose_por_regimen", {})
+    mf_d = resultado.get("mis_facilidades", {})
+    mono_d = resultado.get("portal_monotributo", {})
+    sct_d = resultado.get("sct", {})
+    pasivo_total = round(float(ccma_d.get("saldo_deudor_vencido", 0)) + float(mf_d.get("total_capital_remanente_vigentes", 0)), 2)
+
+    autos_md = "\n".join(f"- **{a['titulo']}:** {a['cadencia']} (`{a['cron']}`)" for a in automatizaciones)
+    resultado["informe_contador_markdown"] = (
+        f"## 1. Tu Diagnóstico Real en ARCA (CUIT {cuit_fmt})\n"
+        f"- **Deuda vencida exigible hoy (CCMA):** ${ccma_d.get('saldo_deudor_vencido', 0):,.2f} "
+        f"(Monotributo: ${desg_d.get('monotributo_vencido_total', 0):,.2f} | Autónomos: ${desg_d.get('autonomos_vencido_total', 0):,.2f} | Sin superposición con planes vigentes).\n"
+        f"- **Planes vigentes (Mis Facilidades):** {mf_d.get('cantidad_planes_vigentes', 0)} planes al día ({mf_d.get('total_cuotas_impagas', 0)} cuotas impagas) · "
+        f"Capital remanente: **${mf_d.get('total_capital_remanente_vigentes', 0):,.2f}** · Débito automático día 16: **${mf_d.get('total_debito_mensual_dia_16', 0):,.2f}/mes**.\n"
+        f"- **Pasivo total real en ARCA hoy:** **${pasivo_total:,.2f}** (Saldo a favor Ganancias SCT: ${sct_d.get('saldo_libre_disponibilidad', 0):,.2f}).\n"
+        f"- **Monotributo:** Categoría **{mono_d.get('categoria', 'N/D')}** · Facturado 12m: ${mono_d.get('facturado_acumulado', 0):,.2f} / Tope: ${mono_d.get('tope_categoria', 0):,.2f} (Margen: **${mono_d.get('margen_disponible_categoria', 0):,.2f}**).\n"
+        f"- **Entidades vinculadas detectadas:** {', '.join(resultado.get('cuits_representadas_en_arca', []))}.\n"
+        f"- **Sello de Verificación:** {resultado['doublecheck']['sello_verificacion']}\n\n"
+        f"## 2. Plan de Trabajo Ordenado (Esta Semana · Próximo Mes · 12 Meses)\n"
+        f"1. **🔴 Urgente (esta semana):** Definir cómo regularizar los ${ccma_d.get('saldo_deudor_vencido', 0):,.2f} vencidos en CCMA (tenés cupo RG 5321 habilitado: {mf_d.get('cupo_rg5321', {}).get('planes_disponibles_rg5321', 'verificado')} planes disponibles, SIPER {mf_d.get('cupo_rg5321', {}).get('siper', '-')}) y frenar la acumulación mensual.\n"
+        f"2. **🟡 Preventivo (diciembre):** Prever **${mf_d.get('total_debito_mensual_dia_16', 0):,.2f}** en la CBU antes del **16/12** para los planes, pagar Monotributo antes del **21/12** y vigilar tu margen de Categoría {mono_d.get('categoria', 'N/D')} antes de la recategorización de Enero.\n"
+        f"3. **🟢 Ordenamiento anual:** Auditar tus sociedades vinculadas, Ingresos Brutos (AGIP/ARBA fuera de ARCA) y preparar Ganancias/BBPP.\n\n"
+        f"## 3. Dejá Armado tu Espacio de Trabajo para Todo el Año\n"
+        f"**A) Creá un Proyecto llamado `Impuestos`** y pegá estas instrucciones:\n"
+        f"```text\n{prompt_proyecto}\n```\n"
+        f"**B) Skills recomendados para tu perfil:** https://impuesto.com.ar/skills/ (o 1 línea: `curl -fsSL https://impuesto.com.ar/skills/install.sh | bash`).\n"
+        f"**C) Automatizaciones sugeridas (12 meses):**\n{autos_md}\n\n"
+        f"**Próximo paso recomendado:** Decime si querés que **(1)** activemos ya estos recordatorios mensuales o **(2)** simulemos cómo resolver los ${ccma_d.get('saldo_deudor_vencido', 0):,.2f} vencidos en CCMA."
+    )
     return resultado

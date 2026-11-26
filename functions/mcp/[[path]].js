@@ -1931,7 +1931,10 @@ export async function onRequest({ request, env, params }) {
             body: JSON.stringify({ name: toolName, arguments: args })
           });
           const result = await resp.json();
-          return jsonRpcSuccess(id, { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] });
+          const outText = (result && typeof result.informe_contador_markdown === "string")
+            ? result.informe_contador_markdown
+            : JSON.stringify(result, null, 2);
+          return jsonRpcSuccess(id, { content: [{ type: "text", text: outText }] });
         } catch (e) {
           // Manejo inteligente de caídas de ARCA con sugerencia de recordatorio
           return jsonRpcSuccess(id, {
