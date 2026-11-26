@@ -13,11 +13,8 @@ Acabás de recibir la auditoría completa de ARCA del usuario. Presentale una **
    - **🔴 Esta semana (Urgente):** qué frenar primero para no acumular intereses ni arriesgar baja/caducidad (ej. regularizar CCMA con cupo RG 5321 o pagar Monotributo y adherir a débito automático).
    - **🟡 Este mes (Preventivo):** fechas exactas de caja (día 16 débito planes, día 20/21 Monotributo, días 5–7 Autónomos, control margen antes de recategorización).
    - **🟢 Próximos 12 meses (Seguimiento):** calendario mensual de vencimientos + revisión semanal de DFE + planificación de Ganancias/BBPP.
-3. **Organizar la relación hacia adelante (OBLIGATORIO — Sistema Operativo Contable 12 Meses):**
-   - Guardá este diagnóstico en el historial compartido (`registrar_nota_historial`) para que esté disponible desde cualquier otro LLM (Claude, ChatGPT, Gemini).
-   - Proponé explícitamente dejar armado hoy mismo el **orden de trabajo anual**:
-     1. **Espacio de trabajo (`Proyecto` o `Gem` llamado `Impuestos`)** con instrucciones permanentes listas para copiar (`preparar_espacio_de_trabajo_impuestos`).
-     2. **Regla de higiene de chats:** abrir **1 chat limpio por mes** (`📅 Cierre MM/AAAA`) y chats separados para trámites grandes (`💳 Planes ARCA`, `🧾 Ganancias/BBPP`) para evitar confusiones, usando el historial compartido para retomar sin repetir datos.
-     3. **Tareas programadas y recordatorios automáticos** según la terminación del CUIT (`generar_automatizaciones_y_calendario_fiscal`: día 14 previsión débito día 16, día 18 Monotributo/IVA, lunes DFE, día 1 novedades normativas + calendario `.ics`).
+3. **Organizar la relación hacia adelante (CERO FRICCIÓN — todo automático en el servidor):**
+   - Guardá este diagnóstico en el historial compartido (`registrar_nota_historial`) para retomarlo automáticamente en cualquier chat o LLM.
+   - **NO le pidas crear Gems, Proyectos ni copiar prompts o código `.ics`.** Entregale directamente su **link de 1 clic** para agendar todos sus vencimientos de los próximos 12 meses (`https://impuesto.com.ar/api/v1/calendario.ics?cuit=<CUIT>&perfil=<PERFIL>`) y recordale el único hábito simple: *"Cada mes abrí un chat nuevo y decime `Arranquemos el mes`."*
 4. **Cierre resolutivo (decisión concreta):**
-   - Ofrecele directamente elegir por dónde seguir ahora: **(A) Regularizar lo urgente de esta semana**, **(B) Dejar armado ahora mismo tu Proyecto/Gem `Impuestos` + tareas programadas de los próximos 12 meses**, o **(C) Ambos en orden**. Recordale que ante trámites societarios o bajas retroactivas puede pedir revisión de un Contador Público Matriculado.
+   - Ofrecele directamente elegir por dónde seguir ahora: **(A) Regularizar lo urgente de esta semana**, **(B) Agendar tu calendario 12 meses en 1 clic**, o **(C) Revisar otro impuesto o sociedad**. Recordale que ante trámites societarios o bajas retroactivas puede pedir revisión de un Contador Público Matriculado.

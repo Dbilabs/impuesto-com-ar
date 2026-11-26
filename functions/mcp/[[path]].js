@@ -2524,11 +2524,7 @@ export async function onRequest({ request, env, params }) {
 
         if (cuentaAutenticada) {
           const llmPlataforma = host.endsWith(".impuesto.com.ar") ? host.split(".")[0] : "mcp";
-          const contenedorNombre = llmPlataforma === "gemini"
-            ? "Gem llamado 'Impuestos — Contador de Cabecera'"
-            : (llmPlataforma === "chatgpt"
-              ? "Proyecto 'Impuestos' + ChatGPT Tasks"
-              : "Project llamado 'Impuestos'");
+          const primerCuit = cuentaAutenticada.empresas[0]?.cuit || "";
           const listaCuits = cuentaAutenticada.empresas
             .map(e => `- CUIT **${e.cuit}** (${e.alias || "Contribuyente"} · rol: ${e.rol || "owner"} · modo solo lectura activo)`)
             .join("\n");
@@ -2538,10 +2534,10 @@ export async function onRequest({ request, env, params }) {
             listaCuits,
             "",
             "## Reglas obligatorias para tu respuesta ahora:",
-            "1. **PROHIBIDO** pedirle que se vincule en `impuesto.com.ar/vincular` y **PROHIBIDO** volver a pedirle el CUIT (ya los tenés arriba).",
-            "2. Saludalo breve y ejecutivamente como su Contador de Cabecera y CFO confirmando en 1 línea que ya estás conectado a su cuenta y CUIT(s) arriba listados.",
-            "3. **PROACTIVAMENTE ordená la relación de trabajo hacia adelante:** además de ofrecerle su diagnóstico fiscal, proponé dejar armado su **" + contenedorNombre + "**, la **regla de 1 chat limpio por mes** (`📅 Cierre MM/AAAA`, usando `ver_historial_actividad` y `registrar_nota_historial` para no perder contexto entre chats ni entre LLMs) y sus **tareas programadas de vencimientos** (`preparar_espacio_de_trabajo_impuestos` + `generar_automatizaciones_y_calendario_fiscal`).",
-            "4. Ofrecele directamente elegir por dónde arrancar hoy: **(1) Organizar nuestro espacio de trabajo anual (Proyecto/Gem + tareas programadas + higiene de chats)**, **(2) Lanzar Auditoría 360° en ARCA** (aclarando que demora 1 a 10 min en segundo plano), **(3) Ver historial compartido de otros LLMs / DFE**, o **(4) Autorizar a un socio o contador por email**.",
+            "1. **PROHIBIDO** pedirle que se vincule en `impuesto.com.ar/vincular`, **PROHIBIDO** volver a pedirle el CUIT, y **PROHIBIDO** pedirle que cree Gems, Projects, copie prompts o copie código `.ics` (todo ya funciona automáticamente desde el servidor).",
+            "2. Saludalo breve y ejecutivamente como su Contador de Cabecera y CFO confirmando en 1 línea que ya estás conectado a su cuenta y CUIT(s) arriba listados, con memoria compartida automática entre chats y entre asistentes.",
+            `3. Si quiere agendar sus vencimientos de los próximos 12 meses, ya tiene su link directo de 1 clic: https://impuesto.com.ar/api/v1/calendario.ics?cuit=${primerCuit}&perfil=monotributo (se agrega solo a Google/Apple/Outlook Calendar).`,
+            "4. Ofrecele directamente 3–4 acciones concretas y simples para elegir ahora: **(1) Auditoría 360° en ARCA** (aclarando que demora 1 a 10 min en segundo plano), **(2) Agendar mis vencimientos 12 meses en 1 clic**, **(3) Emitir o revisar facturas y DFE**, o **(4) Autorizar a un socio o contador por email**.",
             "5. Si el usuario ya pidió algo concreto en su primer mensaje, **ejecutalo directamente** sin repreguntar."
           ].join("\n");
 
@@ -2657,6 +2653,7 @@ export async function onRequest({ request, env, params }) {
           copilot: "En Microsoft Copilot / Power Automate: creá un flujo recurrente con la cadencia indicada conectado a `copilot.impuesto.com.ar`."
         };
 
+        const linkCalendario1Clic = `https://impuesto.com.ar/api/v1/calendario.ics?cuit=${cuitClean || ""}&perfil=${encodeURIComponent(perfil)}`;
         return jsonRpcSuccess(id, {
           content: [{
             type: "text",
@@ -2664,11 +2661,10 @@ export async function onRequest({ request, env, params }) {
               perfil,
               cuit: cuitClean || "no_informado",
               terminacion_cuit: term,
+              link_calendario_1_clic: linkCalendario1Clic,
               total_automatizaciones: eventos.length,
-              automatizaciones_y_recordatorios: eventos,
-              como_activar_en_tu_ia: cliente === "todos" ? guiasPorLlm : { [cliente]: guiasPorLlm[cliente] || guiasPorLlm.claude },
-              calendario_ics_universal: icsLines.join("\r\n"),
-              instruccion_para_ia: "Mostrale al usuario su tabla limpia de recordatorios y preguntale cuáles quiere activar ahora mismo con las automatizaciones nativas de esta plataforma o exportar como .ics."
+              automatizaciones_y_recordatorios: eventos.map(e => ({ titulo: e.titulo, cadencia: e.cadencia })),
+              instruccion_para_ia: `NO pegues código BEGIN:VCALENDAR ni pidas crear archivos manuales. Mostrale la tabla limpia de fechas y entregale directamente este link de 1 clic para agendarlo automáticamente en Google/Apple/Outlook Calendar: ${linkCalendario1Clic}`
             }, null, 2)
           }]
         });
@@ -2740,25 +2736,22 @@ export async function onRequest({ request, env, params }) {
           prompt_automatizacion: "Consultá https://impuesto.com.ar/skills/manifest.json y novedades fiscales del mes; avisame si hay versiones nuevas de mis skills, cambios de escalas/alícuotas ARCA o nuevas herramientas relevantes para mi perfil y guíame en 1 paso si conviene actualizar."
         };
 
+        const linkCalendario = `https://impuesto.com.ar/api/v1/calendario.ics?cuit=${cuitClean}&perfil=${encodeURIComponent(perfil)}`;
         return jsonRpcSuccess(id, {
           content: [{
             type: "text",
             text: JSON.stringify({
-              nombre_proyecto_sugerido: llmActual === "gemini" ? "Impuestos — Contador de Cabecera (Gem)" : "Impuestos",
-              plataforma_detectada: llmActual,
+              modo: "AUTOMATICO_EN_SERVIDOR_CERO_FRICCION",
               perfil: label,
-              paso_a_crear_proyecto: {
-                instruccion: GUIA_PLATAFORMA[llmActual] || GUIA_PLATAFORMA.claude,
-                prompt_copy_paste: promptProyecto
-              },
-              paso_a2_higiene_de_chats: higieneChats,
-              paso_b_skills_para_tu_perfil: {
-                hub_web: "https://impuesto.com.ar/skills/",
-                comando_1_linea: "curl -fsSL https://impuesto.com.ar/skills/install.sh | bash",
-                skills: skillsRecomendados
-              },
-              paso_c_auto_actualizacion: autoUpdate,
-              siguiente_paso_recomendado: "Una vez creado tu Proyecto 'Impuestos' y activadas tus automatizaciones de vencimientos (`generar_automatizaciones_y_calendario_fiscal`), corremos tu Auditoría 360° para dejar el mes ordenado."
+              cuit: cuitClean || "auto",
+              jurisdiccion: juris,
+              link_calendario_1_clic: linkCalendario,
+              que_ya_esta_activado_automaticamente: [
+                "Tu criterio contable, perfil fiscal y radar normativo 2026-2027 ya se cargan automáticamente desde el servidor en cada chat nuevo (NO necesitás crear Gems, Projects ni copiar prompts).",
+                "Tu memoria compartida entre chats y entre distintos LLMs (Gemini, Claude, ChatGPT) ya está activa automáticamente."
+              ],
+              unico_habito_recomendado: "Cuando empiece un mes nuevo (o para un trámite grande como Ganancias), abrí un chat nuevo y decime simplemente: 'Arranquemos el mes'.",
+              instruccion_para_ia: `Respondé en máximo 8 líneas claras y cálidas. PROHIBIDO pedirle crear Gems/Projects o copiar bloques de prompts/código .ics. Confirmale que ya quedó todo automático en el servidor, entregale el link de 1 clic para agendar sus vencimientos (${linkCalendario}) y recordale el único hábito simple ('Arranquemos el mes' en un chat nuevo cada mes).`
             }, null, 2)
           }]
         });
