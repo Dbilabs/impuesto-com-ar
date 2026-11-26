@@ -2284,8 +2284,62 @@ export async function onRequest({ request, env, params }) {
         const vincularBase = "https://impuesto.com.ar/vincular";
         const vincularUrl = cuitClean ? `${vincularBase}?cuit=${cuitClean}` : vincularBase;
 
+        // Verificar si el usuario YA viene autenticado con token y tiene CUITs vinculados en la bóveda
+        let cuentaAutenticada = null;
+        const authHdrInit = request.headers.get("authorization") || "";
+        const bearerInit = authHdrInit.toLowerCase().startsWith("bearer ") ? authHdrInit.slice(7).trim() : "";
+        const tokenInit = bearerInit || (url.searchParams.get("token") || "").trim();
+        if (tokenInit && env.BOT_API_URL) {
+          try {
+            const h = { "Content-Type": "application/json", "X-User-Token": tokenInit, "X-LLM-Origin": host.endsWith(".impuesto.com.ar") ? host.split(".")[0] : "mcp" };
+            if (env.BOT_API_SECRET) h["X-Bot-Secret"] = env.BOT_API_SECRET;
+            const rEmp = await fetch(`${env.BOT_API_URL.replace(/\/$/, "")}/api/v1/mcp/tool`, {
+              method: "POST",
+              headers: h,
+              body: JSON.stringify({ name: "listar_empresas", arguments: {} }),
+              signal: AbortSignal.timeout(4000)
+            });
+            const dEmp = await rEmp.json();
+            if (dEmp && dEmp.ok && dEmp.usuario && Array.isArray(dEmp.empresas_vinculadas) && dEmp.empresas_vinculadas.length > 0) {
+              cuentaAutenticada = {
+                usuario: dEmp.usuario,
+                empresas: dEmp.empresas_vinculadas
+              };
+            }
+          } catch (e) {}
+        }
+
         const constitucion = PROMPTS_MAESTROS["00-constitucion-contador-cfo"] || "";
         const radar = PROMPTS_MAESTROS["05-radar-normativo-vigente"] || "";
+
+        if (cuentaAutenticada) {
+          const listaCuits = cuentaAutenticada.empresas
+            .map(e => `- CUIT **${e.cuit}** (${e.alias || "Contribuyente"} · rol: ${e.rol || "owner"} · modo solo lectura activo)`)
+            .join("\n");
+          const promptAutenticado = [
+            "# Orden Maestra — Usuario YA Autenticado y Vinculado (CERO FRICCIÓN)",
+            `El usuario **YA está autenticado** como \`${cuentaAutenticada.usuario}\` y tiene los siguientes CUITs vinculados y listos en la bóveda cifrada:`,
+            listaCuits,
+            "",
+            "## Reglas obligatorias para tu respuesta ahora:",
+            "1. **PROHIBIDO** pedirle que se vincule en `impuesto.com.ar/vincular` y **PROHIBIDO** volver a pedirle el CUIT (ya los tenés arriba).",
+            "2. Saludalo breve y ejecutivamente como su Contador de Cabecera y CFO confirmando en 1 línea que ya estás conectado a su cuenta y CUIT(s) arriba listados.",
+            "3. Ofrecele directamente 3–4 acciones concretas para elegir ahora (ej: **1) Auditoría 360° en ARCA** — aclarando que demora 1 a 10 minutos en segundo plano —, **2) Ver historial compartido de otros LLMs**, **3) Revisar DFE / comprobantes / vencimientos**, **4) Autorizar a un socio o contador por email**).",
+            "4. Si el usuario ya pidió algo concreto en su primer mensaje (por ej. auditar su CUIT), **ejecutalo directamente** sin repreguntar."
+          ].join("\n");
+
+          const contextoPerfil = perfilGuardado
+            ? `\n\n---\n**Perfil recuperado de memoria:** ${perfilGuardado.razon_social} (CUIT ${perfilGuardado.cuit} · ${perfilGuardado.tipo_personeria} · ${perfilGuardado.ubicacion}).`
+            : "";
+
+          return jsonRpcSuccess(id, {
+            content: [{
+              type: "text",
+              text: [constitucion, promptAutenticado, radar, contextoPerfil].filter(Boolean).join("\n\n---\n\n")
+            }]
+          });
+        }
+
         const etapaKey = sit.includes("estudio")
           ? "04-estudio-contable"
           : (perfilGuardado ? "03-seguimiento-mensual" : "01-primera-interaccion");
