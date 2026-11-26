@@ -335,6 +335,49 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
         )
         self.assertTrue(r_react.json().get("ok"))
 
+    def test_10_backoffice_growth_saas_completo(self):
+        from fastapi.testclient import TestClient
+        from bot.main import app
+        from bot import boveda_segura as bv
+
+        client = TestClient(app)
+        admin_tok = bv.crear_token_usuario("damianbourdieu@gmail.com", "growth_admin")["token"]
+        user_tok = bv.crear_token_usuario("normal_growth@impuesto.test", "growth_user")["token"]
+
+        # 1. Usuario normal bloqueado en herramientas Growth
+        r_no = client.post("/api/v1/mcp/tool", headers={"X-User-Token": user_tok}, json={"name": "admin_metricas_growth_saas", "arguments": {}})
+        self.assertTrue(r_no.json().get("acceso_denegado"))
+
+        # 2. Métricas Growth, Radar RevOps y Reporte Inversor
+        r_m = client.post("/api/v1/mcp/tool", headers={"X-User-Token": admin_tok}, json={"name": "admin_metricas_growth_saas", "arguments": {"tipo_cambio_usd": 1200}})
+        self.assertTrue(r_m.json().get("ok"))
+        self.assertIn("finops", r_m.json())
+        self.assertIn("funnel_activacion", r_m.json())
+
+        r_op = client.post("/api/v1/mcp/tool", headers={"X-User-Token": admin_tok}, json={"name": "admin_detectar_oportunidades_y_riesgo", "arguments": {}})
+        self.assertTrue(r_op.json().get("ok"))
+
+        r_cup = client.post("/api/v1/mcp/tool", headers={"X-User-Token": admin_tok}, json={"name": "admin_gestionar_cupones_y_referidos", "arguments": {"accion": "crear", "codigo": "LAUNCH50", "descuento_pct": 50}})
+        self.assertTrue(r_cup.json().get("ok"))
+        self.assertEqual(r_cup.json()["cupon"]["codigo"], "LAUNCH50")
+
+        r_tkt = client.post("/api/v1/mcp/tool", headers={"X-User-Token": admin_tok}, json={"name": "admin_gestionar_soporte_y_anuncios", "arguments": {"accion": "crear_ticket", "cliente_email": "normal_growth@impuesto.test", "asunto": "Duda Factura E", "prioridad": "alta"}})
+        self.assertTrue(r_tkt.json().get("ok"))
+        tid = r_tkt.json()["ticket"]["id"]
+        r_res = client.post("/api/v1/mcp/tool", headers={"X-User-Token": admin_tok}, json={"name": "admin_gestionar_soporte_y_anuncios", "arguments": {"accion": "resolver_ticket", "ticket_id": tid, "detalle": "Resuelto"}})
+        self.assertEqual(r_res.json()["ticket"]["estado"], "resuelto")
+
+        # 3. Modo mantenimiento bloquea usuarios normales pero NO al Super-Admin
+        client.post("/api/v1/mcp/tool", headers={"X-User-Token": admin_tok}, json={"name": "admin_gestionar_feature_flags_y_limites", "arguments": {"accion": "actualizar_flag", "flag_nombre": "modo_mantenimiento", "flag_valor": True}})
+        r_maint = client.post("/api/v1/mcp/tool", headers={"X-User-Token": user_tok}, json={"name": "listar_empresas", "arguments": {}})
+        self.assertTrue(r_maint.json().get("modo_mantenimiento"))
+        # Restaurar modo mantenimiento = False
+        client.post("/api/v1/mcp/tool", headers={"X-User-Token": admin_tok}, json={"name": "admin_gestionar_feature_flags_y_limites", "arguments": {"accion": "actualizar_flag", "flag_nombre": "modo_mantenimiento", "flag_valor": False}})
+
+        r_rep = client.post("/api/v1/mcp/tool", headers={"X-User-Token": admin_tok}, json={"name": "admin_exportar_reporte_inversor_markdown", "arguments": {}})
+        self.assertTrue(r_rep.json().get("ok"))
+        self.assertIn("Reporte Ejecutivo SaaS", r_rep.json().get("reporte_markdown", ""))
+
 
 if __name__ == "__main__":
     unittest.main()

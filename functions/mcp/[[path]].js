@@ -800,6 +800,84 @@ const MCP_TOOLS = [
       },
       required: ["accion"]
     }
+  },
+  {
+    name: "admin_metricas_growth_saas",
+    description: "[BACKOFFICE GROWTH · SOLO SUPER-ADMIN] Métricas SaaS completas de FinOps y Producto: MRR, ARR (ARS y USD), ARPU, tasa de conversión, DAU/WAU/MAU, Stickiness, Funnel de Activación de 6 pasos, Top Funcionalidades y Mix de Canales LLM.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tipo_cambio_usd: { type: "number", default: 1200, description: "Tipo de cambio ARS/USD para estimación en dólares" }
+      }
+    }
+  },
+  {
+    name: "admin_detectar_oportunidades_y_riesgo",
+    description: "[BACKOFFICE REVOPS · SOLO SUPER-ADMIN] Radar automático de Growth: detecta clientes listos para Upsell (free/trial con alta tracción), cuentas en riesgo de Churn por inactividad, fricciones de onboarding y Power Users multi-LLM con mensajes sugeridos de contacto.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        dias_inactividad_churn: { type: "integer", default: 14, description: "Días sin actividad para marcar riesgo de churn" }
+      }
+    }
+  },
+  {
+    name: "admin_gestionar_feature_flags_y_limites",
+    description: "[BACKOFFICE OPS · SOLO SUPER-ADMIN] Lee o modifica Feature Flags en vivo (modo_mantenimiento, registro_abierto, permitir_emision_wsfe, habilitar_estudios_b2b, beta_oauth_2_1) y cuotas por plan (max_cuits, auditorias_mes, max_invitados, precio_sugerido_ars).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        accion: { type: "string", enum: ["listar", "actualizar_flag", "actualizar_plan"], default: "listar" },
+        flag_nombre: { type: "string" },
+        flag_valor: { type: "boolean" },
+        plan_nombre: { type: "string", enum: ["free", "pro", "pyme", "estudio", "enterprise"] },
+        plan_limites: { type: "object" }
+      }
+    }
+  },
+  {
+    name: "admin_gestionar_cupones_y_referidos",
+    description: "[BACKOFFICE GROWTH · SOLO SUPER-ADMIN] Crea, lista, desactiva o registra usos de cupones promocionales y códigos de referidos (ej: LANZAMIENTO50, ESTUDIO2026) con % descuento, meses gratis y tope de usos.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        accion: { type: "string", enum: ["listar", "crear", "desactivar", "registrar_uso"], default: "listar" },
+        codigo: { type: "string" },
+        descuento_pct: { type: "integer", default: 0 },
+        meses_gratis: { type: "integer", default: 0 },
+        plan_objetivo: { type: "string", default: "todos" },
+        usos_maximos: { type: "integer", default: 100 },
+        referidor_email: { type: "string", default: "" }
+      }
+    }
+  },
+  {
+    name: "admin_gestionar_soporte_y_anuncios",
+    description: "[BACKOFFICE SOPORTE · SOLO SUPER-ADMIN] Gestiona tickets de clientes (listar_tickets, crear_ticket, resolver_ticket) y configura anuncios globales de la plataforma (configurar_anuncio).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        accion: { type: "string", enum: ["listar_tickets", "crear_ticket", "resolver_ticket", "configurar_anuncio"], default: "listar_tickets" },
+        cliente_email: { type: "string" },
+        asunto: { type: "string" },
+        detalle: { type: "string" },
+        prioridad: { type: "string", enum: ["baja", "media", "alta"], default: "media" },
+        ticket_id: { type: "string" },
+        anuncio_activo: { type: "boolean" },
+        anuncio_titulo: { type: "string" },
+        anuncio_mensaje: { type: "string" }
+      }
+    }
+  },
+  {
+    name: "admin_exportar_reporte_inversor_markdown",
+    description: "[BACKOFFICE EJECUTIVO · SOLO SUPER-ADMIN] Genera en 1 clic el Reporte Ejecutivo / Investor Update en Markdown consolidando MRR, ARR, Funnel, DAU/WAU/MAU, oportunidades de Growth, churn, flags y tickets.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tipo_cambio_usd: { type: "number", default: 1200 }
+      }
+    }
   }
 ];
 

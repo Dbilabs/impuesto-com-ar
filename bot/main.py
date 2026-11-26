@@ -48,6 +48,16 @@ from .boveda_segura import (
     admin_ver_movimientos,
     admin_gestionar_suscripcion,
 )
+from .backoffice_growth import (
+    esta_en_mantenimiento,
+    obtener_anuncio_global_activo,
+    admin_metricas_growth_saas,
+    admin_detectar_oportunidades_y_riesgo,
+    admin_gestionar_feature_flags_y_limites,
+    admin_gestionar_cupones_y_referidos,
+    admin_gestionar_soporte_y_anuncios,
+    admin_exportar_reporte_inversor_markdown,
+)
 from .auditoria_unificada import auditar_estado_integral_arca
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -619,6 +629,14 @@ def run_mcp_tool(
             "mensaje": "Tu cuenta en impuesto.com.ar se encuentra suspendida temporalmente. Contactá a soporte para reactivarla.",
         }
 
+    if esta_en_mantenimiento() and not es_admin_plataforma(actor_email):
+        an = obtener_anuncio_global_activo()
+        return {
+            "ok": False,
+            "modo_mantenimiento": True,
+            "mensaje": (an or {}).get("mensaje") or "impuesto.com.ar está realizando un mantenimiento programado de pocos minutos. Tus datos están seguros; volvé a intentar en breve.",
+        }
+
     # =========================================================================
     # BACKOFFICE DE PLATAFORMA (SUPER-ADMIN OWNER · SOLO PLATFORM_ADMIN_EMAILS)
     # =========================================================================
@@ -697,6 +715,60 @@ def run_mcp_tool(
                     "active_jobs": len(jobs),
                 }
         return {"ok": False, "error": f"Acción '{accion}' desconocida. Usá: limpiar_cache_auditorias, revocar_tokens_usuario, suspender_usuario, reactivar_usuario, resumen_salud_sistema."}
+
+    if tool == "admin_metricas_growth_saas":
+        return admin_metricas_growth_saas(
+            admin_email=actor_email,
+            tipo_cambio_usd=float(args.get("tipo_cambio_usd", 1200.0)),
+        )
+
+    if tool == "admin_detectar_oportunidades_y_riesgo":
+        return admin_detectar_oportunidades_y_riesgo(
+            admin_email=actor_email,
+            dias_inactividad_churn=int(args.get("dias_inactividad_churn", 14)),
+        )
+
+    if tool == "admin_gestionar_feature_flags_y_limites":
+        return admin_gestionar_feature_flags_y_limites(
+            admin_email=actor_email,
+            accion=args.get("accion", "listar"),
+            flag_nombre=args.get("flag_nombre", ""),
+            flag_valor=args.get("flag_valor"),
+            plan_nombre=args.get("plan_nombre", ""),
+            plan_limites=args.get("plan_limites"),
+        )
+
+    if tool == "admin_gestionar_cupones_y_referidos":
+        return admin_gestionar_cupones_y_referidos(
+            admin_email=actor_email,
+            accion=args.get("accion", "listar"),
+            codigo=args.get("codigo", ""),
+            descuento_pct=int(args.get("descuento_pct", 0)),
+            meses_gratis=int(args.get("meses_gratis", 0)),
+            plan_objetivo=args.get("plan_objetivo", "todos"),
+            usos_maximos=int(args.get("usos_maximos", 100)),
+            referidor_email=args.get("referidor_email", ""),
+        )
+
+    if tool == "admin_gestionar_soporte_y_anuncios":
+        return admin_gestionar_soporte_y_anuncios(
+            admin_email=actor_email,
+            accion=args.get("accion", "listar_tickets"),
+            cliente_email=args.get("cliente_email", ""),
+            asunto=args.get("asunto", ""),
+            detalle=args.get("detalle", ""),
+            prioridad=args.get("prioridad", "media"),
+            ticket_id=args.get("ticket_id", ""),
+            anuncio_activo=args.get("anuncio_activo"),
+            anuncio_titulo=args.get("anuncio_titulo", ""),
+            anuncio_mensaje=args.get("anuncio_mensaje", ""),
+        )
+
+    if tool == "admin_exportar_reporte_inversor_markdown":
+        return admin_exportar_reporte_inversor_markdown(
+            admin_email=actor_email,
+            tipo_cambio_usd=float(args.get("tipo_cambio_usd", 1200.0)),
+        )
 
     # Herramientas de identidad, permisos (Owner -> invitados) e Historial Cross-LLM
     if tool == "listar_empresas":
