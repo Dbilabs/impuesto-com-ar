@@ -1,0 +1,31 @@
+# Fly.io config para el Motor Headless ARCA 24/7 de impuesto.com.ar
+app = "impuesto-arca-engine"
+primary_region = "gru"
+
+[build]
+  dockerfile = "bot/Dockerfile"
+
+[env]
+  PUBLIC_BOT_URL = "https://impuesto.com.ar"
+  PORT = "8000"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "10s"
+    path = "/health"
+
+[[vm]]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[[mounts]]
+  source = "boveda_data"
+  destination = "/app/data/boveda"
