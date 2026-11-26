@@ -312,12 +312,25 @@ def emitir_comprobante_wsfe(
     ambiente: str = "homologacion",
     cert_path: Optional[str] = None,
     key_path: Optional[str] = None,
-    confirmado: bool = False
+    confirmado: bool = False,
+    cbte_asoc: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Prepara o emite una factura electrónica oficial vía WSFEv1 (FECAESolicitar).
+    Prepara o emite comprobantes electrónicos oficiales (Facturas A/B/C/E/M/FCE, Notas de Crédito y Notas de Débito)
+    desde cualquier Punto de Venta vía WSFEv1 (FECAESolicitar).
     Si confirmado=False devuelve el borrador completo sin impactar en ARCA.
     """
+    CBTE_NOMBRES = {
+        1: "Factura A", 2: "Nota de Débito A", 3: "Nota de Crédito A",
+        6: "Factura B", 7: "Nota de Débito B", 8: "Nota de Crédito B",
+        11: "Factura C", 12: "Nota de Débito C", 13: "Nota de Crédito C",
+        19: "Factura E (Exportación)", 20: "Nota de Débito E", 21: "Nota de Crédito E",
+        51: "Factura M", 52: "Nota de Débito M", 53: "Nota de Crédito M",
+        201: "Factura de Crédito Electrónica MiPyMEs (FCE A)", 202: "Nota de Débito FCE A", 203: "Nota de Crédito FCE A",
+        206: "Factura de Crédito Electrónica MiPyMEs (FCE B)", 207: "Nota de Débito FCE B", 208: "Nota de Crédito FCE B",
+        211: "Factura de Crédito Electrónica MiPyMEs (FCE C)", 212: "Nota de Débito FCE C", 213: "Nota de Crédito FCE C",
+    }
+    TIPOS_NC_ND = {2, 3, 7, 8, 12, 13, 20, 21, 52, 53, 202, 203, 207, 208, 212, 213}
     cuit_em = "".join(c for c in str(cuit_emisor) if c.isdigit())
     cuit_rec = "".join(c for c in str(receptor_cuit) if c.isdigit())
     doc_tipo = 80 if len(cuit_rec) == 11 else 99
@@ -331,6 +344,8 @@ def emitir_comprobante_wsfe(
         "emisor_cuit": cuit_em,
         "punto_venta": pto_vta,
         "cbte_tipo": cbte_tipo,
+        "cbte_nombre": CBTE_NOMBRES.get(cbte_tipo, f"Comprobante Código {cbte_tipo}"),
+        "comprobante_asociado": cbte_asoc,
         "receptor_doc_tipo": doc_tipo,
         "receptor_doc_nro": doc_nro,
         "concepto": concepto,
@@ -339,6 +354,11 @@ def emitir_comprobante_wsfe(
         "importe_iva": round(importe_iva, 2),
         "importe_total": imp_total
     }
+    if cbte_tipo in TIPOS_NC_ND and not cbte_asoc:
+        borrador["advertencia_nc_nd"] = (
+            "ARCA exige informar el comprobante original asociado (`cbte_asoc: {tipo, pto_vta, nro}`) "
+            "para emitir Notas de Crédito o Notas de Débito."
+        )
 
     if not confirmado:
         borrador["mensaje"] = (
@@ -380,6 +400,16 @@ def emitir_comprobante_wsfe(
           <ar:FchServHasta>{hoy}</ar:FchServHasta>
           <ar:FchVtoPago>{hoy}</ar:FchVtoPago>"""
 
+    asoc_block = ""
+    if cbte_asoc and cbte_asoc.get("tipo") and cbte_asoc.get("nro"):
+        asoc_block = f"""<ar:CbtesAsoc>
+            <ar:CbteAsoc>
+              <ar:Tipo>{int(cbte_asoc['tipo'])}</ar:Tipo>
+              <ar:PtoVta>{int(cbte_asoc.get('pto_vta', pto_vta))}</ar:PtoVta>
+              <ar:Nro>{int(cbte_asoc['nro'])}</ar:Nro>
+            </ar:CbteAsoc>
+          </ar:CbtesAsoc>"""
+
     env_key = "homologacion" if "homo" in ambiente.lower() else "produccion"
     soap = f"""<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ar="http://ar.gov.afip.dif.FEV1/">
@@ -414,6 +444,7 @@ def emitir_comprobante_wsfe(
                   {fechas_serv}
                   <ar:MonId>PES</ar:MonId>
                   <ar:MonCotiz>1</ar:MonCotiz>
+                  {asoc_block}
                   {iva_block}
                </ar:FECAEDetRequest>
             </ar:FeDetReq>

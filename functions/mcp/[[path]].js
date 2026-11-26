@@ -385,17 +385,29 @@ const MCP_TOOLS = [
   },
   {
     name: "emitir_factura_wsfe",
-    description: "Prepara o emite una factura electrónica oficial (A=1, B=6, C=11) por el carril rápido de Web Services WSFEv1 de ARCA (<1 segundo, sin navegador). Requiere confirmado=True para solicitar el CAE oficial.",
+    description: "Prepara o emite comprobantes electrónicos oficiales (Facturas A/B/C/E/M/FCE, Notas de Crédito y Notas de Débito) desde cualquier Punto de Venta habilitado vía Web Services WSFEv1 de ARCA (<1 segundo). Soporta comprobante asociado (`cbte_asoc`) obligatorio para Notas de Crédito y Débito. Requiere confirmado=True para solicitar el CAE oficial.",
     inputSchema: {
       type: "object",
       properties: {
-        cuit_emisor: { type: "string" },
-        pto_vta: { type: "integer", default: 1 },
-        cbte_tipo: { type: "integer", description: "1=Factura A, 6=Factura B, 11=Factura C" },
-        receptor_cuit: { type: "string" },
+        cuit_emisor: { type: "string", description: "CUIT del emisor (11 dígitos)" },
+        pto_vta: { type: "integer", default: 1, description: "Número de Punto de Venta habilitado en ARCA (ej. 1, 2, 3, 4...)" },
+        cbte_tipo: {
+          type: "integer",
+          description: "Código oficial ARCA: 1=Fact A, 2=ND A, 3=NC A, 6=Fact B, 7=ND B, 8=NC B, 11=Fact C, 12=ND C, 13=NC C, 19=Fact E, 20=ND E, 21=NC E, 51=Fact M, 52=ND M, 53=NC M, 201=FCE A, 202=ND FCE A, 203=NC FCE A, 206=FCE B, 211=FCE C"
+        },
+        receptor_cuit: { type: "string", description: "CUIT/CUIL/DNI del cliente receptor" },
         importe_neto: { type: "number" },
         importe_iva: { type: "number", default: 0 },
         concepto: { type: "integer", default: 2, description: "1=Productos, 2=Servicios, 3=Ambos" },
+        cbte_asoc: {
+          type: "object",
+          description: "Obligatorio para Notas de Crédito (3, 8, 13, 21, 53, 203) y Notas de Débito (2, 7, 12, 20, 52, 202): comprobante original asociado",
+          properties: {
+            tipo: { type: "integer", description: "Código del comprobante original (ej. 11 para Factura C)" },
+            pto_vta: { type: "integer", description: "Punto de venta del comprobante original" },
+            nro: { type: "integer", description: "Número del comprobante original" }
+          }
+        },
         ambiente: { type: "string", enum: ["homologacion", "produccion"], default: "homologacion" },
         confirmado: { type: "boolean", default: false }
       },

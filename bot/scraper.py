@@ -153,24 +153,48 @@ def consultar_mis_comprobantes(cuit: str, usuario: str, clave: str, tipo: str, r
 
         try:
             _login_arca(page, usuario, clave)
-            page.wait_for_selector("text='Ver todos'", timeout=20000)
-            page.click("text='Ver todos'")
-            page.wait_for_timeout(2000)
-
-            btn_mc = page.query_selector("//h3[contains(text(), 'MIS COMPROBANTES')]/ancestor::a") or page.query_selector("text='MIS COMPROBANTES'")
+            # Abrir Mis Comprobantes usando buscador oficial (más confiable que 'Ver todos')
+            btn_mc = None
+            try:
+                search = page.locator("#buscadorInput").first
+                search.wait_for(state="visible", timeout=20000)
+                search.click(force=True)
+                search.fill("Mis Comprobantes")
+                page.wait_for_timeout(1800)
+                items = page.locator("[id^='rbt-menu-item-']")
+                for i in range(items.count()):
+                    if "mis comprobantes" in items.nth(i).inner_text().lower():
+                        btn_mc = items.nth(i)
+                        break
+            except Exception:
+                pass
+            if not btn_mc:
+                try:
+                    page.wait_for_selector("text='Ver todos'", timeout=15000)
+                    page.click("text='Ver todos'")
+                    page.wait_for_timeout(2000)
+                except Exception:
+                    pass
+                btn_mc = page.query_selector("//h3[contains(text(), 'MIS COMPROBANTES')]/ancestor::a") or page.query_selector("text='MIS COMPROBANTES'")
             if not btn_mc:
                 raise RuntimeError("No se encontró el servicio 'Mis Comprobantes' habilitado en este CUIT.")
 
-            with page.context.expect_page() as new_page_info:
+            with page.context.expect_page(timeout=20000) as new_page_info:
                 btn_mc.click()
             comp_page = new_page_info.value
-            comp_page.wait_for_load_state("networkidle")
-            comp_page.wait_for_timeout(2000)
+            try:
+                comp_page.wait_for_load_state("domcontentloaded", timeout=20000)
+            except Exception:
+                pass
+            comp_page.wait_for_timeout(2500)
 
             btn_cuit = comp_page.query_selector(f"button:has-text('{cuit_fmt}')") or comp_page.query_selector(f"text='{cuit_fmt}'") or comp_page.query_selector(f"button:has-text('{cuit_clean}')")
             if btn_cuit:
                 btn_cuit.click()
-                comp_page.wait_for_load_state("networkidle")
+                try:
+                    comp_page.wait_for_load_state("domcontentloaded", timeout=15000)
+                except Exception:
+                    pass
                 comp_page.wait_for_timeout(2000)
 
             sub_url = (
@@ -178,17 +202,24 @@ def consultar_mis_comprobantes(cuit: str, usuario: str, clave: str, tipo: str, r
                 if tipo.upper() == "E"
                 else "https://fes.afip.gob.ar/mcmp/jsp/comprobantesRecibidos.do"
             )
-            comp_page.goto(sub_url, wait_until="networkidle", timeout=20000)
-            comp_page.wait_for_timeout(1500)
+            comp_page.goto(sub_url, wait_until="domcontentloaded", timeout=25000)
+            comp_page.wait_for_timeout(2000)
 
             has_input = comp_page.query_selector("#fechaEmision")
             if not has_input:
                 logger.warning(f"No se encontró el formulario de búsqueda de comprobantes para CUIT {cuit}")
                 return []
 
-            comp_page.evaluate(f"() => {{ document.getElementById('fechaEmision').value = '{rango_fechas}'; }}")
+            if rango_fechas:
+                comp_page.evaluate(
+                    "(val) => { const el = document.getElementById('fechaEmision'); el.value = val; el.dispatchEvent(new Event('change', {bubbles:true})); }",
+                    rango_fechas,
+                )
             comp_page.click("#buscarComprobantes")
-            comp_page.wait_for_load_state("networkidle")
+            try:
+                comp_page.wait_for_load_state("networkidle", timeout=15000)
+            except Exception:
+                pass
             comp_page.wait_for_timeout(3000)
 
             csv_btn = comp_page.query_selector("button:has-text('CSV'), a:has-text('CSV')")
@@ -211,13 +242,13 @@ def consultar_mis_comprobantes(cuit: str, usuario: str, clave: str, tipo: str, r
                     for name in z.namelist():
                         raw = z.read(name)
                         try:
-                            csv_text = raw.decode("utf-8")
+                            csv_text = raw.decode("utf-8-sig")
                         except UnicodeDecodeError:
                             csv_text = raw.decode("latin-1")
                         break
             else:
                 try:
-                    csv_text = data.decode("utf-8")
+                    csv_text = data.decode("utf-8-sig")
                 except UnicodeDecodeError:
                     csv_text = data.decode("latin-1")
 
@@ -225,7 +256,8 @@ def consultar_mis_comprobantes(cuit: str, usuario: str, clave: str, tipo: str, r
                 return []
 
             lines = csv_text.splitlines()
-            reader = csv.DictReader(lines, delimiter=";")
+            delim = ";" if (lines and lines[0].count(";") >= lines[0].count(",")) else ","
+            reader = csv.DictReader(lines, delimiter=delim)
             rows = []
             for r in reader:
                 clean_row = {k.strip(): (v.strip() if v else "") for k, v in r.items() if k}

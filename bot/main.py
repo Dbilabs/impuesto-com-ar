@@ -761,11 +761,54 @@ def run_mcp_tool(
         )
 
     if tool == "consultar_comprobantes_mes":
-        t_code = "E" if args.get("tipo") == "emitidos" else "R"
-        rango = args.get("rango_fechas", "")
+        import calendar
+        import datetime as _dt
+        periodo = (args.get("periodo") or "").strip()
+        rango = (args.get("rango_fechas") or "").strip()
+        if not rango and periodo and len(periodo) == 7 and periodo[4] == "-":
+            try:
+                yy, mm = int(periodo[:4]), int(periodo[5:7])
+                last_day = calendar.monthrange(yy, mm)[1]
+                rango = f"01/{mm:02d}/{yy} - {last_day:02d}/{mm:02d}/{yy}"
+            except Exception:
+                rango = ""
+        if not rango:
+            hoy = _dt.date.today()
+            last_day = calendar.monthrange(hoy.year, hoy.month)[1]
+            rango = f"01/{hoy.month:02d}/{hoy.year} - {last_day:02d}/{hoy.month:02d}/{hoy.year}"
+
+        tipo_req = (args.get("tipo") or "ambos").lower()
+        def _fetch_mc():
+            if tipo_req == "ambos":
+                em = consultar_mis_comprobantes(cuit=cuit, usuario=cuit, clave=clave, tipo="E", rango_fechas=rango)
+                rec = consultar_mis_comprobantes(cuit=cuit, usuario=cuit, clave=clave, tipo="R", rango_fechas=rango)
+                return {
+                    "ok": True,
+                    "cuit": cuit,
+                    "periodo": periodo or rango,
+                    "rango_fechas": rango,
+                    "tipo": "ambos",
+                    "cantidad_emitidos": len(em),
+                    "cantidad_recibidos": len(rec),
+                    "emitidos": em,
+                    "recibidos": rec,
+                }
+            t_code = "E" if tipo_req == "emitidos" else "R"
+            rows = consultar_mis_comprobantes(cuit=cuit, usuario=cuit, clave=clave, tipo=t_code, rango_fechas=rango)
+            return {
+                "ok": True,
+                "cuit": cuit,
+                "periodo": periodo or rango,
+                "rango_fechas": rango,
+                "tipo": tipo_req,
+                "cantidad": len(rows),
+                "comprobantes": rows,
+            }
+
         return _run_tool_sin_timeout(
-            f"comprobantes:{cuit}:{t_code}:{rango}", f"Mis Comprobantes ({args.get('tipo','ambos')})",
-            lambda: consultar_mis_comprobantes(cuit=cuit, usuario=cuit, clave=clave, tipo=t_code, rango_fechas=rango),
+            f"comprobantes:{cuit}:{tipo_req}:{rango}",
+            f"Mis Comprobantes {periodo or rango} ({tipo_req})",
+            _fetch_mc,
             cuit=cuit, actor_email=actor_email, origen_llm=origen_llm, accion_hist="consulta_comprobantes",
         )
 
@@ -803,6 +846,7 @@ def run_mcp_tool(
             concepto=int(args.get("concepto", 2)),
             ambiente=args.get("ambiente", "homologacion"),
             confirmado=bool(args.get("confirmado", False)),
+            cbte_asoc=args.get("cbte_asoc"),
         )
         if bool(args.get("confirmado", False)):
             registrar_evento_historial(actor_email, cuit, origen_llm, "emitir_factura_wsfe", f"Factura WSFE a {args.get('receptor_cuit','')} por ${args.get('importe_neto',0)}")
