@@ -265,8 +265,8 @@ def run_mcp_tool(req: McpToolRequest, request: Request, x_bot_secret: Optional[s
         )
 
     if tool == "leer_notificaciones_dfe":
-        from .scraper import consultar_dfe
-        return consultar_dfe(usuario=cuit, clave=clave, cuit_objetivo=args.get("cuit"))
+        from .scraper import consultar_notificaciones_dfe
+        return {"ok": True, "notificaciones": consultar_notificaciones_dfe(usuario=cuit, clave=clave, cuit_objetivo=args.get("cuit"))}
 
     if tool == "consultar_estado_monotributo":
         from .scraper_monotributo import consultar_estado_monotributo

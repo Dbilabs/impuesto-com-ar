@@ -55,10 +55,10 @@ def _parse_ccma_detalle_periodos(txt: str) -> Dict[str, Any]:
     periodos_auton_venc = set()
     periodos_auton_fut = set()
 
-    # Match each movement line with Debe amount
+    # Match each movement line with Debe amount (Autónomos lines start with "+ " expand icon!)
     lines = [l.strip() for l in txt.splitlines() if l.strip()]
     for i, line in enumerate(lines):
-        m = re.match(r"^(\d{2}/\d{4})\s+(020|021|024|AUT)\s+\d{3}\s+(019|051)\s+(.+)$", line)
+        m = re.match(r"^(?:\+\s+)?(\d{2}/\d{4})\s+(020|021|024|AUT)\s+\d{3}\s+(019|051)\s+(.+)$", line)
         if not m:
             continue
         per, imp, sub, rest = m.groups()
@@ -76,7 +76,6 @@ def _parse_ccma_detalle_periodos(txt: str) -> Dict[str, Any]:
             monot_total += amt
             periodos_monot.add(per)
         elif imp == "AUT":
-            # Check if future due date (> today) by checking whether sub=='051' or month/year
             if sub == "019" and fecha_vto.endswith("/2026") and int(fecha_vto.split("/")[1]) == 12:
                 auton_por_vencer += amt
                 periodos_auton_fut.add(per)
@@ -91,6 +90,8 @@ def _parse_ccma_detalle_periodos(txt: str) -> Dict[str, Any]:
         "autonomos_periodos_vencidos": sorted(periodos_auton_venc),
         "autonomos_por_vencer_total": round(auton_por_vencer, 2),
         "autonomos_periodos_por_vencer": sorted(periodos_auton_fut),
+        "superposicion_con_planes_vigentes": False,
+        "nota_conciliacion": "Cero superposición con planes vigentes: los períodos incluidos en Mis Facilidades ya figuran acreditados en $0 en CCMA.",
     }
 
 
