@@ -43,7 +43,7 @@ jobs: Dict[str, Dict[str, Any]] = {}
 
 # Caché TTL (15 min) + deduplicación de auditorías en curso para evitar timeouts en Gemini Online / Cloudflare
 AUDIT_TTL_SEC = int(os.environ.get("AUDIT_CACHE_TTL_SEC", "900"))
-AUDIT_SYNC_WAIT_SEC = float(os.environ.get("AUDIT_SYNC_WAIT_SEC", "18.0"))
+AUDIT_SYNC_WAIT_SEC = float(os.environ.get("AUDIT_SYNC_WAIT_SEC", "6.0"))
 _audit_lock = threading.Lock()
 AUDIT_CACHE: Dict[str, Dict[str, Any]] = {}
 AUDIT_INFLIGHT: Dict[str, Dict[str, Any]] = {}
@@ -306,6 +306,7 @@ def run_mcp_tool(req: McpToolRequest, request: Request, x_bot_secret: Optional[s
     _check_secret(x_bot_secret)
     tool = req.name
     args = req.arguments or {}
+    logger.info(f"[MCP] tool={tool} keys={list(args.keys())}")
     public_base = os.environ.get("PUBLIC_BOT_URL", "https://impuesto.com.ar").rstrip("/")
 
     # Herramientas sin clave fiscal (públicas / WS)
@@ -355,6 +356,14 @@ def run_mcp_tool(req: McpToolRequest, request: Request, x_bot_secret: Optional[s
         )
 
     if tool == "consultar_ccma_cuenta_corriente":
+        with _audit_lock:
+            cached = AUDIT_CACHE.get(cuit)
+            if cached and (time.time() - cached["ts"]) < AUDIT_TTL_SEC:
+                ccma = (cached["data"] or {}).get("ccma")
+                if ccma:
+                    return {"ok": True, "cuit": cuit, "desde_cache": True, "ccma": ccma}
+            if cuit in AUDIT_INFLIGHT:
+                return _ejecutar_auditoria_sin_timeout(cuit=cuit, clave=clave)
         from .auditoria_unificada import consultar_ccma_preciso
         return consultar_ccma_preciso(cuit=cuit, clave=clave)
 
@@ -396,8 +405,9 @@ def run_mcp_tool(req: McpToolRequest, request: Request, x_bot_secret: Optional[s
                 mono = (cached["data"] or {}).get("portal_monotributo")
                 if mono:
                     return {"ok": True, "cuit": cuit, "desde_cache": True, "portal_monotributo": mono}
-        from .scraper_monotributo import consultar_estado_monotributo
-        return consultar_estado_monotributo(usuario=cuit, clave=clave)
+            if cuit in AUDIT_INFLIGHT:
+                return _ejecutar_auditoria_sin_timeout(cuit=cuit, clave=clave)
+        return _ejecutar_auditoria_sin_timeout(cuit=cuit, clave=clave)
 
     if tool == "consultar_padron_cuit_ws":
         from .arca_ws import consultar_padron_a5

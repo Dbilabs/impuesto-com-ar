@@ -116,8 +116,11 @@ def consultar_ccma_preciso(cuit: str, clave: str) -> Dict[str, Any]:
         page.fill("#F1\\:password", clave)
         page.click("#F1\\:btnIngresar")
         page.wait_for_url("**/portalcf.cloud.afip.gob.ar/**", timeout=30000)
-        page.wait_for_load_state("networkidle", timeout=20000)
-        time.sleep(2)
+        try:
+            page.wait_for_selector("#buscadorInput", timeout=25000)
+        except Exception:
+            page.wait_for_load_state("domcontentloaded", timeout=15000)
+        time.sleep(1.5)
         page.keyboard.press("Escape")
 
         search = page.locator("#buscadorInput").first
@@ -196,8 +199,11 @@ def auditar_estado_integral_arca(cuit: str, clave: str) -> Dict[str, Any]:
         page.fill("#F1\\:password", clave)
         page.click("#F1\\:btnIngresar")
         page.wait_for_url("**/portalcf.cloud.afip.gob.ar/**", timeout=30000)
-        page.wait_for_load_state("networkidle", timeout=20000)
-        time.sleep(2)
+        try:
+            page.wait_for_selector("#buscadorInput", timeout=25000)
+        except Exception:
+            page.wait_for_load_state("domcontentloaded", timeout=15000)
+        time.sleep(1.5)
         page.keyboard.press("Escape")
 
         def open_service(query: str, must_contain: str):
