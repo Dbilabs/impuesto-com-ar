@@ -2019,7 +2019,8 @@ export async function onRequest({ request, env, params }) {
             result.estado !== "EN_PROGRESO" &&
             PROMPTS_MAESTROS["02-post-diagnostico"]
           ) {
-            outText = `${PROMPTS_MAESTROS["02-post-diagnostico"]}\n\n---\n\n${outText}`;
+            const orgPrompt = PROMPTS_MAESTROS["06-organizacion-relacion-anual"] || "";
+            outText = [PROMPTS_MAESTROS["02-post-diagnostico"], orgPrompt, outText].filter(Boolean).join("\n\n---\n\n");
           }
           return jsonRpcSuccess(id, { content: [{ type: "text", text: outText }] });
         } catch (e) {
@@ -2313,21 +2314,29 @@ export async function onRequest({ request, env, params }) {
         const radar = PROMPTS_MAESTROS["05-radar-normativo-vigente"] || "";
 
         if (cuentaAutenticada) {
+          const llmPlataforma = host.endsWith(".impuesto.com.ar") ? host.split(".")[0] : "mcp";
+          const contenedorNombre = llmPlataforma === "gemini"
+            ? "Gem llamado 'Impuestos — Contador de Cabecera'"
+            : (llmPlataforma === "chatgpt"
+              ? "Proyecto 'Impuestos' + ChatGPT Tasks"
+              : "Project llamado 'Impuestos'");
           const listaCuits = cuentaAutenticada.empresas
             .map(e => `- CUIT **${e.cuit}** (${e.alias || "Contribuyente"} · rol: ${e.rol || "owner"} · modo solo lectura activo)`)
             .join("\n");
           const promptAutenticado = [
             "# Orden Maestra — Usuario YA Autenticado y Vinculado (CERO FRICCIÓN)",
-            `El usuario **YA está autenticado** como \`${cuentaAutenticada.usuario}\` y tiene los siguientes CUITs vinculados y listos en la bóveda cifrada:`,
+            `El usuario **YA está autenticado** como \`${cuentaAutenticada.usuario}\` desde **${llmPlataforma.toUpperCase()}** y tiene los siguientes CUITs vinculados y listos en la bóveda cifrada:`,
             listaCuits,
             "",
             "## Reglas obligatorias para tu respuesta ahora:",
             "1. **PROHIBIDO** pedirle que se vincule en `impuesto.com.ar/vincular` y **PROHIBIDO** volver a pedirle el CUIT (ya los tenés arriba).",
             "2. Saludalo breve y ejecutivamente como su Contador de Cabecera y CFO confirmando en 1 línea que ya estás conectado a su cuenta y CUIT(s) arriba listados.",
-            "3. Ofrecele directamente 3–4 acciones concretas para elegir ahora (ej: **1) Auditoría 360° en ARCA** — aclarando que demora 1 a 10 minutos en segundo plano —, **2) Ver historial compartido de otros LLMs**, **3) Revisar DFE / comprobantes / vencimientos**, **4) Autorizar a un socio o contador por email**).",
-            "4. Si el usuario ya pidió algo concreto en su primer mensaje (por ej. auditar su CUIT), **ejecutalo directamente** sin repreguntar."
+            "3. **PROACTIVAMENTE ordená la relación de trabajo hacia adelante:** además de ofrecerle su diagnóstico fiscal, proponé dejar armado su **" + contenedorNombre + "**, la **regla de 1 chat limpio por mes** (`📅 Cierre MM/AAAA`, usando `ver_historial_actividad` y `registrar_nota_historial` para no perder contexto entre chats ni entre LLMs) y sus **tareas programadas de vencimientos** (`preparar_espacio_de_trabajo_impuestos` + `generar_automatizaciones_y_calendario_fiscal`).",
+            "4. Ofrecele directamente elegir por dónde arrancar hoy: **(1) Organizar nuestro espacio de trabajo anual (Proyecto/Gem + tareas programadas + higiene de chats)**, **(2) Lanzar Auditoría 360° en ARCA** (aclarando que demora 1 a 10 min en segundo plano), **(3) Ver historial compartido de otros LLMs / DFE**, o **(4) Autorizar a un socio o contador por email**.",
+            "5. Si el usuario ya pidió algo concreto en su primer mensaje, **ejecutalo directamente** sin repreguntar."
           ].join("\n");
 
+          const orgAnual = PROMPTS_MAESTROS["06-organizacion-relacion-anual"] || "";
           const contextoPerfil = perfilGuardado
             ? `\n\n---\n**Perfil recuperado de memoria:** ${perfilGuardado.razon_social} (CUIT ${perfilGuardado.cuit} · ${perfilGuardado.tipo_personeria} · ${perfilGuardado.ubicacion}).`
             : "";
@@ -2335,7 +2344,7 @@ export async function onRequest({ request, env, params }) {
           return jsonRpcSuccess(id, {
             content: [{
               type: "text",
-              text: [constitucion, promptAutenticado, radar, contextoPerfil].filter(Boolean).join("\n\n---\n\n")
+              text: [constitucion, promptAutenticado, orgAnual, radar, contextoPerfil].filter(Boolean).join("\n\n---\n\n")
             }]
           });
         }
@@ -2472,17 +2481,36 @@ export async function onRequest({ request, env, params }) {
         };
         const label = PERFIL_LABELS[perfil] || "Contribuyente";
 
+        const llmActual = host.endsWith(".impuesto.com.ar") ? host.split(".")[0] : "mcp";
+        const GUIA_PLATAFORMA = {
+          gemini: "En Google Gemini: creá un **Gem** llamado `Impuestos — Contador de Cabecera`, pegá el prompt de abajo en sus instrucciones, vinculá tu conector privado y cargá el calendario `.ics` en Google Calendar / Google Tasks.",
+          claude: "En Claude: creá un **Project** llamado `Impuestos`, pegá el prompt de abajo en *Project Instructions*, mantené activo tu conector privado y abrí un chat nuevo dentro del Project por cada mes.",
+          chatgpt: "En ChatGPT: creá un **Proyecto** llamado `Impuestos`, pegá el prompt en sus instrucciones y activá **ChatGPT Tasks** (tareas programadas nativas) con los vencimientos de `generar_automatizaciones_y_calendario_fiscal`.",
+          copilot: "En Microsoft Copilot: creá un espacio/agente `Impuestos`, pegá las instrucciones e importá el `.ics` en Outlook / Power Automate."
+        };
         const promptProyecto = [
-          `Sos mi Contador Agéntico de Cabecera y CFO (impuesto.com.ar).`,
+          `Sos mi Contador Público de Cabecera, CFO y Arquitecto de mi sistema fiscal anual.`,
           `• Perfil: ${label}${cuitClean ? ` · CUIT principal: ${cuitClean}` : ""} · Jurisdicción: ${juris}.`,
           `• Objetivo anual: ${obj}.`,
-          `• Reglas de trabajo en este Proyecto "Impuestos":`,
-          `  1) Hablame en español argentino claro y ejecutivo, sin jerga técnica ni mencionar herramientas internas.`,
-          `  2) Buscá vos todos los datos que viven en ARCA (CCMA, Mis Facilidades con capital remanente y cuota día 16, SCT, Monotributo, DFE, Ganancias F.711/F.2711, BBPP F.762) sin pedirme que entre al portal.`,
-          `  3) Nunca afirmes "Deuda $0" ni "Al día" sin cruzar todas las fuentes obligatorias y aclarar tributos fuera de ARCA (IIBB/Municipios).`,
-          `  4) Operá siempre en modo solo lectura salvo confirmación explícita mía antes de emitir facturas, presentar DDJJ o planes.`,
-          `  5) Cerrá cada charla recomendándome cuál es el próximo paso concreto y abrimos 1 chat limpio por cada mes nuevo.`
+          `• Reglas de trabajo en este espacio "Impuestos":`,
+          `  1) Al iniciar cualquier chat nuevo, llamá primero a \`ver_historial_actividad\` para retomar automáticamente el contexto de otros chats y otros LLMs (Claude, ChatGPT, Gemini).`,
+          `  2) Hablame en español argentino claro y ejecutivo, sin jerga técnica ni mencionar herramientas internas.`,
+          `  3) Buscá vos todos los datos que viven en ARCA (CCMA, Mis Facilidades con capital remanente y cuota día 16, SCT, Monotributo, DFE, Ganancias F.711/F.2711, BBPP F.762) sin pedirme que entre al portal; avisame siempre que las auditorías completas tardan 1 a 10 minutos.`,
+          `  4) Nunca afirmes "Deuda $0" ni "Al día" sin cruzar todas las fuentes obligatorias y aclarar tributos fuera de ARCA (IIBB/Municipios).`,
+          `  5) Operá siempre en modo solo lectura salvo confirmación explícita mía antes de emitir facturas, presentar DDJJ o planes.`,
+          `  6) Al cerrar cada hito o decisión importante, guardá un resumen con \`registrar_nota_historial\` y decime qué chat limpio abrir la próxima vez.`
         ].join("\n");
+
+        const higieneChats = {
+          regla_de_oro: "Nunca mezcles meses ni trámites distintos en un chat infinito: los chats largos mezclan saldos viejos y reducen precisión. Usá el historial compartido (`ver_historial_actividad` + `registrar_nota_historial`) como memoria limpia entre chats y entre LLMs.",
+          convencion_nombres: [
+            "📅 Cierre YYYY-MM (abrir 1 chat nuevo el día 1 de cada mes para pagos, facturación, DFE y tope de categoría)",
+            "💳 Regularización y Planes ARCA (exclusivo para CCMA, VEPs y Mis Facilidades)",
+            "🧾 Ganancias y BBPP YYYY (exclusivo para DDJJ anuales, SiRADIG y Nuestra Parte)",
+            "🏢 [Nombre Sociedad / Estudio] (1 hilo separado por cada sociedad o cliente)"
+          ],
+          prompt_apertura_mensual: "Arranquemos el cierre de este mes: revisá mi historial reciente (`ver_historial_actividad`), mis próximos vencimientos, mi DFE y el estado actualizado en ARCA para decirme exactamente qué pagar y qué revisar esta semana."
+        };
 
         const skillsRecomendados = SKILLS_BUNDLE
           .filter(s => s.perfil_objetivo === "todos" || s.perfil_objetivo === perfil)
@@ -2507,12 +2535,14 @@ export async function onRequest({ request, env, params }) {
           content: [{
             type: "text",
             text: JSON.stringify({
-              nombre_proyecto_sugerido: "Impuestos",
+              nombre_proyecto_sugerido: llmActual === "gemini" ? "Impuestos — Contador de Cabecera (Gem)" : "Impuestos",
+              plataforma_detectada: llmActual,
               perfil: label,
               paso_a_crear_proyecto: {
-                instruccion: "Creá un Proyecto llamado 'Impuestos' en ChatGPT o Claude y pegá este texto exacto en las instrucciones del Proyecto:",
+                instruccion: GUIA_PLATAFORMA[llmActual] || GUIA_PLATAFORMA.claude,
                 prompt_copy_paste: promptProyecto
               },
+              paso_a2_higiene_de_chats: higieneChats,
               paso_b_skills_para_tu_perfil: {
                 hub_web: "https://impuesto.com.ar/skills/",
                 comando_1_linea: "curl -fsSL https://impuesto.com.ar/skills/install.sh | bash",
