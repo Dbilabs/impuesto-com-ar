@@ -897,21 +897,36 @@ export async function onRequest({ request, env, params }) {
   const isDedicatedSubdomain = DEDICATED_MCP_HOSTS.has(host);
   const path = (params.path || []).join("/");
   const accept = request.headers.get("accept") || "";
-  const wantsSse = path === "sse" || (request.method === "GET" && accept.includes("text/event-stream"));
+  const isLegacySsePath = path === "sse";
+  const wantsStreamableSse = !isLegacySsePath && request.method === "GET" && accept.includes("text/event-stream");
+
+  // 0. Streamable HTTP MCP (2025-03-26): servidor stateless responde 405 a GET SSE en raíz y 204 a DELETE
+  if (wantsStreamableSse) {
+    return new Response("Method Not Allowed", {
+      status: 405,
+      headers: { "Allow": "POST, OPTIONS", "Access-Control-Allow-Origin": "*" }
+    });
+  }
+  if (request.method === "DELETE") {
+    return new Response(null, {
+      status: 204,
+      headers: { "Access-Control-Allow-Origin": "*" }
+    });
+  }
 
   // 1. Si es GET desde un navegador humano (no SSE), mostrar la landing del conector
-  if (!wantsSse && request.method === "GET") {
+  if (!isLegacySsePath && request.method === "GET") {
     return new Response(htmlLanding(url), {
       status: 200,
       headers: { "Content-Type": "text/html; charset=utf-8" }
     });
   }
 
-  // 2. El protocolo MCP (initialize, tools/list, prompts, resources y tools Edge) corre siempre en el Edge (<5ms).
+  // 2. El protocolo MCP (initialize, ping, tools/list, prompts, resources y tools Edge) corre siempre en el Edge (<5ms).
   //    Las herramientas ARCA en vivo delegan a `${env.BOT_API_URL}/api/v1/mcp/tool` con X-Bot-Secret.
 
-  // 3. Manejo directo del estándar MCP SSE en el Edge
-  if (wantsSse && request.method === "GET") {
+  // 3. Manejo directo del estándar legacy MCP SSE únicamente en /sse
+  if (isLegacySsePath && request.method === "GET") {
     const sessionId = crypto.randomUUID();
     const qsToken = url.searchParams.get("token") || "";
     const tokenSuffix = qsToken ? `&token=${encodeURIComponent(qsToken)}` : "";
@@ -951,12 +966,14 @@ export async function onRequest({ request, env, params }) {
 
     // Métodos del protocolo MCP
     if (method === "initialize") {
+      const reqVer = rpcParams?.protocolVersion;
+      const supportedVers = new Set(["2024-11-05", "2025-03-26", "2025-06-18"]);
       return jsonRpcSuccess(id, {
-        protocolVersion: "2024-11-05",
+        protocolVersion: supportedVers.has(reqVer) ? reqVer : "2024-11-05",
         capabilities: { tools: {}, prompts: {}, resources: {} },
         serverInfo: {
           name: "impuesto-arca-mcp",
-          version: "2.5.0"
+          version: "3.1.0"
         },
         instructions: [
           "Sos el CONTADOR AGÉNTICO DE CABECERA y CFO de impuesto.com.ar. Hablás en primera persona como un contador argentino de confianza, cálido, claro y resolutivo. NUNCA menciones 'el MCP' ni 'el conector' al usuario final.",
@@ -968,8 +985,15 @@ export async function onRequest({ request, env, params }) {
       });
     }
 
-    if (method === "notifications/initialized") {
-      return new Response(null, { status: 204 });
+    if (method === "ping") {
+      return jsonRpcSuccess(id, {});
+    }
+
+    if (typeof method === "string" && method.startsWith("notifications/")) {
+      return new Response(null, {
+        status: 202,
+        headers: { "Access-Control-Allow-Origin": "*" }
+      });
     }
 
     if (method === "resources/list") {
@@ -2727,8 +2751,8 @@ export async function onRequest({ request, env, params }) {
       status: 204,
       headers: {
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept"
+        "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, Mcp-Session-Id, MCP-Protocol-Version"
       }
     });
   }
