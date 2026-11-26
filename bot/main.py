@@ -40,6 +40,13 @@ from .boveda_segura import (
     obtener_historial_actividad,
     normalizar_cuit,
     normalizar_email,
+    es_admin_plataforma,
+    esta_usuario_suspendido,
+    revocar_tokens_usuario,
+    admin_resumen_plataforma,
+    admin_listar_clientes,
+    admin_ver_movimientos,
+    admin_gestionar_suscripcion,
 )
 from .auditoria_unificada import auditar_estado_integral_arca
 
@@ -602,6 +609,94 @@ def run_mcp_tool(
     # =========================================================================
     if not actor_email:
         return _auth_required_error(public_base)
+
+    if esta_usuario_suspendido(actor_email):
+        return {
+            "ok": False,
+            "acceso_denegado": True,
+            "cuenta_suspendida": True,
+            "usuario": actor_email,
+            "mensaje": "Tu cuenta en impuesto.com.ar se encuentra suspendida temporalmente. Contactá a soporte para reactivarla.",
+        }
+
+    # =========================================================================
+    # BACKOFFICE DE PLATAFORMA (SUPER-ADMIN OWNER · SOLO PLATFORM_ADMIN_EMAILS)
+    # =========================================================================
+    if tool == "admin_tablero_plataforma":
+        out = admin_resumen_plataforma(actor_email)
+        if out.get("ok"):
+            with _audit_lock:
+                out["runtime_oracle"] = {
+                    "version": "3.1.0",
+                    "cached_audits": len(AUDIT_CACHE),
+                    "inflight_audits": len(AUDIT_INFLIGHT),
+                    "cached_tools": len(TOOL_CACHE),
+                    "inflight_tools": len(TOOL_INFLIGHT),
+                }
+        return out
+
+    if tool == "admin_listar_clientes_plataforma":
+        return admin_listar_clientes(
+            admin_email=actor_email,
+            filtro=args.get("filtro", ""),
+            plan=args.get("plan", ""),
+            limite=int(args.get("limite", 50)),
+        )
+
+    if tool == "admin_ver_movimientos_plataforma":
+        return admin_ver_movimientos(
+            admin_email=actor_email,
+            email=args.get("email", ""),
+            cuit=args.get("cuit", ""),
+            origen_llm=args.get("origen_llm", ""),
+            limite=int(args.get("limite", 50)),
+        )
+
+    if tool == "admin_gestionar_suscripcion_cliente":
+        return admin_gestionar_suscripcion(
+            admin_email=actor_email,
+            target_email=args.get("email", ""),
+            plan=args.get("plan", "pro"),
+            estado_cuenta=args.get("estado_cuenta", "activo"),
+            precio_mensual_ars=float(args.get("precio_mensual_ars", 0.0)),
+            nota=args.get("nota", ""),
+        )
+
+    if tool == "admin_accion_emergencia_plataforma":
+        if not es_admin_plataforma(actor_email):
+            return {"ok": False, "acceso_denegado": True, "error": "Acción restringida al Super-Admin Owner de impuesto.com.ar."}
+        accion = (args.get("accion") or "").strip().lower()
+        objetivo = (args.get("objetivo") or "").strip()
+        if accion == "limpiar_cache_auditorias":
+            with _audit_lock:
+                if objetivo:
+                    c = normalizar_cuit(objetivo)
+                    AUDIT_CACHE.pop(c, None)
+                    for k in [k for k in TOOL_CACHE if c in k]:
+                        TOOL_CACHE.pop(k, None)
+                    return {"ok": True, "accion": accion, "objetivo": c, "mensaje": f"Caché limpiada para CUIT {c}."}
+                n_a, n_t = len(AUDIT_CACHE), len(TOOL_CACHE)
+                AUDIT_CACHE.clear()
+                TOOL_CACHE.clear()
+                return {"ok": True, "accion": accion, "auditorias_limpiadas": n_a, "tools_limpiados": n_t}
+        if accion == "revocar_tokens_usuario":
+            return revocar_tokens_usuario(objetivo)
+        if accion == "suspender_usuario":
+            return admin_gestionar_suscripcion(actor_email, objetivo, plan="free", estado_cuenta="suspendido", nota="Suspendido desde Backoffice LLM")
+        if accion == "reactivar_usuario":
+            return admin_gestionar_suscripcion(actor_email, objetivo, plan="pro", estado_cuenta="activo", nota="Reactivado desde Backoffice LLM")
+        if accion == "resumen_salud_sistema":
+            with _audit_lock:
+                return {
+                    "ok": True,
+                    "version": "3.1.0",
+                    "cached_audits": len(AUDIT_CACHE),
+                    "inflight_audits": len(AUDIT_INFLIGHT),
+                    "cached_tools": len(TOOL_CACHE),
+                    "inflight_tools": len(TOOL_INFLIGHT),
+                    "active_jobs": len(jobs),
+                }
+        return {"ok": False, "error": f"Acción '{accion}' desconocida. Usá: limpiar_cache_auditorias, revocar_tokens_usuario, suspender_usuario, reactivar_usuario, resumen_salud_sistema."}
 
     # Herramientas de identidad, permisos (Owner -> invitados) e Historial Cross-LLM
     if tool == "listar_empresas":

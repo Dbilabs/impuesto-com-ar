@@ -740,6 +740,66 @@ const MCP_TOOLS = [
       },
       required: ["titulo"]
     }
+  },
+  {
+    name: "admin_tablero_plataforma",
+    description: "[BACKOFFICE OWNER · SOLO SUPER-ADMIN] Tablero ejecutivo en vivo de la plataforma impuesto.com.ar: usuarios registrados, CUITs vinculados, colaboradores, tokens activos, MRR estimado en ARS, distribución por plan/LLM y estado del motor en Oracle Cloud.",
+    inputSchema: { type: "object", properties: {} }
+  },
+  {
+    name: "admin_listar_clientes_plataforma",
+    description: "[BACKOFFICE OWNER · SOLO SUPER-ADMIN] Lista y filtra todos los clientes/usuarios de la plataforma con su plan SaaS, estado de cuenta, facturación mensual, CUITs propios, invitados y última actividad (nunca expone Claves Fiscales ni tokens).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        filtro: { type: "string", description: "Texto opcional para filtrar por email, CUIT o nota" },
+        plan: { type: "string", enum: ["", "free", "pro", "pyme", "estudio", "enterprise"], description: "Filtrar por plan SaaS" },
+        limite: { type: "integer", default: 50 }
+      }
+    }
+  },
+  {
+    name: "admin_ver_movimientos_plataforma",
+    description: "[BACKOFFICE OWNER · SOLO SUPER-ADMIN] Auditoría global de movimientos y uso de la plataforma en todos los LLMs (Claude, ChatGPT, Gemini, Copilot, Cursor), filtrable por email, CUIT u origen LLM.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        email: { type: "string", description: "Filtrar por email de usuario (opcional)" },
+        cuit: { type: "string", description: "Filtrar por CUIT (opcional)" },
+        origen_llm: { type: "string", description: "Filtrar por plataforma LLM: gemini, claude, chatgpt, copilot, cursor" },
+        limite: { type: "integer", default: 50 }
+      }
+    }
+  },
+  {
+    name: "admin_gestionar_suscripcion_cliente",
+    description: "[BACKOFFICE OWNER · SOLO SUPER-ADMIN] Actualiza el plan SaaS (free, pro, pyme, estudio, enterprise), estado de cuenta (activo, trial, pausado, suspendido) y abono mensual ARS de cualquier cliente de impuesto.com.ar.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        email: { type: "string", description: "Email del cliente" },
+        plan: { type: "string", enum: ["free", "pro", "pyme", "estudio", "enterprise"] },
+        estado_cuenta: { type: "string", enum: ["activo", "trial", "pausado", "suspendido"], default: "activo" },
+        precio_mensual_ars: { type: "number", default: 0, description: "Abono mensual en ARS para cálculo de MRR" },
+        nota: { type: "string", default: "", description: "Nota interna de facturación o soporte" }
+      },
+      required: ["email", "plan"]
+    }
+  },
+  {
+    name: "admin_accion_emergencia_plataforma",
+    description: "[BACKOFFICE OWNER · SOLO SUPER-ADMIN] Ejecuta acciones operativas críticas sobre la plataforma: limpiar_cache_auditorias, revocar_tokens_usuario, suspender_usuario, reactivar_usuario o resumen_salud_sistema.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        accion: {
+          type: "string",
+          enum: ["limpiar_cache_auditorias", "revocar_tokens_usuario", "suspender_usuario", "reactivar_usuario", "resumen_salud_sistema"]
+        },
+        objetivo: { type: "string", description: "Email o CUIT objetivo (opcional para limpiar toda la caché o ver salud)" }
+      },
+      required: ["accion"]
+    }
   }
 ];
 

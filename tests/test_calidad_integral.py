@@ -279,6 +279,62 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
         # Limpieza de fixture
         client.delete(f"/api/v1/vincular/{cuit_test}")
 
+    def test_09_backoffice_super_admin_plataforma(self):
+        from fastapi.testclient import TestClient
+        from bot.main import app
+        from bot import boveda_segura as bv
+
+        client = TestClient(app)
+        admin_tok = bv.crear_token_usuario("damianbourdieu@gmail.com", "admin_test")["token"]
+        user_email = "cliente_saas_test@impuesto.test"
+        user_tok = bv.crear_token_usuario(user_email, "user_test")["token"]
+
+        # 1. Usuario normal NO puede acceder al Backoffice
+        r_forb = client.post(
+            "/api/v1/mcp/tool",
+            headers={"X-User-Token": user_tok, "X-LLM-Origin": "gemini"},
+            json={"name": "admin_tablero_plataforma", "arguments": {}},
+        )
+        self.assertTrue(r_forb.json().get("acceso_denegado"))
+
+        # 2. Owner de la plataforma SÍ accede al tablero y gestiona suscripciones
+        r_dash = client.post(
+            "/api/v1/mcp/tool",
+            headers={"X-User-Token": admin_tok, "X-LLM-Origin": "claude"},
+            json={"name": "admin_tablero_plataforma", "arguments": {}},
+        )
+        self.assertTrue(r_dash.json().get("ok"))
+        self.assertIn("kpis", r_dash.json())
+
+        r_sub = client.post(
+            "/api/v1/mcp/tool",
+            headers={"X-User-Token": admin_tok, "X-LLM-Origin": "claude"},
+            json={"name": "admin_gestionar_suscripcion_cliente", "arguments": {"email": user_email, "plan": "estudio", "estado_cuenta": "activo", "precio_mensual_ars": 49000}},
+        )
+        self.assertTrue(r_sub.json().get("ok"))
+        self.assertEqual(r_sub.json()["suscripcion"]["plan"], "estudio")
+
+        # 3. Suspender usuario bloquea sus consultas; reactivar lo habilita
+        r_susp = client.post(
+            "/api/v1/mcp/tool",
+            headers={"X-User-Token": admin_tok, "X-LLM-Origin": "gemini"},
+            json={"name": "admin_accion_emergencia_plataforma", "arguments": {"accion": "suspender_usuario", "objetivo": user_email}},
+        )
+        self.assertTrue(r_susp.json().get("ok"))
+        r_blocked = client.post(
+            "/api/v1/mcp/tool",
+            headers={"X-User-Token": user_tok, "X-LLM-Origin": "gemini"},
+            json={"name": "listar_empresas", "arguments": {}},
+        )
+        self.assertTrue(r_blocked.json().get("cuenta_suspendida"))
+
+        r_react = client.post(
+            "/api/v1/mcp/tool",
+            headers={"X-User-Token": admin_tok, "X-LLM-Origin": "gemini"},
+            json={"name": "admin_accion_emergencia_plataforma", "arguments": {"accion": "reactivar_usuario", "objetivo": user_email}},
+        )
+        self.assertTrue(r_react.json().get("ok"))
+
 
 if __name__ == "__main__":
     unittest.main()

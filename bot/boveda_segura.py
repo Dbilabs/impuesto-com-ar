@@ -572,3 +572,246 @@ def obtener_historial_actividad(actor_email: str, cuit: str = "", limite: int = 
         "total_eventos": len(filtrados),
         "eventos": filtrados,
     }
+
+
+# =====================================================================
+# 4. BACKOFFICE DE PLATAFORMA (SUPER-ADMIN OWNER · GESTIÓN DESDE CUALQUIER LLM)
+# =====================================================================
+
+BILLING_FILE = VAULT_DIR / "admin_billing.enc"
+PLANES_SAAS = {"free", "pro", "pyme", "estudio", "enterprise"}
+ESTADOS_CUENTA = {"activo", "trial", "pausado", "suspendido"}
+
+
+def obtener_admins_plataforma() -> set:
+    raw = os.environ.get("PLATFORM_ADMIN_EMAILS", "damianbourdieu@gmail.com")
+    return {normalizar_email(x) for x in raw.split(",") if normalizar_email(x)}
+
+
+def es_admin_plataforma(email: Optional[str]) -> bool:
+    em = normalizar_email(email or "")
+    return bool(em and em in obtener_admins_plataforma())
+
+
+def _load_billing() -> Dict[str, Any]:
+    data = _read_enc_json(BILLING_FILE, {"subscriptions": {}, "invoices": []})
+    data.setdefault("subscriptions", {})
+    data.setdefault("invoices", [])
+    return data
+
+
+def _save_billing(data: Dict[str, Any]) -> None:
+    _write_enc_json(BILLING_FILE, data)
+
+
+def esta_usuario_suspendido(email: Optional[str]) -> bool:
+    em = normalizar_email(email or "")
+    if not em or es_admin_plataforma(em):
+        return False
+    with _vault_io_lock:
+        b = _load_billing()
+        sub = b["subscriptions"].get(em) or {}
+        return sub.get("estado_cuenta") == "suspendido"
+
+
+def admin_gestionar_suscripcion(
+    admin_email: str,
+    target_email: str,
+    plan: str = "pro",
+    estado_cuenta: str = "activo",
+    precio_mensual_ars: float = 0.0,
+    nota: str = "",
+) -> Dict[str, Any]:
+    if not es_admin_plataforma(admin_email):
+        return {"ok": False, "acceso_denegado": True, "error": "Acción restringida al Super-Admin Owner de impuesto.com.ar."}
+    em = normalizar_email(target_email)
+    if "@" not in em:
+        return {"ok": False, "error": "Email de cliente inválido."}
+    pl = (plan or "pro").strip().lower()
+    est = (estado_cuenta or "activo").strip().lower()
+    if pl not in PLANES_SAAS:
+        return {"ok": False, "error": f"Plan inválido '{plan}'. Usá: {sorted(PLANES_SAAS)}."}
+    if est not in ESTADOS_CUENTA:
+        return {"ok": False, "error": f"Estado inválido '{estado_cuenta}'. Usá: {sorted(ESTADOS_CUENTA)}."}
+
+    ahora = _now_iso()
+    with _vault_io_lock:
+        b = _load_billing()
+        prev = b["subscriptions"].get(em, {})
+        b["subscriptions"][em] = {
+            "email": em,
+            "plan": pl,
+            "estado_cuenta": est,
+            "precio_mensual_ars": float(precio_mensual_ars or 0.0),
+            "nota": (nota or "")[:300],
+            "creado_at": prev.get("creado_at", ahora),
+            "actualizado_at": ahora,
+            "actualizado_por": normalizar_email(admin_email),
+        }
+        b["invoices"].append({
+            "ts": ahora,
+            "email": em,
+            "plan": pl,
+            "estado_cuenta": est,
+            "precio_mensual_ars": float(precio_mensual_ars or 0.0),
+            "nota": (nota or "")[:300],
+            "admin": normalizar_email(admin_email),
+        })
+        b["invoices"] = b["invoices"][-500:]
+        _save_billing(b)
+
+    return {"ok": True, "suscripcion": b["subscriptions"][em]}
+
+
+def admin_resumen_plataforma(admin_email: str) -> Dict[str, Any]:
+    if not es_admin_plataforma(admin_email):
+        return {"ok": False, "acceso_denegado": True, "error": "Acción restringida al Super-Admin Owner de impuesto.com.ar."}
+
+    with _vault_io_lock:
+        vault = _load_vault()
+        acl = _load_acl()
+        hist = _read_enc_json(HISTORY_FILE, [])
+        billing = _load_billing()
+
+    users = acl.get("users", {})
+    cuit_acl = acl.get("cuit_acl", {})
+    subs = billing.get("subscriptions", {})
+
+    por_modo: Dict[str, int] = {}
+    for rec in vault.values():
+        m = rec.get("modo", "solo_lectura_cifrada")
+        por_modo[m] = por_modo.get(m, 0) + 1
+
+    por_llm: Dict[str, int] = {}
+    for ev in hist:
+        o = ev.get("origen_llm", "mcp")
+        por_llm[o] = por_llm.get(o, 0) + 1
+
+    por_plan: Dict[str, int] = {}
+    mrr_ars = 0.0
+    suspendidos = 0
+    for em in set(users.keys()) | set(subs.keys()):
+        s = subs.get(em, {"plan": "free", "estado_cuenta": "activo", "precio_mensual_ars": 0.0})
+        pl = s.get("plan", "free")
+        por_plan[pl] = por_plan.get(pl, 0) + 1
+        if s.get("estado_cuenta") == "activo":
+            mrr_ars += float(s.get("precio_mensual_ars") or 0.0)
+        if s.get("estado_cuenta") == "suspendido":
+            suspendidos += 1
+
+    total_tokens = sum(len(u.get("tokens", [])) for u in users.values())
+    total_invitados = sum(len(c.get("authorized", {})) for c in cuit_acl.values())
+
+    return {
+        "ok": True,
+        "plataforma": "impuesto.com.ar",
+        "admin": normalizar_email(admin_email),
+        "kpis": {
+            "usuarios_registrados": len(users),
+            "cuits_vinculados": len(vault),
+            "colaboradores_autorizados": total_invitados,
+            "tokens_activos": total_tokens,
+            "eventos_historial_totales": len(hist),
+            "cuentas_suspendidas": suspendidos,
+            "mrr_estimado_ars": round(mrr_ars, 2),
+        },
+        "distribucion_por_plan": por_plan,
+        "distribucion_por_modo_cuit": por_modo,
+        "actividad_por_llm": por_llm,
+        "ultimos_5_eventos": list(reversed(hist[-5:])),
+    }
+
+
+def admin_listar_clientes(admin_email: str, filtro: str = "", plan: str = "", limite: int = 50) -> Dict[str, Any]:
+    if not es_admin_plataforma(admin_email):
+        return {"ok": False, "acceso_denegado": True, "error": "Acción restringida al Super-Admin Owner de impuesto.com.ar."}
+
+    q = (filtro or "").strip().lower()
+    plan_f = (plan or "").strip().lower()
+
+    with _vault_io_lock:
+        vault = _load_vault()
+        acl = _load_acl()
+        hist = _read_enc_json(HISTORY_FILE, [])
+        billing = _load_billing()
+
+    users = acl.get("users", {})
+    cuit_acl = acl.get("cuit_acl", {})
+    subs = billing.get("subscriptions", {})
+
+    last_ev_by_email: Dict[str, str] = {}
+    for ev in hist:
+        em = ev.get("email", "")
+        if em:
+            last_ev_by_email[em] = ev.get("ts", "")
+
+    clientes = []
+    all_emails = sorted(set(users.keys()) | set(subs.keys()) | {c.get("owner_email") for c in cuit_acl.values() if c.get("owner_email")})
+    for em in all_emails:
+        u = users.get(em, {})
+        sub = subs.get(em, {"plan": "free", "estado_cuenta": "activo", "precio_mensual_ars": 0.0, "nota": ""})
+        cuits_propios = [
+            {
+                "cuit": c,
+                "modo": (vault.get(c) or {}).get("modo", "solo_lectura_cifrada"),
+                "invitados": list((info.get("authorized") or {}).keys()),
+            }
+            for c, info in cuit_acl.items()
+            if info.get("owner_email") == em
+        ]
+        if plan_f and sub.get("plan", "free") != plan_f:
+            continue
+        if q:
+            haystack = f"{em} {sub.get('plan','')} {sub.get('nota','')} " + " ".join(x["cuit"] for x in cuits_propios)
+            if q not in haystack.lower():
+                continue
+        clientes.append({
+            "email": em,
+            "plan": sub.get("plan", "free"),
+            "estado_cuenta": sub.get("estado_cuenta", "activo"),
+            "precio_mensual_ars": sub.get("precio_mensual_ars", 0.0),
+            "tokens_activos": len(u.get("tokens", [])),
+            "cuits_propios": cuits_propios,
+            "ultima_actividad": last_ev_by_email.get(em),
+            "creado_at": u.get("created_at") or sub.get("creado_at"),
+            "nota": sub.get("nota", ""),
+        })
+
+    lim = max(1, min(int(limite or 50), 200))
+    return {
+        "ok": True,
+        "total_encontrados": len(clientes),
+        "clientes": clientes[:lim],
+    }
+
+
+def admin_ver_movimientos(
+    admin_email: str,
+    email: str = "",
+    cuit: str = "",
+    origen_llm: str = "",
+    limite: int = 50,
+) -> Dict[str, Any]:
+    if not es_admin_plataforma(admin_email):
+        return {"ok": False, "acceso_denegado": True, "error": "Acción restringida al Super-Admin Owner de impuesto.com.ar."}
+
+    em_f = normalizar_email(email)
+    cuit_f = normalizar_cuit(cuit)
+    llm_f = (origen_llm or "").strip().lower()
+
+    with _vault_io_lock:
+        hist = _read_enc_json(HISTORY_FILE, [])
+
+    out = []
+    for ev in reversed(hist):
+        if em_f and ev.get("email") != em_f:
+            continue
+        if cuit_f and ev.get("cuit") != cuit_f:
+            continue
+        if llm_f and ev.get("origen_llm") != llm_f:
+            continue
+        out.append(ev)
+        if len(out) >= max(1, min(int(limite or 50), 200)):
+            break
+
+    return {"ok": True, "total_eventos": len(out), "movimientos": out}
