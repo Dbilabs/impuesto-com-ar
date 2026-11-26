@@ -113,19 +113,47 @@ def _hash_token(token: str) -> str:
 # 1. IDENTIDAD MULTI-LLM (TOKENS PERSONALES TIPO GITHUB PAT)
 # =====================================================================
 
-def crear_token_usuario(email: str, label: str = "principal") -> Dict[str, Any]:
-    """Crea un Personal Access Token (`imp_live_...`) asociado a un email. El secreto solo se muestra una vez."""
+def crear_token_usuario(email: str, label: str = "principal", custom_token: Optional[str] = None) -> Dict[str, Any]:
+    """Crea un Personal Access Token (`imp_live_...` o frase clave personalizada >=16 chars) asociado a un email."""
+    import re
     em = normalizar_email(email)
     if "@" not in em or "." not in em.split("@")[-1]:
         return {"ok": False, "error": "Email inválido."}
 
-    raw_token = f"imp_live_{secrets.token_urlsafe(32)}"
+    ct = (custom_token or "").strip()
+    if ct:
+        if len(ct) < 16 or len(ct) > 128:
+            return {"ok": False, "error": "La frase clave personalizada debe tener entre 16 y 128 caracteres."}
+        if not re.fullmatch(r"[A-Za-z0-9._~-]+", ct):
+            return {"ok": False, "error": "Usá solo letras, números y guiones/puntos/guion bajo (sin espacios ni símbolos de URL)."}
+        if not (any(c.isalpha() for c in ct) and any(c.isdigit() for c in ct)):
+            return {"ok": False, "error": "La frase clave personalizada debe combinar letras y números (ej: Cafe-Cordoba-Fiscal-8924)."}
+        raw_token = ct
+    else:
+        raw_token = f"imp_live_{secrets.token_urlsafe(32)}"
+
     token_hash = _hash_token(raw_token)
     token_id = f"tok_{secrets.token_hex(6)}"
     ahora = _now_iso()
 
     with _vault_io_lock:
         acl = _load_acl()
+        # Verificar unicidad global (nadie puede usar la misma frase clave de otro usuario)
+        for other_em, other_u in acl["users"].items():
+            for existing_tok in other_u.get("tokens", []):
+                if secrets.compare_digest(existing_tok.get("hash", ""), token_hash):
+                    if other_em != em:
+                        return {"ok": False, "error": "Esa frase clave no está disponible. Elegí otra combinación."}
+                    return {
+                        "ok": True,
+                        "email": em,
+                        "token_id": existing_tok.get("id", token_id),
+                        "token": raw_token,
+                        "label": existing_tok.get("label", label),
+                        "created_at": existing_tok.get("created_at", ahora),
+                        "ya_existia": True,
+                    }
+
         user = acl["users"].setdefault(em, {"email": em, "created_at": ahora, "tokens": []})
         user["tokens"].append({
             "id": token_id,

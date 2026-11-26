@@ -267,6 +267,15 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
         )
         self.assertTrue(r_soc_after.json().get("acceso_denegado"))
 
+        # 7. Frase clave personalizada: rechaza cortas (<16), acepta seguras (>=16) y rechaza colisiones entre usuarios
+        r_short = bv.crear_token_usuario(owner_email, "corta", custom_token="clave123")
+        self.assertFalse(r_short.get("ok"))
+        r_custom = bv.crear_token_usuario(owner_email, "custom", custom_token="Cafe-Cordoba-Fiscal-8924")
+        self.assertTrue(r_custom.get("ok"))
+        self.assertEqual(bv.resolver_email_por_token("Cafe-Cordoba-Fiscal-8924"), owner_email)
+        r_dup = bv.crear_token_usuario(attacker_email, "dup", custom_token="Cafe-Cordoba-Fiscal-8924")
+        self.assertFalse(r_dup.get("ok"))
+
         # Limpieza de fixture
         client.delete(f"/api/v1/vincular/{cuit_test}")
 

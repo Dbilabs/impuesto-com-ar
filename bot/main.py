@@ -80,6 +80,7 @@ class VincularRequest(BaseModel):
     clave_fiscal: Optional[str] = None
     email: Optional[str] = ""
     etiqueta_token: Optional[str] = "principal"
+    token_personalizado: Optional[str] = ""
     modo: str = "solo_lectura_cifrada"
     cert_pem: Optional[str] = None
     key_pem: Optional[str] = None
@@ -316,6 +317,8 @@ input,select{{width:100%;padding:11px 13px;border:1px solid #CBD5E1;border-radiu
       <label>Clave Fiscal ARCA (cifrada en reposo, nunca visible en el chat)</label>
       <input id="clave" name="clave_fiscal" type="password" placeholder="••••••••">
     </div>
+    <label>Frase clave personalizada para tu enlace privado (opcional · mín. 16 caracteres, letras + números)</label>
+    <input id="custom_token" name="token_personalizado" type="password" placeholder="Dejar vacío para generar automática (ej: Cafe-Cordoba-Fiscal-8924)">
     <label>Etiqueta del dispositivo / LLM (opcional)</label>
     <input id="label" name="etiqueta_token" placeholder="Ej: Gemini personal, Claude trabajo, ChatGPT">
     <button class="btn" type="submit">Vincular y generar mis enlaces privados</button>
@@ -353,6 +356,7 @@ document.getElementById('f').addEventListener('submit', async (e) => {{
       cuit: document.getElementById('cuit').value,
       modo: document.getElementById('modo').value,
       clave_fiscal: document.getElementById('clave').value,
+      token_personalizado: document.getElementById('custom_token').value,
       etiqueta_token: document.getElementById('label').value || 'web'
     }})
   }});
@@ -403,7 +407,11 @@ def api_vincular(req: VincularRequest):
             return res
 
     if email:
-        tok = crear_token_usuario(email=email, label=req.etiqueta_token or "principal")
+        tok = crear_token_usuario(
+            email=email,
+            label=req.etiqueta_token or "principal",
+            custom_token=req.token_personalizado or None,
+        )
         if not tok.get("ok"):
             return tok
         t = tok["token"]
