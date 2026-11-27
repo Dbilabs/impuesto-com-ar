@@ -72,12 +72,23 @@ jobs: Dict[str, Dict[str, Any]] = {}
 
 # Caché TTL (15 min) + deduplicación de auditorías y scrapers ARCA en curso para evitar timeouts en Gemini Online / Cloudflare
 AUDIT_TTL_SEC = int(os.environ.get("AUDIT_CACHE_TTL_SEC", "900"))
+ERROR_TTL_SEC = int(os.environ.get("AUDIT_ERROR_TTL_SEC", "60"))
 AUDIT_SYNC_WAIT_SEC = float(os.environ.get("AUDIT_SYNC_WAIT_SEC", "6.0"))
 _audit_lock = threading.Lock()
+_cuit_locks: Dict[str, threading.Lock] = {}
 AUDIT_CACHE: Dict[str, Dict[str, Any]] = {}
 AUDIT_INFLIGHT: Dict[str, Dict[str, Any]] = {}
 TOOL_CACHE: Dict[str, Dict[str, Any]] = {}
 TOOL_INFLIGHT: Dict[str, Dict[str, Any]] = {}
+
+
+def _get_cuit_lock(cuit: str) -> threading.Lock:
+    with _audit_lock:
+        lk = _cuit_locks.get(cuit)
+        if lk is None:
+            lk = threading.Lock()
+            _cuit_locks[cuit] = lk
+        return lk
 
 
 class AutomationFilters(BaseModel):
@@ -196,14 +207,13 @@ def _resolve_creds_authorized(
 
 def _run_auditoria_background(cuit: str, clave: str, entry: Dict[str, Any], actor_email: str = "", origen_llm: str = "mcp") -> None:
     try:
-        with PLAYWRIGHT_SEM:
+        with _get_cuit_lock(cuit), PLAYWRIGHT_SEM:
             res = auditar_estado_integral_arca(cuit=cuit, clave=clave)
         now = time.time()
         with _audit_lock:
             entry["result"] = res
             entry["finished_at"] = now
-            if isinstance(res, dict) and res.get("ok") is not False:
-                AUDIT_CACHE[cuit] = {"ts": now, "data": res}
+            AUDIT_CACHE[cuit] = {"ts": now, "is_error": (isinstance(res, dict) and res.get("ok") is False), "data": res}
             AUDIT_INFLIGHT.pop(cuit, None)
         if actor_email:
             ccma_deuda = ((res or {}).get("ccma") or {}).get("saldo_deudor_vencido", 0)
@@ -218,9 +228,21 @@ def _run_auditoria_background(cuit: str, clave: str, entry: Dict[str, Any], acto
             )
     except Exception as e:
         logger.exception(f"Error en auditoria_unificada background para {cuit}")
+        now = time.time()
+        err_obj = {
+            "ok": False,
+            "estado": "ARCA_TEMPORALMENTE_NO_DISPONIBLE",
+            "cuit": cuit,
+            "error": str(e),
+            "mensaje": (
+                f"ARCA no respondió a tiempo al consultar el CUIT {cuit} (puede estar lento o en mantenimiento nocturno). "
+                "No es un error de tu cuenta: reintentá en unos minutos o pasá `forzar_refresco=true`."
+            ),
+        }
         with _audit_lock:
-            entry["result"] = {"ok": False, "cuit": cuit, "error": str(e)}
-            entry["finished_at"] = time.time()
+            entry["result"] = err_obj
+            entry["finished_at"] = now
+            AUDIT_CACHE[cuit] = {"ts": now, "is_error": True, "data": err_obj}
             AUDIT_INFLIGHT.pop(cuit, None)
     finally:
         entry["event"].set()
@@ -255,7 +277,8 @@ def _ejecutar_auditoria_sin_timeout(
     now = time.time()
     with _audit_lock:
         cached = AUDIT_CACHE.get(cuit)
-        if not forzar_refresco and cached and (now - cached["ts"]) < AUDIT_TTL_SEC:
+        ttl_eff = ERROR_TTL_SEC if (cached and cached.get("is_error")) else AUDIT_TTL_SEC
+        if not forzar_refresco and cached and (now - cached["ts"]) < ttl_eff:
             out = dict(cached["data"])
             out["desde_cache"] = True
             out["antiguedad_seg"] = int(now - cached["ts"])
@@ -309,7 +332,8 @@ def _run_tool_sin_timeout(
     now = time.time()
     with _audit_lock:
         cached = TOOL_CACHE.get(cache_key)
-        if cached and (now - cached["ts"]) < AUDIT_TTL_SEC:
+        ttl_eff = ERROR_TTL_SEC if (cached and cached.get("is_error")) else AUDIT_TTL_SEC
+        if cached and (now - cached["ts"]) < ttl_eff:
             data = cached["data"]
             if isinstance(data, dict):
                 out = dict(data)
@@ -324,19 +348,29 @@ def _run_tool_sin_timeout(
 
             def _worker():
                 try:
-                    with PLAYWRIGHT_SEM:
+                    with _get_cuit_lock(cuit), PLAYWRIGHT_SEM:
                         res = fn()
                     ts_done = time.time()
                     with _audit_lock:
                         inflight["result"] = res
-                        TOOL_CACHE[cache_key] = {"ts": ts_done, "data": res}
+                        TOOL_CACHE[cache_key] = {"ts": ts_done, "is_error": False, "data": res}
                         TOOL_INFLIGHT.pop(cache_key, None)
                     if actor_email and accion_hist:
                         registrar_evento_historial(actor_email, cuit, origen_llm, accion_hist, f"{label} (CUIT {cuit})")
                 except Exception as e:
                     logger.exception(f"Error en {cache_key}")
+                    ts_err = time.time()
+                    err_obj = {
+                        "ok": False,
+                        "estado": "ARCA_TEMPORALMENTE_NO_DISPONIBLE",
+                        "cuit": cuit,
+                        "modulo": label,
+                        "error": str(e),
+                        "mensaje": f"ARCA no respondió a tiempo en {label} (posible lentitud o mantenimiento nocturno de ARCA). Reintentá en 1 minuto.",
+                    }
                     with _audit_lock:
-                        inflight["result"] = {"ok": False, "cuit": cuit, "error": str(e)}
+                        inflight["result"] = err_obj
+                        TOOL_CACHE[cache_key] = {"ts": ts_err, "is_error": True, "data": err_obj}
                         TOOL_INFLIGHT.pop(cache_key, None)
                 finally:
                     inflight["event"].set()

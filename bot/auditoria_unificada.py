@@ -115,7 +115,7 @@ def consultar_ccma_preciso(cuit: str, clave: str) -> Dict[str, Any]:
         page.wait_for_selector("#F1\\:password", timeout=15000)
         page.fill("#F1\\:password", clave)
         page.click("#F1\\:btnIngresar")
-        page.wait_for_url("**/portalcf.cloud.afip.gob.ar/**", timeout=30000)
+        page.wait_for_url("**/portalcf.cloud.afip.gob.ar/**", timeout=45000, wait_until="domcontentloaded")
         try:
             page.wait_for_selector("#buscadorInput", timeout=25000)
         except Exception:
@@ -198,7 +198,7 @@ def auditar_estado_integral_arca(cuit: str, clave: str) -> Dict[str, Any]:
         page.wait_for_selector("#F1\\:password", timeout=15000)
         page.fill("#F1\\:password", clave)
         page.click("#F1\\:btnIngresar")
-        page.wait_for_url("**/portalcf.cloud.afip.gob.ar/**", timeout=30000)
+        page.wait_for_url("**/portalcf.cloud.afip.gob.ar/**", timeout=45000, wait_until="domcontentloaded")
         try:
             page.wait_for_selector("#buscadorInput", timeout=25000)
         except Exception:
