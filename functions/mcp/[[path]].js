@@ -2913,15 +2913,15 @@ p{color:var(--muted);font-size:15.5px;margin:0 0 20px}
 <div class="box">
 <span class="pill">Conector Universal ARCA · ChatGPT · Claude · Gemini · Copilot · Cursor</span>
 <h1>${h1}</h1>
-<p>Simplemente escribí <strong>"quiero conectar.impuesto.com.ar"</strong> en el chat de ChatGPT, Claude, Gemini o el asistente que uses (o pegá esta única URL en Conectores una sola vez). Todo lo demás ocurre 100% dentro del chat.</p>
+<p>Pegá esta única URL una sola vez en la sección de <strong>Conectores / MCP</strong> de ChatGPT, Claude, Gemini, Copilot o Cursor. Después escribí <strong>"Hola"</strong> y todo lo demás ocurre 100% dentro del chat.</p>
 
 <div class="url-card active">
-  <div><div class="url-lbl">💬 Escribí esta frase en tu chat</div><div class="url-text">quiero conectar.impuesto.com.ar</div></div>
-  <button class="btn" onclick="navigator.clipboard.writeText('quiero conectar.impuesto.com.ar');this.innerText='¡Copiado!'">Copiar frase</button>
+  <div><div class="url-lbl">★ URL Única del Conector (pegar 1 sola vez en Conectores / MCP)</div><div class="url-text">https://conectar.impuesto.com.ar</div></div>
+  <button class="btn" onclick="navigator.clipboard.writeText('https://conectar.impuesto.com.ar');this.innerText='¡Copiada!'">Copiar URL</button>
 </div>
 <div class="url-card">
-  <div><div class="url-lbl">★ URL Única del Conector (para pegar 1 sola vez en Conectores)</div><div class="url-text">https://conectar.impuesto.com.ar</div></div>
-  <button class="btn" onclick="navigator.clipboard.writeText('https://conectar.impuesto.com.ar');this.innerText='¡Copiada!'">Copiar URL</button>
+  <div><div class="url-lbl">💬 ¿No encontrás dónde pegarla? Preguntale a tu chat:</div><div class="url-text" style="font-size:13px">Quiero agregar el conector MCP https://conectar.impuesto.com.ar en esta app, decime en 3 pasos dónde pegarlo</div></div>
+  <button class="btn" onclick="navigator.clipboard.writeText('Quiero agregar el conector MCP https://conectar.impuesto.com.ar en esta app, decime en 3 pasos dónde pegarlo');this.innerText='¡Copiado!'">Copiar frase</button>
 </div>
 
 <ol class="steps">
