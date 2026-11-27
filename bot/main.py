@@ -505,17 +505,16 @@ document.getElementById('f').addEventListener('submit', async (e) => {{
     msg.style.color = '#0B6E4F';
     msg.textContent = '✅ Cuenta ' + (data.email || '') + (data.cuit ? ' · CUIT ' + data.cuit : '') + ' protegida con aislamiento privado.';
     document.getElementById('clave').value = '';
-    if (data.urls_privadas_mcp) {{
+    if (data.url_conector_universal) {{
       const list = document.getElementById('urlList');
       list.innerHTML = '';
-      for (const [k, u] of Object.entries(data.urls_privadas_mcp)) {{
-        const row = document.createElement('div');
-        row.className = 'url-row';
-        row.innerHTML = '<span style="overflow:hidden;text-overflow:ellipsis">' + k.toUpperCase() + ': ' + u + '</span>' +
-          '<button type="button" class="copy">Copiar</button>';
-        row.querySelector('button').onclick = () => {{ navigator.clipboard.writeText(u); row.querySelector('button').textContent = '¡Copiado!'; }};
-        list.appendChild(row);
-      }}
+      const u = data.url_conector_universal;
+      const row = document.createElement('div');
+      row.className = 'url-row';
+      row.innerHTML = '<span style="overflow:hidden;text-overflow:ellipsis"><strong>CONECTOR UNIVERSAL (Gemini · Claude · ChatGPT · Copilot · Cursor):</strong><br>' + u + '</span>' +
+        '<button type="button" class="copy">Copiar</button>';
+      row.querySelector('button').onclick = () => {{ navigator.clipboard.writeText(u); row.querySelector('button').textContent = '¡Copiado!'; }};
+      list.appendChild(row);
       urlsBox.style.display = 'block';
     }}
   }} else {{
@@ -558,12 +557,12 @@ def api_vincular(req: VincularRequest):
         res["email"] = email
         res["token_id"] = tok["token_id"]
         res["token"] = t
+        res["url_conector_universal"] = f"https://conector.impuesto.com.ar/?token={t}"
         res["urls_privadas_mcp"] = {
-            "gemini": f"https://gemini.impuesto.com.ar/?token={t}",
-            "claude": f"https://claude.impuesto.com.ar/?token={t}",
-            "chatgpt": f"https://chatgpt.impuesto.com.ar/?token={t}",
-            "copilot": f"https://copilot.impuesto.com.ar/?token={t}",
-            "cursor": f"https://cursor.impuesto.com.ar/?token={t}",
+            "conector": f"https://conector.impuesto.com.ar/?token={t}",
+            "gemini": f"https://conector.impuesto.com.ar/?token={t}",
+            "claude": f"https://conector.impuesto.com.ar/?token={t}",
+            "chatgpt": f"https://conector.impuesto.com.ar/?token={t}",
         }
         if res.get("cuit"):
             registrar_evento_historial(
