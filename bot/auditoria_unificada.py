@@ -115,7 +115,23 @@ def consultar_ccma_preciso(cuit: str, clave: str) -> Dict[str, Any]:
         page.wait_for_selector("#F1\\:password", timeout=15000)
         page.fill("#F1\\:password", clave)
         page.click("#F1\\:btnIngresar")
-        page.wait_for_url("**/portalcf.cloud.afip.gob.ar/**", timeout=45000, wait_until="domcontentloaded")
+        # Detección rápida de Clave Fiscal incorrecta o bloqueada antes de esperar 45s
+        for _ in range(15):
+            if "portalcf.cloud.afip.gob.ar" in page.url or "portalcf.cloud.arca.gob.ar" in page.url:
+                break
+            try:
+                body_low = page.inner_text("body").lower()
+                if "clave o usuario incorrecto" in body_low:
+                    raise RuntimeError("CLAVE_FISCAL_INCORRECTA: ARCA informó 'Clave o usuario incorrecto' para este CUIT. Actualizá tu Clave Fiscal en el chat o en https://impuesto.com.ar/vincular.")
+                if "clave bloqueada" in body_low or "usuario bloqueado" in body_low:
+                    raise RuntimeError("CLAVE_FISCAL_BLOQUEADA: ARCA informó que la Clave Fiscal está bloqueada.")
+            except RuntimeError:
+                raise
+            except Exception:
+                pass
+            time.sleep(1.5)
+        if "portalcf.cloud." not in page.url:
+            page.wait_for_url("**/portalcf.cloud.**", timeout=25000, wait_until="domcontentloaded")
         try:
             page.wait_for_selector("#buscadorInput", timeout=25000)
         except Exception:
@@ -198,7 +214,23 @@ def auditar_estado_integral_arca(cuit: str, clave: str) -> Dict[str, Any]:
         page.wait_for_selector("#F1\\:password", timeout=15000)
         page.fill("#F1\\:password", clave)
         page.click("#F1\\:btnIngresar")
-        page.wait_for_url("**/portalcf.cloud.afip.gob.ar/**", timeout=45000, wait_until="domcontentloaded")
+        # Detección rápida de Clave Fiscal incorrecta o bloqueada antes de esperar 45s
+        for _ in range(15):
+            if "portalcf.cloud.afip.gob.ar" in page.url or "portalcf.cloud.arca.gob.ar" in page.url:
+                break
+            try:
+                body_low = page.inner_text("body").lower()
+                if "clave o usuario incorrecto" in body_low:
+                    raise RuntimeError("CLAVE_FISCAL_INCORRECTA: ARCA informó 'Clave o usuario incorrecto' para este CUIT. Actualizá tu Clave Fiscal en el chat o en https://impuesto.com.ar/vincular.")
+                if "clave bloqueada" in body_low or "usuario bloqueado" in body_low:
+                    raise RuntimeError("CLAVE_FISCAL_BLOQUEADA: ARCA informó que la Clave Fiscal está bloqueada.")
+            except RuntimeError:
+                raise
+            except Exception:
+                pass
+            time.sleep(1.5)
+        if "portalcf.cloud." not in page.url:
+            page.wait_for_url("**/portalcf.cloud.**", timeout=25000, wait_until="domcontentloaded")
         try:
             page.wait_for_selector("#buscadorInput", timeout=25000)
         except Exception:

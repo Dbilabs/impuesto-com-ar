@@ -262,14 +262,16 @@ def guardar_credenciales_cifradas(
                 ),
             }
 
+        prev_rec = vault.get(cuit_clean) or {}
+        clave_final = (clave_fiscal or "").strip() or prev_rec.get("clave_fiscal", "")
         vault[cuit_clean] = {
             "cuit": cuit_clean,
             "modo": modo,
-            "alias": alias or f"Contribuyente {cuit_clean}",
-            "clave_fiscal": clave_fiscal or "",
-            "tiene_wsaa": bool(cert_pem and key_pem),
-            "cert_pem": cert_pem or "",
-            "key_pem": key_pem or "",
+            "alias": alias or prev_rec.get("alias") or f"Contribuyente {cuit_clean}",
+            "clave_fiscal": clave_final,
+            "tiene_wsaa": bool(cert_pem and key_pem) or prev_rec.get("tiene_wsaa", False),
+            "cert_pem": cert_pem or prev_rec.get("cert_pem", ""),
+            "key_pem": key_pem or prev_rec.get("key_pem", ""),
             "solo_lectura_por_defecto": True,
             "owner_email": em or (existing_acl or {}).get("owner_email", ""),
             "vinculado_at": ahora,
