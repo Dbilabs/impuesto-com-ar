@@ -124,10 +124,10 @@ def _auth_required_error(public_base: str) -> Dict[str, Any]:
         "requiere_autenticacion": True,
         "acceso_denegado": True,
         "mensaje": (
-            "Por seguridad multi-usuario, para consultar tu bóveda o ARCA necesitás conectarte con tu URL privada "
-            "(con tu token personal ligado a tu email). "
-            f"Generala en 10 segundos en {public_base}/vincular y pegala en Gemini, Claude o ChatGPT. "
-            "Así solo vos (y los emails que vos autorices) pueden ver tus CUITs y tu historial compartido."
+            "Para consultar ARCA o tu historial primero iniciá sesión acá mismo en el chat (sin salir a ninguna web): "
+            "si ya tenés cuenta pasame tu email y tu frase clave (`iniciar_sesion_en_chat`); "
+            "si es tu primera vez pasame tu email, CUIT, Clave Fiscal y una frase clave personal de mín. 16 caracteres (`vincular_cuenta_en_chat`). "
+            f"(Opcional: si preferís no escribir tu Clave Fiscal en el chat, podés usar {public_base}/vincular)."
         ),
         "url_vinculacion_segura": f"{public_base}/vincular",
     }
@@ -604,9 +604,11 @@ def run_mcp_tool(
     origen_llm = (x_llm_origin or "mcp").strip().lower()
     public_base = os.environ.get("PUBLIC_BOT_URL", "https://impuesto.com.ar").rstrip("/")
 
-    # Resolver identidad multi-tenant del usuario
-    actor_email = resolver_email_por_token(x_user_token)
-    logger.info(f"[MCP] tool={tool} origin={origen_llm} user={actor_email or 'ANON'} keys={list(args.keys())}")
+    # Resolver identidad multi-tenant del usuario (header Bearer / ?token= / token_sesion en chat)
+    effective_token = (x_user_token or "").strip() or str(args.get("token_sesion") or "").strip()
+    actor_email = resolver_email_por_token(effective_token)
+    safe_keys = [k for k in args.keys() if k not in ("clave_fiscal", "frase_clave", "frase_clave_o_token", "token_sesion")]
+    logger.info(f"[MCP] tool={tool} origin={origen_llm} user={actor_email or 'ANON'} keys={safe_keys}")
 
     # Herramientas 100% públicas (no tocan bóveda ni datos de ningún contribuyente)
     if tool == "verificar_estado_servidores_arca_ws":
@@ -616,6 +618,83 @@ def run_mcp_tool(
     if tool == "verificar_proveedor_apocrifo_apoc":
         from .scraper_extras_arca import verificar_proveedor_apocrifo_apoc
         return verificar_proveedor_apocrifo_apoc(args.get("cuit_proveedor", ""))
+
+    # =========================================================================
+    # AUTENTICACIÓN Y VINCULACIÓN 100% DENTRO DEL CHAT (CERO SALIR DEL LLM)
+    # =========================================================================
+    if tool == "vincular_cuenta_en_chat":
+        em = normalizar_email(args.get("email", ""))
+        cuit_in = normalizar_cuit(args.get("cuit", ""))
+        clave_in = (args.get("clave_fiscal") or "").strip()
+        frase_in = (args.get("frase_clave") or "").strip()
+        modo_in = (args.get("modo") or "solo_lectura_cifrada").strip()
+
+        if "@" not in em:
+            return {"ok": False, "error": "Indicá un email válido para quedar registrado como Owner de tu cuenta."}
+        if len(cuit_in) != 11 or not clave_in:
+            return {"ok": False, "error": "Indicá tu CUIT (11 dígitos) y tu Clave Fiscal ARCA para vincular en modo solo lectura."}
+
+        res_v = guardar_credenciales_cifradas(
+            cuit=cuit_in,
+            clave_fiscal=clave_in,
+            modo=modo_in,
+            owner_email=em,
+        )
+        if not res_v.get("ok"):
+            return res_v
+
+        tok = crear_token_usuario(email=em, label=f"chat_{origen_llm}", custom_token=frase_in or None)
+        if not tok.get("ok"):
+            return tok
+
+        registrar_evento_historial(
+            email=em,
+            cuit=cuit_in,
+            origen_llm=origen_llm,
+            accion="vincular_en_chat",
+            titulo=f"CUIT {cuit_in} vinculado 100% en chat ({origen_llm})",
+            detalle=f"Owner: {em} · Modo: {modo_in}",
+        )
+        return {
+            "ok": True,
+            "usuario": em,
+            "cuit": cuit_in,
+            "es_owner_plataforma": es_admin_plataforma(em),
+            "token_sesion": tok["token"],
+            "mensaje": (
+                f"¡Listo! Tu CUIT {cuit_in} quedó cifrado en modo solo lectura bajo tu cuenta {em}. "
+                "Ya podés operar todo desde este mismo chat sin salir a ninguna web."
+            ),
+            "instruccion_para_ia": (
+                "Guardá `token_sesion` en el contexto de esta conversación y pasalo en el parámetro `token_sesion` "
+                "en todas las herramientas que llames a partir de ahora en este chat (NO repitas la Clave Fiscal en tu respuesta). "
+                "Confirmale al usuario en 2 líneas que ya está vinculado y arrancá directo con lo que necesite."
+            ),
+        }
+
+    if tool == "iniciar_sesion_en_chat":
+        em = normalizar_email(args.get("email", ""))
+        secreto = (args.get("frase_clave_o_token") or args.get("frase_clave") or args.get("token_sesion") or "").strip()
+        resolved = resolver_email_por_token(secreto)
+        if not resolved or (em and resolved != em):
+            return {
+                "ok": False,
+                "acceso_denegado": True,
+                "error": "Email o frase clave/token incorrectos. Verificá tu frase clave o vinculá tu cuenta nueva con `vincular_cuenta_en_chat`.",
+            }
+        cuits = listar_cuits_autorizados(resolved)
+        return {
+            "ok": True,
+            "usuario": resolved,
+            "es_owner_plataforma": es_admin_plataforma(resolved),
+            "token_sesion": secreto,
+            "empresas_vinculadas": cuits,
+            "mensaje": f"Sesión iniciada correctamente como {resolved} ({len(cuits)} CUIT(s) autorizados).",
+            "instruccion_para_ia": (
+                "Pasá este `token_sesion` en el parámetro `token_sesion` de todas las herramientas que llames en este chat. "
+                "NO muestres la frase clave ni el token en tu respuesta al usuario. Saludalo y avanzá directo."
+            ),
+        }
 
     # =========================================================================
     # BARRERA ESTRICTA MULTI-TENANT: a partir de acá EXIGE token válido

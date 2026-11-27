@@ -378,6 +378,49 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
         self.assertTrue(r_rep.json().get("ok"))
         self.assertIn("Reporte Ejecutivo SaaS", r_rep.json().get("reporte_markdown", ""))
 
+    def test_11_todo_en_el_chat_sin_salir_del_llm(self):
+        from fastapi.testclient import TestClient
+        from bot.main import app
+
+        client = TestClient(app)
+        cuit_chat = "20444444441"
+        email_chat = "chat_only_user@impuesto.test"
+        frase = "Mate-Mendoza-Fiscal-7741"
+
+        # 1. Sin header ni ?token=: vincula 100% en el chat
+        r_v = client.post(
+            "/api/v1/mcp/tool",
+            headers={"X-LLM-Origin": "gemini"},
+            json={
+                "name": "vincular_cuenta_en_chat",
+                "arguments": {"email": email_chat, "cuit": cuit_chat, "clave_fiscal": "ClaveTestChat99", "frase_clave": frase},
+            },
+        )
+        self.assertTrue(r_v.json().get("ok"))
+        tok_ses = r_v.json().get("token_sesion")
+        self.assertEqual(tok_ses, frase)
+
+        # 2. En otro LLM (Claude), inicia sesión 100% en chat sin URL privada
+        r_login = client.post(
+            "/api/v1/mcp/tool",
+            headers={"X-LLM-Origin": "claude"},
+            json={"name": "iniciar_sesion_en_chat", "arguments": {"email": email_chat, "frase_clave_o_token": frase}},
+        )
+        self.assertTrue(r_login.json().get("ok"))
+        self.assertEqual(r_login.json().get("usuario"), email_chat)
+
+        # 3. Usa token_sesion en argumentos sin tocar headers/URL -> accede a sus empresas
+        r_emp = client.post(
+            "/api/v1/mcp/tool",
+            headers={"X-LLM-Origin": "claude"},
+            json={"name": "listar_empresas", "arguments": {"token_sesion": tok_ses}},
+        )
+        self.assertTrue(r_emp.json().get("ok"))
+        self.assertIn(cuit_chat, [x["cuit"] for x in r_emp.json().get("empresas_vinculadas", [])])
+
+        # Limpieza
+        client.delete(f"/api/v1/vincular/{cuit_chat}")
+
 
 if __name__ == "__main__":
     unittest.main()

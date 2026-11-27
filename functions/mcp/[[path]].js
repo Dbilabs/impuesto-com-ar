@@ -870,6 +870,33 @@ const MCP_TOOLS = [
     }
   },
   {
+    name: "vincular_cuenta_en_chat",
+    description: "[ONBOARDING 100% EN CHAT · SIN SALIR DEL LLM] Vincula un CUIT + Clave Fiscal ARCA en la bóveda cifrada AES-256 (modo solo lectura) bajo el email del usuario (Owner) y crea su frase clave/token de sesión directamente desde el chat, sin abrir ninguna web externa.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        email: { type: "string", description: "Email del usuario dueño (Owner) de la cuenta" },
+        cuit: { type: "string", description: "CUIT a vincular (11 dígitos)" },
+        clave_fiscal: { type: "string", description: "Clave Fiscal ARCA (se cifra en reposo AES-256, nunca se loguea)" },
+        frase_clave: { type: "string", description: "Frase clave personal opcional (mín. 16 caracteres, letras + números; si se omite se genera automática)" },
+        modo: { type: "string", enum: ["solo_lectura_cifrada", "estudio_contable_delegado"], default: "solo_lectura_cifrada" }
+      },
+      required: ["email", "cuit", "clave_fiscal"]
+    }
+  },
+  {
+    name: "iniciar_sesion_en_chat",
+    description: "[LOGIN 100% EN CHAT · MULTI-LLM] Inicia sesión en el chat actual usando el email y la frase clave personal (o token) del usuario, devolviendo `token_sesion` y todos sus CUITs autorizados sin salir del LLM ni editar la URL del conector.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        email: { type: "string", description: "Email de la cuenta en impuesto.com.ar" },
+        frase_clave_o_token: { type: "string", description: "Frase clave personal (mín. 16 caracteres) o token `imp_live_...`" }
+      },
+      required: ["frase_clave_o_token"]
+    }
+  },
+  {
     name: "admin_exportar_reporte_inversor_markdown",
     description: "[BACKOFFICE EJECUTIVO · SOLO SUPER-ADMIN] Genera en 1 clic el Reporte Ejecutivo / Investor Update en Markdown consolidando MRR, ARR, Funnel, DAU/WAU/MAU, oportunidades de Growth, churn, flags y tickets.",
     inputSchema: {
@@ -1106,7 +1133,18 @@ export async function onRequest({ request, env, params }) {
     }
 
     if (method === "tools/list") {
-      return jsonRpcSuccess(id, { tools: MCP_TOOLS });
+      const toolsWithSession = MCP_TOOLS.map(t => {
+        const schema = t.inputSchema || { type: "object", properties: {} };
+        const props = { ...(schema.properties || {}) };
+        if (!props.token_sesion) {
+          props.token_sesion = {
+            type: "string",
+            description: "Token de sesión opcional devuelto por `iniciar_sesion_en_chat` o `vincular_cuenta_en_chat` (solo si el conector no tiene `?token=` en la URL)."
+          };
+        }
+        return { ...t, inputSchema: { ...schema, properties: props } };
+      });
+      return jsonRpcSuccess(id, { tools: toolsWithSession });
     }
 
     if (method === "tools/call") {
@@ -2201,7 +2239,7 @@ export async function onRequest({ request, env, params }) {
         try {
           const authHeader = request.headers.get("authorization") || "";
           const bearerToken = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
-          const userToken = bearerToken || (url.searchParams.get("token") || "").trim();
+          const userToken = bearerToken || (url.searchParams.get("token") || "").trim() || String(args.token_sesion || "").trim();
           const llmOrigin = host.endsWith(".impuesto.com.ar") ? host.split(".")[0] : "mcp";
 
           const headers = {
