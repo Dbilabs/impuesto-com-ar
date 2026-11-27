@@ -860,7 +860,11 @@ def _enviar_email_otp(destinatario: str, codigo: str) -> Tuple[bool, str]:
             req = urllib.request.Request(
                 "https://api.resend.com/emails",
                 data=payload,
-                headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
+                headers={
+                    "Authorization": f"Bearer {resend_key}",
+                    "Content-Type": "application/json",
+                    "User-Agent": "impuesto-com-ar/3.1",
+                },
                 method="POST",
             )
             with urllib.request.urlopen(req, timeout=10) as resp:
