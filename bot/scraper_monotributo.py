@@ -14,10 +14,11 @@ def _get_browser_path():
 
 def _login_arca(page, usuario: str, clave: str):
     usuario_clean = usuario.replace("-", "").strip()
-    page.goto("https://auth.afip.gob.ar/contribuyente_/login.xhtml", wait_until="networkidle", timeout=30000)
+    page.goto("https://auth.afip.gob.ar/contribuyente_/login.xhtml", wait_until="domcontentloaded", timeout=30000)
+    page.wait_for_selector("#F1\\:username", timeout=15000)
     page.fill("#F1\\:username", usuario_clean)
     page.click("#F1\\:btnSiguiente")
-    page.wait_for_timeout(1000)
+    page.wait_for_selector("#F1\\:password", timeout=15000)
     page.fill("#F1\\:password", clave)
     page.click("#F1\\:btnIngresar")
     page.wait_for_timeout(3000)
@@ -59,11 +60,14 @@ def consultar_estado_monotributo(usuario: str, clave: str) -> Dict[str, Any]:
             if not mono_btn:
                 raise RuntimeError("El servicio MONOTRIBUTO no se encuentra en el portal de clave fiscal.")
 
-            with page.context.expect_page() as p_info:
+            with page.context.expect_page(timeout=20000) as p_info:
                 mono_btn.click()
             mono_page = p_info.value
-            mono_page.wait_for_load_state("networkidle")
-            mono_page.wait_for_timeout(4000)
+            try:
+                mono_page.wait_for_load_state("domcontentloaded", timeout=20000)
+            except Exception:
+                pass
+            mono_page.wait_for_timeout(3500)
 
             body_text = mono_page.inner_text("body")
 

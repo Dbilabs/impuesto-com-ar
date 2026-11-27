@@ -15,6 +15,8 @@ Expone:
 import os
 import uuid
 import time
+import hashlib
+import secrets
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -49,6 +51,7 @@ from .boveda_segura import (
     admin_gestionar_suscripcion,
     solicitar_codigo_otp_email,
     verificar_codigo_otp_email,
+    obtener_huella_vault_key,
 )
 from .backoffice_growth import (
     esta_en_mantenimiento,
@@ -65,21 +68,75 @@ from .auditoria_unificada import auditar_estado_integral_arca
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("arca_api")
 
-app = FastAPI(title="impuesto.com.ar — ARCA Headless Multi-Tenant Engine", version="3.1.0")
-executor = ThreadPoolExecutor(max_workers=6)
-PLAYWRIGHT_SEM = threading.Semaphore(3)
+app = FastAPI(title="impuesto.com.ar — ARCA Headless Multi-Tenant Engine", version="3.3.0")
+executor = ThreadPoolExecutor(max_workers=8)
+PLAYWRIGHT_SEM = threading.Semaphore(int(os.environ.get("MAX_CONCURRENT_BROWSERS", "1")))
 jobs: Dict[str, Dict[str, Any]] = {}
 
-# Caché TTL (15 min) + deduplicación de auditorías y scrapers ARCA en curso para evitar timeouts en Gemini Online / Cloudflare
+# Caché TTL (15 min) + deduplicación + circuit breaker de Clave Fiscal incorrecta (P0-7)
 AUDIT_TTL_SEC = int(os.environ.get("AUDIT_CACHE_TTL_SEC", "900"))
 ERROR_TTL_SEC = int(os.environ.get("AUDIT_ERROR_TTL_SEC", "60"))
-AUDIT_SYNC_WAIT_SEC = float(os.environ.get("AUDIT_SYNC_WAIT_SEC", "6.0"))
-_audit_lock = threading.Lock()
+AUDIT_SYNC_WAIT_SEC = float(os.environ.get("AUDIT_SYNC_WAIT_SEC", "5.0"))
+INFLIGHT_MAX_AGE_SEC = int(os.environ.get("INFLIGHT_MAX_AGE_SEC", "300"))
+_audit_lock = threading.RLock()
 _cuit_locks: Dict[str, threading.Lock] = {}
 AUDIT_CACHE: Dict[str, Dict[str, Any]] = {}
 AUDIT_INFLIGHT: Dict[str, Dict[str, Any]] = {}
 TOOL_CACHE: Dict[str, Dict[str, Any]] = {}
 TOOL_INFLIGHT: Dict[str, Dict[str, Any]] = {}
+_BAD_CREDS_CB: Dict[str, Dict[str, Any]] = {}
+
+
+def _parse_bool_strict(val: Any) -> bool:
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        return val.strip().lower() == "true"
+    return False
+
+
+def _hash_clave(cuit: str, clave: str) -> str:
+    return hashlib.sha256(f"{cuit}:{clave}".encode("utf-8")).hexdigest()
+
+
+def _check_bad_creds(cuit: str, clave: str) -> Optional[Dict[str, Any]]:
+    """Circuit breaker P0-7: frena logins repetidos con la misma Clave Fiscal rechazada para evitar bloqueo en ARCA."""
+    h = _hash_clave(cuit, clave)
+    with _audit_lock:
+        rec = _BAD_CREDS_CB.get(cuit)
+        if rec and rec.get("clave_hash") == h:
+            return {
+                "ok": False,
+                "estado": rec.get("estado", "CLAVE_FISCAL_INCORRECTA"),
+                "cuit": cuit,
+                "circuit_breaker_activo": True,
+                "error": rec.get("error", "Clave Fiscal rechazada por ARCA."),
+                "mensaje": (
+                    f"Frenamos los intentos automáticos para el CUIT {cuit} para proteger tu cuenta contra el bloqueo de Clave Fiscal en ARCA. "
+                    "Actualizá tu Clave Fiscal correcta en el chat (`vincular_cuenta_en_chat`) o en https://impuesto.com.ar/vincular para reanudar."
+                ),
+            }
+    return None
+
+
+def _mark_bad_creds(cuit: str, clave: str, err_msg: str) -> None:
+    estado = "CLAVE_FISCAL_BLOQUEADA" if "BLOQUEADA" in err_msg.upper() else "CLAVE_FISCAL_INCORRECTA"
+    with _audit_lock:
+        _BAD_CREDS_CB[cuit] = {
+            "clave_hash": _hash_clave(cuit, clave),
+            "estado": estado,
+            "error": err_msg,
+            "ts": time.time(),
+        }
+
+
+def _clear_bad_creds(cuit: str) -> None:
+    c = normalizar_cuit(cuit)
+    with _audit_lock:
+        _BAD_CREDS_CB.pop(c, None)
+        AUDIT_CACHE.pop(c, None)
+        for k in [k for k in TOOL_CACHE if c in k]:
+            TOOL_CACHE.pop(k, None)
 
 
 def _get_cuit_lock(cuit: str) -> threading.Lock:
@@ -127,8 +184,28 @@ class McpToolRequest(BaseModel):
 
 def _check_secret(x_bot_secret: Optional[str]):
     expected = os.environ.get("BOT_API_SECRET", "").strip()
-    if expected and (x_bot_secret or "").strip() != expected:
+    is_prod = bool(
+        os.environ.get("FLY_APP_NAME", "").strip()
+        or os.environ.get("RAILWAY_ENVIRONMENT", "").strip()
+        or os.environ.get("REQUIRE_BOT_SECRET", "").strip() == "1"
+    )
+    if not expected:
+        if is_prod:
+            raise HTTPException(status_code=503, detail="BOT_API_SECRET not configured in production")
+        return
+    provided = (x_bot_secret or "").strip()
+    if not provided or not secrets.compare_digest(provided, expected):
         raise HTTPException(status_code=401, detail="Unauthorized BOT_API_SECRET")
+
+
+def _extract_user_token(x_user_token: Optional[str], authorization: Optional[str]) -> str:
+    t = (x_user_token or "").strip()
+    if t:
+        return t
+    auth = (authorization or "").strip()
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+    return ""
 
 
 def _auth_required_error(public_base: str) -> Dict[str, Any]:
@@ -214,7 +291,8 @@ def _run_auditoria_background(cuit: str, clave: str, entry: Dict[str, Any], acto
             entry["result"] = res
             entry["finished_at"] = now
             AUDIT_CACHE[cuit] = {"ts": now, "is_error": (isinstance(res, dict) and res.get("ok") is False), "data": res}
-            AUDIT_INFLIGHT.pop(cuit, None)
+            if AUDIT_INFLIGHT.get(cuit) is entry:
+                AUDIT_INFLIGHT.pop(cuit, None)
         if actor_email:
             ccma_deuda = ((res or {}).get("ccma") or {}).get("saldo_deudor_vencido", 0)
             planes = ((res or {}).get("mis_facilidades") or {}).get("cantidad_planes_vigentes", 0)
@@ -229,21 +307,37 @@ def _run_auditoria_background(cuit: str, clave: str, entry: Dict[str, Any], acto
     except Exception as e:
         logger.exception(f"Error en auditoria_unificada background para {cuit}")
         now = time.time()
-        err_obj = {
-            "ok": False,
-            "estado": "ARCA_TEMPORALMENTE_NO_DISPONIBLE",
-            "cuit": cuit,
-            "error": str(e),
-            "mensaje": (
-                f"ARCA no respondió a tiempo al consultar el CUIT {cuit} (puede estar lento o en mantenimiento nocturno). "
-                "No es un error de tu cuenta: reintentá en unos minutos o pasá `forzar_refresco=true`."
-            ),
-        }
+        err_str = str(e)
+        is_bad_cred = "CLAVE_FISCAL_INCORRECTA" in err_str or "CLAVE_FISCAL_BLOQUEADA" in err_str
+        if is_bad_cred:
+            _mark_bad_creds(cuit, clave, err_str)
+            err_obj = {
+                "ok": False,
+                "estado": "CLAVE_FISCAL_BLOQUEADA" if "BLOQUEADA" in err_str else "CLAVE_FISCAL_INCORRECTA",
+                "cuit": cuit,
+                "error": err_str,
+                "mensaje": (
+                    f"ARCA rechazó la Clave Fiscal del CUIT {cuit}. Frenamos nuevos reintentos automáticos para evitar bloqueos. "
+                    "Actualizá tu Clave Fiscal correcta en el chat (`vincular_cuenta_en_chat`) o en https://impuesto.com.ar/vincular."
+                ),
+            }
+        else:
+            err_obj = {
+                "ok": False,
+                "estado": "ARCA_TEMPORALMENTE_NO_DISPONIBLE",
+                "cuit": cuit,
+                "error": err_str[:300],
+                "mensaje": (
+                    f"ARCA no respondió a tiempo al consultar el CUIT {cuit} (puede estar lento o en mantenimiento). "
+                    "Reintentá en unos minutos o pasá `forzar_refresco=true`."
+                ),
+            }
         with _audit_lock:
             entry["result"] = err_obj
             entry["finished_at"] = now
             AUDIT_CACHE[cuit] = {"ts": now, "is_error": True, "data": err_obj}
-            AUDIT_INFLIGHT.pop(cuit, None)
+            if AUDIT_INFLIGHT.get(cuit) is entry:
+                AUDIT_INFLIGHT.pop(cuit, None)
     finally:
         entry["event"].set()
 
@@ -253,6 +347,8 @@ def _precalentar_auditoria_en_background(cuit: str, clave: str, actor_email: str
     if os.environ.get("DISABLE_AUDIT_PREWARM", "").strip() == "1":
         return
     if not cuit or not clave or cuit.startswith("20333333") or cuit.startswith("20444444") or cuit.startswith("20999999"):
+        return
+    if _check_bad_creds(cuit, clave):
         return
     now = time.time()
     with _audit_lock:
@@ -273,7 +369,10 @@ def _ejecutar_auditoria_sin_timeout(
     actor_email: str = "",
     origen_llm: str = "mcp",
 ) -> Dict[str, Any]:
-    """Ejecuta la auditoría 360° con caché de 15 min y espera máx. de 6s para evitar timeouts en Gemini Online / Cloudflare."""
+    """Ejecuta la auditoría 360° con caché de 15 min y espera máx. de 5s para evitar timeouts en Gemini Online / Cloudflare."""
+    cb_err = _check_bad_creds(cuit, clave)
+    if cb_err:
+        return cb_err
     now = time.time()
     with _audit_lock:
         cached = AUDIT_CACHE.get(cuit)
@@ -285,6 +384,10 @@ def _ejecutar_auditoria_sin_timeout(
             return out
 
         inflight = AUDIT_INFLIGHT.get(cuit)
+        if inflight is not None and (now - inflight["started_at"]) > INFLIGHT_MAX_AGE_SEC:
+            logger.warning(f"Watchdog: evicting stale AUDIT_INFLIGHT for {cuit} ({int(now - inflight['started_at'])}s)")
+            AUDIT_INFLIGHT.pop(cuit, None)
+            inflight = None
         if inflight is None:
             inflight = {
                 "started_at": now,
@@ -327,8 +430,13 @@ def _run_tool_sin_timeout(
     actor_email: str = "",
     origen_llm: str = "mcp",
     accion_hist: str = "",
+    clave: str = "",
 ) -> Dict[str, Any]:
-    """Ejecuta cualquier scraper ARCA en segundo plano con caché de 15 min y espera máx. 6s para evitar cuelgues en Gemini Online."""
+    """Ejecuta cualquier scraper ARCA en segundo plano con caché de 15 min y espera máx. 5s para evitar cuelgues en Gemini Online."""
+    if clave:
+        cb_err = _check_bad_creds(cuit, clave)
+        if cb_err:
+            return cb_err
     now = time.time()
     with _audit_lock:
         cached = TOOL_CACHE.get(cache_key)
@@ -342,6 +450,10 @@ def _run_tool_sin_timeout(
             return {"ok": True, "desde_cache": True, "resultado": data}
 
         inflight = TOOL_INFLIGHT.get(cache_key)
+        if inflight is not None and (now - inflight["started_at"]) > INFLIGHT_MAX_AGE_SEC:
+            logger.warning(f"Watchdog: evicting stale TOOL_INFLIGHT for {cache_key} ({int(now - inflight['started_at'])}s)")
+            TOOL_INFLIGHT.pop(cache_key, None)
+            inflight = None
         if inflight is None:
             inflight = {"started_at": now, "event": threading.Event(), "result": None}
             TOOL_INFLIGHT[cache_key] = inflight
@@ -351,27 +463,43 @@ def _run_tool_sin_timeout(
                     with _get_cuit_lock(cuit), PLAYWRIGHT_SEM:
                         res = fn()
                     ts_done = time.time()
+                    is_err_res = isinstance(res, dict) and res.get("ok") is False
                     with _audit_lock:
                         inflight["result"] = res
-                        TOOL_CACHE[cache_key] = {"ts": ts_done, "is_error": False, "data": res}
-                        TOOL_INFLIGHT.pop(cache_key, None)
-                    if actor_email and accion_hist:
+                        TOOL_CACHE[cache_key] = {"ts": ts_done, "is_error": is_err_res, "data": res}
+                        if TOOL_INFLIGHT.get(cache_key) is inflight:
+                            TOOL_INFLIGHT.pop(cache_key, None)
+                    if actor_email and accion_hist and not is_err_res:
                         registrar_evento_historial(actor_email, cuit, origen_llm, accion_hist, f"{label} (CUIT {cuit})")
                 except Exception as e:
                     logger.exception(f"Error en {cache_key}")
                     ts_err = time.time()
-                    err_obj = {
-                        "ok": False,
-                        "estado": "ARCA_TEMPORALMENTE_NO_DISPONIBLE",
-                        "cuit": cuit,
-                        "modulo": label,
-                        "error": str(e),
-                        "mensaje": f"ARCA no respondió a tiempo en {label} (posible lentitud o mantenimiento nocturno de ARCA). Reintentá en 1 minuto.",
-                    }
+                    err_str = str(e)
+                    is_bad_cred = "CLAVE_FISCAL_INCORRECTA" in err_str or "CLAVE_FISCAL_BLOQUEADA" in err_str
+                    if is_bad_cred and clave:
+                        _mark_bad_creds(cuit, clave, err_str)
+                        err_obj = {
+                            "ok": False,
+                            "estado": "CLAVE_FISCAL_BLOQUEADA" if "BLOQUEADA" in err_str else "CLAVE_FISCAL_INCORRECTA",
+                            "cuit": cuit,
+                            "modulo": label,
+                            "error": err_str,
+                            "mensaje": f"ARCA rechazó la Clave Fiscal del CUIT {cuit}. Actualizala antes de reintentar para evitar bloqueos.",
+                        }
+                    else:
+                        err_obj = {
+                            "ok": False,
+                            "estado": "ARCA_TEMPORALMENTE_NO_DISPONIBLE",
+                            "cuit": cuit,
+                            "modulo": label,
+                            "error": err_str[:300],
+                            "mensaje": f"ARCA no respondió a tiempo en {label} (posible lentitud o mantenimiento). Reintentá en 1 minuto.",
+                        }
                     with _audit_lock:
                         inflight["result"] = err_obj
                         TOOL_CACHE[cache_key] = {"ts": ts_err, "is_error": True, "data": err_obj}
-                        TOOL_INFLIGHT.pop(cache_key, None)
+                        if TOOL_INFLIGHT.get(cache_key) is inflight:
+                            TOOL_INFLIGHT.pop(cache_key, None)
                 finally:
                     inflight["event"].set()
 
@@ -399,8 +527,9 @@ def health():
         i_count = len(AUDIT_INFLIGHT)
     return {
         "status": "ok",
-        "version": "3.1.0",
+        "version": "3.3.0",
         "mode": "headless_vault_multitenant",
+        "vault_key_fingerprint": obtener_huella_vault_key(),
         "active_jobs": len(jobs),
         "cached_audits": c_count,
         "inflight_audits": i_count,
@@ -582,8 +711,16 @@ document.getElementById('f').addEventListener('submit', async (e) => {{
 
 
 @app.post("/api/v1/vincular")
-def api_vincular(req: VincularRequest):
+def api_vincular(
+    req: VincularRequest,
+    x_bot_secret: Optional[str] = Header(default=None),
+    x_user_token: Optional[str] = Header(default=None),
+    authorization: Optional[str] = Header(default=None),
+):
+    _check_secret(x_bot_secret)
     email = normalizar_email(req.email or "")
+    actor_email = resolver_email_por_token(_extract_user_token(x_user_token, authorization))
+    es_verificado = bool(actor_email and email and actor_email == email)
     res: Dict[str, Any] = {"ok": True}
 
     if req.modo != "solo_token_llm":
@@ -598,12 +735,15 @@ def api_vincular(req: VincularRequest):
         )
         if not res.get("ok"):
             return res
+        if res.get("cuit"):
+            _clear_bad_creds(res["cuit"])
 
     if email:
         tok = crear_token_usuario(
             email=email,
             label=req.etiqueta_token or "principal",
             custom_token=req.token_personalizado or None,
+            verificado=es_verificado,
         )
         if not tok.get("ok"):
             return tok
@@ -636,12 +776,37 @@ def api_vincular(req: VincularRequest):
 
 
 @app.get("/api/v1/vincular/{cuit}")
-def api_estado_vincular(cuit: str):
+def api_estado_vincular(
+    cuit: str,
+    x_bot_secret: Optional[str] = Header(default=None),
+    x_user_token: Optional[str] = Header(default=None),
+    authorization: Optional[str] = Header(default=None),
+):
+    _check_secret(x_bot_secret)
+    actor_email = resolver_email_por_token(_extract_user_token(x_user_token, authorization))
+    if not actor_email:
+        raise HTTPException(status_code=401, detail="Autenticación requerida para consultar estado de vinculación")
+    ok_perm, _, reason = verificar_permiso_cuit(actor_email, cuit, nivel="lectura")
+    if not ok_perm and not es_admin_plataforma(actor_email):
+        raise HTTPException(status_code=403, detail=reason)
     return estado_vinculacion(cuit)
 
 
 @app.delete("/api/v1/vincular/{cuit}")
-def api_revocar_vincular(cuit: str):
+def api_revocar_vincular(
+    cuit: str,
+    x_bot_secret: Optional[str] = Header(default=None),
+    x_user_token: Optional[str] = Header(default=None),
+    authorization: Optional[str] = Header(default=None),
+):
+    _check_secret(x_bot_secret)
+    actor_email = resolver_email_por_token(_extract_user_token(x_user_token, authorization))
+    if not actor_email:
+        raise HTTPException(status_code=401, detail="Autenticación requerida para revocar credenciales")
+    ok_perm, _, reason = verificar_permiso_cuit(actor_email, cuit, nivel="owner")
+    if not ok_perm and not es_admin_plataforma(actor_email):
+        raise HTTPException(status_code=403, detail=reason)
+    _clear_bad_creds(cuit)
     return revocar_credenciales(cuit)
 
 
@@ -672,7 +837,12 @@ def run_mcp_tool(
 
     if tool == "verificar_proveedor_apocrifo_apoc":
         from .scraper_extras_arca import verificar_proveedor_apocrifo_apoc
-        return verificar_proveedor_apocrifo_apoc(args.get("cuit_proveedor", ""))
+        cuit_prov = normalizar_cuit(args.get("cuit_proveedor", ""))
+        return _run_tool_sin_timeout(
+            f"eapoc:{cuit_prov}", "Base e-APOC ARCA",
+            lambda: verificar_proveedor_apocrifo_apoc(cuit_prov),
+            cuit=cuit_prov or "publico", actor_email=actor_email or "", origen_llm=origen_llm,
+        )
 
     # =========================================================================
     # AUTENTICACIÓN Y VINCULACIÓN 100% DENTRO DEL CHAT (CERO SALIR DEL LLM)
@@ -689,6 +859,16 @@ def run_mcp_tool(
         if len(cuit_in) != 11 or not clave_in:
             return {"ok": False, "error": "Indicá tu CUIT (11 dígitos) y tu Clave Fiscal ARCA para vincular en modo solo lectura."}
 
+        es_verificado_chat = bool(actor_email and actor_email == em)
+        tok = crear_token_usuario(
+            email=em,
+            label=f"chat_{origen_llm}",
+            custom_token=frase_in or None,
+            verificado=es_verificado_chat,
+        )
+        if not tok.get("ok"):
+            return tok
+
         res_v = guardar_credenciales_cifradas(
             cuit=cuit_in,
             clave_fiscal=clave_in,
@@ -697,10 +877,7 @@ def run_mcp_tool(
         )
         if not res_v.get("ok"):
             return res_v
-
-        tok = crear_token_usuario(email=em, label=f"chat_{origen_llm}", custom_token=frase_in or None)
-        if not tok.get("ok"):
-            return tok
+        _clear_bad_creds(cuit_in)
 
         registrar_evento_historial(
             email=em,
@@ -1010,8 +1187,9 @@ def run_mcp_tool(
         )
         return {"ok": True, "evento": ev, "mensaje": "Nota guardada en tu historial compartido multi-LLM (visible desde Claude, ChatGPT, Gemini, Copilot y Cursor)."}
 
-    # Determinar nivel de permiso requerido (escritura solo si confirmado=True en acciones mutantes)
-    es_escritura = (tool in ("emitir_factura_wsfe", "consultar_y_renovar_certificado_mipyme") and bool(args.get("confirmado", False)))
+    # Determinar nivel de permiso requerido (escritura solo si confirmado===True estricto en acciones mutantes — P0-5)
+    confirmado_strict = _parse_bool_strict(args.get("confirmado", False))
+    es_escritura = (tool in ("emitir_factura_wsfe", "consultar_y_renovar_certificado_mipyme") and confirmado_strict)
     nivel_req = "escritura" if es_escritura else "lectura"
 
     cuit, clave, err = _resolve_creds_authorized(actor_email, args, public_base, nivel=nivel_req)
@@ -1028,25 +1206,29 @@ def run_mcp_tool(
         )
 
     if tool == "consultar_ccma_cuenta_corriente":
+        audit_inflight_active = False
         with _audit_lock:
             cached = AUDIT_CACHE.get(cuit)
-            if cached and (time.time() - cached["ts"]) < AUDIT_TTL_SEC:
+            if cached and not cached.get("is_error") and (time.time() - cached["ts"]) < AUDIT_TTL_SEC:
                 ccma = (cached["data"] or {}).get("ccma")
-                if ccma:
+                if ccma and not ccma.get("error"):
                     return {"ok": True, "cuit": cuit, "desde_cache": True, "ccma": ccma}
-            if cuit in AUDIT_INFLIGHT:
-                return _ejecutar_auditoria_sin_timeout(cuit=cuit, clave=clave, actor_email=actor_email, origen_llm=origen_llm)
+            audit_inflight_active = cuit in AUDIT_INFLIGHT
+        if audit_inflight_active:
+            return _ejecutar_auditoria_sin_timeout(cuit=cuit, clave=clave, actor_email=actor_email, origen_llm=origen_llm)
         from .auditoria_unificada import consultar_ccma_preciso
-        res = consultar_ccma_preciso(cuit=cuit, clave=clave)
-        registrar_evento_historial(actor_email, cuit, origen_llm, "consulta_ccma", f"Consulta CCMA (CUIT {cuit})")
-        return res
+        return _run_tool_sin_timeout(
+            f"ccma:{cuit}", "CCMA (Monotributo y Autónomos)",
+            lambda: consultar_ccma_preciso(cuit=cuit, clave=clave),
+            cuit=cuit, actor_email=actor_email, origen_llm=origen_llm, accion_hist="consulta_ccma", clave=clave,
+        )
 
     if tool == "consultar_bienes_personales_web":
         from .scraper_bbpp import consultar_bienes_personales_web
         return _run_tool_sin_timeout(
             f"bbpp:{cuit}", "Bienes Personales Web (F. 762)",
             lambda: consultar_bienes_personales_web(usuario=cuit, clave=clave),
-            cuit=cuit, actor_email=actor_email, origen_llm=origen_llm, accion_hist="consulta_bbpp",
+            cuit=cuit, actor_email=actor_email, origen_llm=origen_llm, accion_hist="consulta_bbpp", clave=clave,
         )
 
     if tool == "consultar_nuestra_parte_arca":
@@ -1054,7 +1236,7 @@ def run_mcp_tool(
         return _run_tool_sin_timeout(
             f"nuestraparte:{cuit}", "Nuestra Parte ARCA",
             lambda: consultar_nuestra_parte(usuario=cuit, clave=clave),
-            cuit=cuit, actor_email=actor_email, origen_llm=origen_llm, accion_hist="consulta_nuestra_parte",
+            cuit=cuit, actor_email=actor_email, origen_llm=origen_llm, accion_hist="consulta_nuestra_parte", clave=clave,
         )
 
     if tool == "consultar_mis_retenciones_arca":
@@ -1063,17 +1245,17 @@ def run_mcp_tool(
         return _run_tool_sin_timeout(
             f"retenciones:{cuit}:{obj}", "Mis Retenciones ARCA",
             lambda: consultar_mis_retenciones(usuario=cuit, clave=clave, cuit_objetivo=args.get("cuit_objetivo")),
-            cuit=cuit, actor_email=actor_email, origen_llm=origen_llm, accion_hist="consulta_retenciones",
+            cuit=cuit, actor_email=actor_email, origen_llm=origen_llm, accion_hist="consulta_retenciones", clave=clave,
         )
 
     if tool == "consultar_y_renovar_certificado_mipyme":
         from .scraper_extras_arca import consultar_y_renovar_certificado_mipyme
         emp = args.get("cuit_empresa", cuit)
-        conf = bool(args.get("confirmado", False))
+        conf = confirmado_strict
         return _run_tool_sin_timeout(
             f"mipyme:{cuit}:{emp}:{conf}", "Certificado MiPyME (F. 1272)",
             lambda: consultar_y_renovar_certificado_mipyme(usuario=cuit, clave=clave, cuit_empresa=emp, confirmado=conf),
-            cuit=cuit, actor_email=actor_email, origen_llm=origen_llm, accion_hist="consulta_mipyme",
+            cuit=cuit, actor_email=actor_email, origen_llm=origen_llm, accion_hist="consulta_mipyme", clave=clave,
         )
 
     if tool == "consultar_comprobantes_mes":
@@ -1125,7 +1307,7 @@ def run_mcp_tool(
             f"comprobantes:{cuit}:{tipo_req}:{rango}",
             f"Mis Comprobantes {periodo or rango} ({tipo_req})",
             _fetch_mc,
-            cuit=cuit, actor_email=actor_email, origen_llm=origen_llm, accion_hist="consulta_comprobantes",
+            cuit=cuit, actor_email=actor_email, origen_llm=origen_llm, accion_hist="consulta_comprobantes", clave=clave,
         )
 
     if tool == "leer_notificaciones_dfe":
@@ -1134,15 +1316,15 @@ def run_mcp_tool(
         return _run_tool_sin_timeout(
             f"dfe:{cuit}:{obj}", "Domicilio Fiscal Electrónico (DFE)",
             lambda: {"ok": True, "cuit": obj, "notificaciones": consultar_notificaciones_dfe(usuario=cuit, clave=clave, cuit_objetivo=args.get("cuit"))},
-            cuit=cuit, actor_email=actor_email, origen_llm=origen_llm, accion_hist="consulta_dfe",
+            cuit=cuit, actor_email=actor_email, origen_llm=origen_llm, accion_hist="consulta_dfe", clave=clave,
         )
 
     if tool in ("consultar_estado_monotributo", "consultar_situacion_monotributo"):
         with _audit_lock:
             cached = AUDIT_CACHE.get(cuit)
-            if cached and (time.time() - cached["ts"]) < AUDIT_TTL_SEC:
+            if cached and not cached.get("is_error") and (time.time() - cached["ts"]) < AUDIT_TTL_SEC:
                 mono = (cached["data"] or {}).get("portal_monotributo")
-                if mono:
+                if mono and not mono.get("error"):
                     return {"ok": True, "cuit": cuit, "desde_cache": True, "portal_monotributo": mono}
         return _ejecutar_auditoria_sin_timeout(cuit=cuit, clave=clave, actor_email=actor_email, origen_llm=origen_llm)
 
@@ -1152,8 +1334,15 @@ def run_mcp_tool(
 
     if tool == "emitir_factura_wsfe":
         from .arca_ws import emitir_comprobante_wsfe
+        cuit_emisor_req = normalizar_cuit(args.get("cuit_emisor", "") or cuit)
+        if cuit_emisor_req != cuit:
+            return {
+                "ok": False,
+                "acceso_denegado": True,
+                "error": f"El CUIT emisor ({cuit_emisor_req}) no coincide con el CUIT autorizado ({cuit}). Operación bloqueada por seguridad.",
+            }
         res = emitir_comprobante_wsfe(
-            cuit_emisor=args.get("cuit_emisor", cuit),
+            cuit_emisor=cuit,
             pto_vta=int(args.get("pto_vta", 1)),
             cbte_tipo=int(args.get("cbte_tipo", 11)),
             receptor_cuit=args.get("receptor_cuit", ""),
@@ -1161,11 +1350,11 @@ def run_mcp_tool(
             importe_iva=float(args.get("importe_iva", 0)),
             concepto=int(args.get("concepto", 2)),
             ambiente=args.get("ambiente", "homologacion"),
-            confirmado=bool(args.get("confirmado", False)),
+            confirmado=confirmado_strict,
             cbte_asoc=args.get("cbte_asoc"),
             condicion_iva_receptor_id=args.get("condicion_iva_receptor_id"),
         )
-        if bool(args.get("confirmado", False)):
+        if confirmado_strict:
             registrar_evento_historial(actor_email, cuit, origen_llm, "emitir_factura_wsfe", f"Factura WSFE a {args.get('receptor_cuit','')} por ${args.get('importe_neto',0)}")
         return res
 
@@ -1179,23 +1368,25 @@ def run_mcp_tool(
 def run_job(job_id: str, params: AutomationParams):
     jobs[job_id]["status"] = "in_process"
     try:
-        data = consultar_mis_comprobantes(
-            cuit=params.cuit,
-            usuario=params.username,
-            clave=params.password,
-            tipo=params.filters.t,
-            rango_fechas=params.filters.fechaEmision,
-        )
+        with PLAYWRIGHT_SEM:
+            data = consultar_mis_comprobantes(
+                cuit=params.cuit,
+                usuario=params.username,
+                clave=params.password,
+                tipo=params.filters.t,
+                rango_fechas=params.filters.fechaEmision,
+            )
         jobs[job_id]["status"] = "complete"
         jobs[job_id]["data"] = data
     except Exception as e:
         logger.exception(f"Error en trabajo {job_id}")
         jobs[job_id]["status"] = "error"
-        jobs[job_id]["message"] = str(e)
+        jobs[job_id]["message"] = str(e)[:300]
 
 
 @app.post("/api/v1/automations")
-def start_automation(req: StartRequest):
+def start_automation(req: StartRequest, x_bot_secret: Optional[str] = Header(default=None)):
+    _check_secret(x_bot_secret)
     if req.automation != "mis-comprobantes":
         raise HTTPException(status_code=400, detail="Automatización desconocida")
     job_id = str(uuid.uuid4())
@@ -1205,7 +1396,8 @@ def start_automation(req: StartRequest):
 
 
 @app.get("/api/v1/automations/{job_id}")
-def get_automation_status(job_id: str):
+def get_automation_status(job_id: str, x_bot_secret: Optional[str] = Header(default=None)):
+    _check_secret(x_bot_secret)
     job = jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Trabajo no encontrado")

@@ -10,18 +10,40 @@ Se ejecuta automáticamente en CI antes de cada deploy para garantizar que:
   5. Ninguna credencial o dato personal se filtre en el repositorio.
 """
 
+import os
 import re
 import sys
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+# Aislar SIEMPRE la bóveda y el backoffice en un tempdir para no tocar data/boveda real (P1-17)
+_TEST_TMPDIR = tempfile.TemporaryDirectory(prefix="impuesto_test_vault_")
+os.environ["DISABLE_AUDIT_PREWARM"] = "1"
+os.environ["PLATFORM_ADMIN_EMAILS"] = "admin_fixture@impuesto.test"
+
+from bot import boveda_segura as _bv_mod
+from bot import backoffice_growth as _bg_mod
+
+_tmp_path = Path(_TEST_TMPDIR.name)
+_bv_mod.VAULT_DIR = _tmp_path
+_bv_mod.VAULT_FILE = _tmp_path / "credenciales.enc"
+_bv_mod.ACL_FILE = _tmp_path / "acl.enc"
+_bv_mod.HISTORY_FILE = _tmp_path / "historial.enc"
+_bv_mod.KEY_FILE = _tmp_path / ".vault_key"
+_bv_mod.BILLING_FILE = _tmp_path / "admin_billing.enc"
+for _attr in ("GROWTH_FILE", "HISTORY_FILE", "VAULT_FILE", "ACL_FILE", "BILLING_FILE"):
+    if hasattr(_bg_mod, _attr):
+        setattr(_bg_mod, _attr, _tmp_path / f"{_attr.lower()}.enc")
+_bg_mod.HISTORY_FILE = _bv_mod.HISTORY_FILE
+
 from fastapi.testclient import TestClient
 from bot.main import app
-from bot.auditoria_unificada import _parse_ccma_detalle_periodos
+from bot.auditoria_unificada import _parse_ccma_detalle_periodos, _parse_ar_num
 from bot.validador_invariantes import validar_invariantes_auditoria
 from bot.doublecheck_arca import obtener_protocolo_doublecheck, validar_cobertura_auditoria
 from bot.playbooks_servicios import obtener_playbook_servicio
@@ -30,22 +52,34 @@ from bot.playbooks_servicios import obtener_playbook_servicio
 class TestContratosYCalidadFiscal(unittest.TestCase):
     def test_01_fastapi_endpoints_y_boveda_sin_fuga(self):
         client = TestClient(app)
-        self.assertEqual(client.get("/health").status_code, 200)
+        r_h = client.get("/health")
+        self.assertEqual(r_h.status_code, 200)
+        self.assertIn("vault_key_fingerprint", r_h.json())
         r_vinc = client.get("/vincular?tipo=estudio")
         self.assertEqual(r_vinc.status_code, 200)
         self.assertIn("AES-256", r_vinc.text)
 
-        # Vincular, verificar sin fuga y revocar CUIT ficticio
+        # Vincular con dueño, verificar sin fuga autenticado y revocar como Owner (P0-2)
         test_cuit = "20301234567"
-        r_save = client.post("/api/v1/vincular", json={"cuit": test_cuit, "clave_fiscal": "TestSecret999", "modo": "solo_lectura_cifrada"})
+        r_save = client.post("/api/v1/vincular", json={
+            "email": "test01_owner@impuesto.test",
+            "cuit": test_cuit,
+            "clave_fiscal": "TestSecret999",
+            "modo": "solo_lectura_cifrada",
+        })
         self.assertEqual(r_save.status_code, 200)
         self.assertTrue(r_save.json()["ok"])
+        tok = r_save.json()["token"]
 
-        r_state = client.get(f"/api/v1/vincular/{test_cuit}")
+        # Sin token, GET y DELETE devuelven 401
+        self.assertEqual(client.get(f"/api/v1/vincular/{test_cuit}").status_code, 401)
+        self.assertEqual(client.delete(f"/api/v1/vincular/{test_cuit}").status_code, 401)
+
+        r_state = client.get(f"/api/v1/vincular/{test_cuit}", headers={"X-User-Token": tok})
         self.assertEqual(r_state.status_code, 200)
         self.assertNotIn("TestSecret999", r_state.text)
 
-        r_del = client.delete(f"/api/v1/vincular/{test_cuit}")
+        r_del = client.delete(f"/api/v1/vincular/{test_cuit}", headers={"X-User-Token": tok})
         self.assertEqual(r_del.status_code, 200)
         self.assertTrue(r_del.json()["revocado"])
 
@@ -267,17 +301,17 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
         )
         self.assertTrue(r_soc_after.json().get("acceso_denegado"))
 
-        # 7. Frase clave personalizada: rechaza cortas (<16), acepta seguras (>=16) y rechaza colisiones entre usuarios
-        r_short = bv.crear_token_usuario(owner_email, "corta", custom_token="clave123")
+        # 7. Frase clave personalizada: rechaza cortas (<16), acepta seguras (>=16) con verificado=True y rechaza colisiones
+        r_short = bv.crear_token_usuario(owner_email, "corta", custom_token="clave123", verificado=True)
         self.assertFalse(r_short.get("ok"))
-        r_custom = bv.crear_token_usuario(owner_email, "custom", custom_token="Cafe-Cordoba-Fiscal-8924")
+        r_custom = bv.crear_token_usuario(owner_email, "custom", custom_token="Cafe-Cordoba-Fiscal-8924", verificado=True)
         self.assertTrue(r_custom.get("ok"))
         self.assertEqual(bv.resolver_email_por_token("Cafe-Cordoba-Fiscal-8924"), owner_email)
-        r_dup = bv.crear_token_usuario(attacker_email, "dup", custom_token="Cafe-Cordoba-Fiscal-8924")
+        r_dup = bv.crear_token_usuario(attacker_email, "dup", custom_token="Cafe-Cordoba-Fiscal-8924", verificado=True)
         self.assertFalse(r_dup.get("ok"))
 
         # Limpieza de fixture
-        client.delete(f"/api/v1/vincular/{cuit_test}")
+        client.delete(f"/api/v1/vincular/{cuit_test}", headers={"X-User-Token": tok_owner})
 
     def test_09_backoffice_super_admin_plataforma(self):
         from fastapi.testclient import TestClient
@@ -285,9 +319,9 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
         from bot import boveda_segura as bv
 
         client = TestClient(app)
-        admin_tok = bv.crear_token_usuario("damianbourdieu@gmail.com", "admin_test")["token"]
+        admin_tok = bv.crear_token_usuario("admin_fixture@impuesto.test", "admin_test", verificado=True)["token"]
         user_email = "cliente_saas_test@impuesto.test"
-        user_tok = bv.crear_token_usuario(user_email, "user_test")["token"]
+        user_tok = bv.crear_token_usuario(user_email, "user_test", verificado=True)["token"]
 
         # 1. Usuario normal NO puede acceder al Backoffice
         r_forb = client.post(
@@ -341,8 +375,8 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
         from bot import boveda_segura as bv
 
         client = TestClient(app)
-        admin_tok = bv.crear_token_usuario("damianbourdieu@gmail.com", "growth_admin")["token"]
-        user_tok = bv.crear_token_usuario("normal_growth@impuesto.test", "growth_user")["token"]
+        admin_tok = bv.crear_token_usuario("admin_fixture@impuesto.test", "growth_admin", verificado=True)["token"]
+        user_tok = bv.crear_token_usuario("normal_growth@impuesto.test", "growth_user", verificado=True)["token"]
 
         # 1. Usuario normal bloqueado en herramientas Growth
         r_no = client.post("/api/v1/mcp/tool", headers={"X-User-Token": user_tok}, json={"name": "admin_metricas_growth_saas", "arguments": {}})
@@ -419,7 +453,7 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
         self.assertIn(cuit_chat, [x["cuit"] for x in r_emp.json().get("empresas_vinculadas", [])])
 
         # Limpieza
-        client.delete(f"/api/v1/vincular/{cuit_chat}")
+        client.delete(f"/api/v1/vincular/{cuit_chat}", headers={"X-User-Token": tok_ses})
 
     def test_12_login_otp_6_digitos_universal(self):
         from unittest.mock import patch
@@ -469,6 +503,156 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
                 json={"name": "verificar_codigo_acceso_email", "arguments": {"email": em, "codigo": captured["code"]}},
             )
             self.assertTrue(r_reuse.json().get("acceso_denegado"))
+
+    def test_13_no_deadlock_ccma_inflight_y_watchdog(self):
+        """Regresión crítica: consultar_ccma_cuenta_corriente con auditoría inflight NO debe hacer deadlock en _audit_lock ni bloquear sincrónicamente."""
+        import time
+        import threading
+        from unittest.mock import patch
+        from fastapi.testclient import TestClient
+        from bot import main as bot_main
+
+        client = TestClient(bot_main.app)
+        cuit_test = "20999999992"
+        em = "deadlock_test@impuesto.test"
+
+        r_link = client.post("/api/v1/vincular", json={
+            "email": em,
+            "cuit": cuit_test,
+            "clave_fiscal": "ClaveTest123",
+            "modo": "solo_lectura_cifrada",
+        })
+        tok = r_link.json()["token"]
+
+        # 1. Simular auditoría en curso (inflight) y llamar a consultar_ccma_cuenta_corriente
+        fake_evt = threading.Event()
+        bot_main.AUDIT_CACHE.pop(cuit_test, None)
+        bot_main.AUDIT_INFLIGHT[cuit_test] = {"started_at": time.time(), "event": fake_evt, "result": None}
+        try:
+            with patch.object(bot_main, "AUDIT_SYNC_WAIT_SEC", 0.05):
+                t0 = time.time()
+                r_ccma = client.post(
+                    "/api/v1/mcp/tool",
+                    headers={"X-User-Token": tok},
+                    json={"name": "consultar_ccma_cuenta_corriente", "arguments": {"cuit": cuit_test}},
+                )
+                elapsed = time.time() - t0
+                self.assertEqual(r_ccma.status_code, 200)
+                self.assertEqual(r_ccma.json().get("estado"), "EN_PROGRESO")
+                self.assertLess(elapsed, 2.0)
+        finally:
+            bot_main.AUDIT_INFLIGHT.pop(cuit_test, None)
+
+        # 2. Watchdog: una entrada inflight colgada (> INFLIGHT_MAX_AGE_SEC) debe ser desalojada
+        bot_main.AUDIT_INFLIGHT[cuit_test] = {
+            "started_at": time.time() - (bot_main.INFLIGHT_MAX_AGE_SEC + 30),
+            "event": threading.Event(),
+            "result": None,
+        }
+        with patch.object(bot_main, "auditar_estado_integral_arca", return_value={"ok": True, "cuit": cuit_test}), \
+             patch.object(bot_main, "AUDIT_SYNC_WAIT_SEC", 1.0):
+            r_fresh = bot_main._ejecutar_auditoria_sin_timeout(cuit_test, "ClaveTest123")
+            self.assertTrue(r_fresh.get("ok"))
+            self.assertNotEqual(r_fresh.get("estado"), "EN_PROGRESO")
+        bot_main.AUDIT_CACHE.pop(cuit_test, None)
+        client.delete(f"/api/v1/vincular/{cuit_test}", headers={"X-User-Token": tok})
+
+    def test_14_deteccion_doble_jubilacion_021_y_aut(self):
+        """Verifica que el parser CCMA separe 020/021/024 y dispare alerta_doble_aporte_jubilatorio si coexisten 021 y AUT."""
+        fixture_doble = """
+        10/2026\t020\t019\t019\tObligacion Mensual Monot.\t20/10/2026\t18,246.86
+        10/2026\t021\t019\t019\tAporte SIPA Monot.\t20/10/2026\t12,500.00
+        +\t \t10/2026\tAUT\t019\t019\tObligacion Mensual Autonomo.\t11/11/2026\t159,563.00
+        """
+        desg = _parse_ccma_detalle_periodos(fixture_doble)
+        self.assertAlmostEqual(desg["monotributo_impositivo_020"], 18246.86, places=2)
+        self.assertAlmostEqual(desg["monotributo_jubilacion_021"], 12500.00, places=2)
+        self.assertTrue(desg["alerta_doble_aporte_jubilatorio"])
+
+    def test_sec_p0_1_bloquea_account_takeover_sin_otp(self):
+        """P0-1: nadie puede obtener token de una cuenta existente ni de super-admin sin OTP verificado."""
+        client = TestClient(app)
+        # 1. Admin sin OTP -> bloqueado
+        r_adm = client.post("/api/v1/mcp/tool", json={
+            "name": "vincular_cuenta_en_chat",
+            "arguments": {"email": "admin_fixture@impuesto.test", "cuit": "20555555551", "clave_fiscal": "Fake123"},
+        })
+        self.assertFalse(r_adm.json().get("ok"))
+        self.assertTrue(r_adm.json().get("requiere_otp"))
+
+        # 2. Usuario ya existente -> segundo intento sin OTP bloqueado
+        r1 = client.post("/api/v1/vincular", json={
+            "email": "victima_p01@impuesto.test", "cuit": "20555555552", "clave_fiscal": "RealPass1",
+        })
+        self.assertTrue(r1.json().get("ok"))
+        r_takeover = client.post("/api/v1/vincular", json={
+            "email": "victima_p01@impuesto.test", "modo": "solo_token_llm",
+        })
+        self.assertFalse(r_takeover.json().get("ok"))
+        self.assertTrue(r_takeover.json().get("requiere_otp"))
+
+    def test_sec_p0_2_bloquea_borrado_y_sobrescritura_sin_dueño(self):
+        """P0-2: email vacío no puede pisar clave de CUIT ajeno, y DELETE requiere Owner autenticado."""
+        client = TestClient(app)
+        cuit_v = "20555555553"
+        r1 = client.post("/api/v1/vincular", json={"email": "dueno_p02@impuesto.test", "cuit": cuit_v, "clave_fiscal": "RealSecret"})
+        self.assertTrue(r1.json().get("ok"))
+        # Email vacío intentando pisar la clave -> rechazado
+        r_empty = client.post("/api/v1/vincular", json={"email": "", "cuit": cuit_v, "clave_fiscal": "Basura999"})
+        self.assertFalse(r_empty.json().get("ok"))
+        self.assertTrue(r_empty.json().get("acceso_denegado"))
+        # Otro usuario intentando DELETE -> 403
+        tok_other = _bv_mod.crear_token_usuario("intruso_p02@impuesto.test", "t", verificado=True)["token"]
+        self.assertEqual(client.delete(f"/api/v1/vincular/{cuit_v}", headers={"X-User-Token": tok_other}).status_code, 403)
+
+    def test_sec_p0_5_emision_cruzada_y_confirmado_string_false(self):
+        """P0-5: cuit_emisor != cuit autorizado es bloqueado y confirmado='false' NO es True."""
+        from bot import main as bot_main
+        self.assertFalse(bot_main._parse_bool_strict("false"))
+        self.assertFalse(bot_main._parse_bool_strict("0"))
+        self.assertTrue(bot_main._parse_bool_strict(True))
+        self.assertTrue(bot_main._parse_bool_strict("true"))
+
+        client = TestClient(app)
+        cuit_propio = "20555555554"
+        r_v = client.post("/api/v1/vincular", json={"email": "emisor_p05@impuesto.test", "cuit": cuit_propio, "clave_fiscal": "Clave1"})
+        tok = r_v.json()["token"]
+        r_cross = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok}, json={
+            "name": "emitir_factura_wsfe",
+            "arguments": {"cuit": cuit_propio, "cuit_emisor": "30715875086", "cbte_tipo": 11, "importe_neto": 100, "confirmado": "false"},
+        })
+        self.assertFalse(r_cross.json().get("ok"))
+        self.assertTrue(r_cross.json().get("acceso_denegado"))
+
+    def test_sec_p0_6_parser_ar_num_estricto(self):
+        """P0-6: _parse_ar_num distingue miles de decimales y no devuelve 0 silencioso en strict=True."""
+        self.assertAlmostEqual(_parse_ar_num("1.234.567"), 1234567.0, places=2)
+        self.assertAlmostEqual(_parse_ar_num("1,5"), 1.5, places=2)
+        self.assertAlmostEqual(_parse_ar_num("1.426.512,52"), 1426512.52, places=2)
+        self.assertAlmostEqual(_parse_ar_num("1,172,263.79"), 1172263.79, places=2)
+        with self.assertRaises(ValueError):
+            _parse_ar_num("N/A", strict=True)
+
+    def test_sec_p0_7_circuit_breaker_clave_fiscal_incorrecta(self):
+        """P0-7: tras 1 error CLAVE_FISCAL_INCORRECTA, el circuit breaker frena nuevos logins hasta actualizar la clave."""
+        from unittest.mock import patch
+        from bot import main as bot_main
+        cuit_cb = "20555555555"
+        calls = {"n": 0}
+        def fake_bad_login(cuit, clave):
+            calls["n"] += 1
+            raise RuntimeError("CLAVE_FISCAL_INCORRECTA: ARCA informó 'Clave o usuario incorrecto'")
+
+        bot_main._clear_bad_creds(cuit_cb)
+        with patch.object(bot_main, "auditar_estado_integral_arca", side_effect=fake_bad_login), \
+             patch.object(bot_main, "AUDIT_SYNC_WAIT_SEC", 1.0):
+            r1 = bot_main._ejecutar_auditoria_sin_timeout(cuit_cb, "Mala123")
+            self.assertEqual(r1.get("estado"), "CLAVE_FISCAL_INCORRECTA")
+            # Segundo llamado con la misma clave NO dispara Playwright
+            r2 = bot_main._ejecutar_auditoria_sin_timeout(cuit_cb, "Mala123", forzar_refresco=True)
+            self.assertTrue(r2.get("circuit_breaker_activo"))
+            self.assertEqual(calls["n"], 1)
+        bot_main._clear_bad_creds(cuit_cb)
 
 
 if __name__ == "__main__":

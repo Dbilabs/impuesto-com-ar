@@ -48,10 +48,13 @@ def consultar_bienes_personales_web(usuario: str, clave: str) -> Dict[str, Any]:
                     "error": "No se encontró el servicio 'BIENES PERSONALES WEB' habilitado en el portal ARCA."
                 }
 
-            with context.expect_page() as p_info:
+            with context.expect_page(timeout=20000) as p_info:
                 btn_bp.click()
             bp_page = p_info.value
-            bp_page.wait_for_load_state("networkidle")
+            try:
+                bp_page.wait_for_load_state("domcontentloaded", timeout=20000)
+            except Exception:
+                pass
             bp_page.wait_for_timeout(3000)
 
             # 1. Extraer próximo vencimiento desde #/inicio
@@ -67,7 +70,7 @@ def consultar_bienes_personales_web(usuario: str, clave: str) -> Dict[str, Any]:
             # 2. Navegar obligatoriamente a #/declaraciones.anteriores
             bp_page.goto(
                 "https://siapweb.cloud.afip.gob.ar/f762/#/declaraciones.anteriores",
-                wait_until="networkidle",
+                wait_until="domcontentloaded",
                 timeout=25000
             )
             bp_page.wait_for_timeout(3000)

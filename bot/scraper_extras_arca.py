@@ -46,7 +46,7 @@ def consultar_ccma(usuario: str, clave: str) -> Dict[str, Any]:
             if not btn_ccma:
                 return {"ok": False, "error": "Servicio CCMA no encontrado en el menú de ARCA."}
 
-            with context.expect_page() as p_info:
+            with context.expect_page(timeout=20000) as p_info:
                 btn_ccma.click()
             ccma = p_info.value
             ccma.wait_for_load_state("domcontentloaded")
@@ -120,7 +120,7 @@ def consultar_mis_retenciones(
             if not btn_ret:
                 return {"ok": False, "error": "Servicio 'MIS RETENCIONES' no encontrado en el menú de ARCA."}
 
-            with context.expect_page() as p_info:
+            with context.expect_page(timeout=20000) as p_info:
                 btn_ret.click()
             rp = p_info.value
             rp.wait_for_load_state("domcontentloaded")
@@ -176,7 +176,7 @@ def consultar_nuestra_parte(usuario: str, clave: str) -> Dict[str, Any]:
             )
             via = "directo"
             if btn_np:
-                with context.expect_page() as p_info:
+                with context.expect_page(timeout=20000) as p_info:
                     btn_np.click()
                 np_page = p_info.value
                 np_page.wait_for_load_state("domcontentloaded")
@@ -189,7 +189,7 @@ def consultar_nuestra_parte(usuario: str, clave: str) -> Dict[str, Any]:
                 )
                 if not btn_bp:
                     return {"ok": False, "error": "No se encontró Nuestra Parte ni Bienes Personales Web."}
-                with context.expect_page() as p_info:
+                with context.expect_page(timeout=20000) as p_info:
                     btn_bp.click()
                 bp_page = p_info.value
                 bp_page.wait_for_load_state("domcontentloaded")
@@ -332,7 +332,7 @@ def consultar_y_renovar_certificado_mipyme(
                     ]
                 }
 
-            with context.expect_page() as p_info:
+            with context.expect_page(timeout=20000) as p_info:
                 btn_pyme.click()
             pp = p_info.value
             pp.wait_for_load_state("domcontentloaded")

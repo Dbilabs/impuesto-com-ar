@@ -76,7 +76,6 @@ def buscar_manual_o_guia(query: str, categoria: Optional[str] = None) -> Dict[st
             "las solapas de historiales (ej. '#/declaraciones.anteriores' en F. 762 Bienes Personales)."
         )
     }
-    }
 
 if __name__ == "__main__":
     res = buscar_manual_o_guia("bienes personales f762")

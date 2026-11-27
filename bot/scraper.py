@@ -15,19 +15,44 @@ def _get_browser_path():
     return browser_executable
 
 def _login_arca(page, usuario: str, clave: str):
+    import time as _t
     usuario_clean = usuario.replace("-", "").strip()
-    page.goto("https://auth.afip.gob.ar/contribuyente_/login.xhtml", wait_until="networkidle", timeout=30000)
+    page.goto("https://auth.afip.gob.ar/contribuyente_/login.xhtml", wait_until="domcontentloaded", timeout=30000)
+    page.wait_for_selector("#F1\\:username", timeout=15000)
     page.fill("#F1\\:username", usuario_clean)
     page.click("#F1\\:btnSiguiente")
-    page.wait_for_timeout(1500)
+    page.wait_for_selector("#F1\\:password", timeout=15000)
     page.fill("#F1\\:password", clave)
     page.click("#F1\\:btnIngresar")
-    page.wait_for_timeout(3000)
 
-    error_box = page.query_selector(".alert-danger, #errorMsg, .ui-messages-error")
-    if error_box and error_box.is_visible():
-        err_txt = error_box.inner_text()
-        raise ValueError(f"Error de autenticación en ARCA: {err_txt}")
+    # Detección rápida de error de credenciales sin esperar 30s de timeout
+    for _ in range(12):
+        if "portalcf.cloud.afip.gob.ar" in page.url or "portalcf.cloud.arca.gob.ar" in page.url:
+            break
+        try:
+            body_low = page.inner_text("body").lower()
+            if "clave o usuario incorrecto" in body_low:
+                raise ValueError("CLAVE_FISCAL_INCORRECTA: ARCA informó 'Clave o usuario incorrecto' para este CUIT.")
+            if "clave bloqueada" in body_low or "usuario bloqueado" in body_low:
+                raise ValueError("CLAVE_FISCAL_BLOQUEADA: ARCA informó que la Clave Fiscal está bloqueada.")
+        except ValueError:
+            raise
+        except Exception:
+            pass
+        error_box = page.query_selector(".alert-danger, #errorMsg, .ui-messages-error")
+        if error_box and error_box.is_visible():
+            err_txt = error_box.inner_text()
+            raise ValueError(f"Error de autenticación en ARCA: {err_txt}")
+        _t.sleep(1.2)
+
+    if "portalcf.cloud." not in page.url:
+        page.wait_for_url("**/portalcf.cloud.**", timeout=20000, wait_until="domcontentloaded")
+    try:
+        page.wait_for_selector("#buscadorInput", timeout=20000)
+    except Exception:
+        page.wait_for_load_state("domcontentloaded", timeout=15000)
+    page.wait_for_timeout(1200)
+    page.keyboard.press("Escape")
 
 def listar_empresas_representadas(usuario: str, clave: str) -> List[Dict[str, str]]:
     """
@@ -50,10 +75,13 @@ def listar_empresas_representadas(usuario: str, clave: str) -> List[Dict[str, st
             if not btn:
                 raise RuntimeError("No se encontró el Administrador de Relaciones de Clave Fiscal.")
 
-            with page.context.expect_page() as p_info:
+            with page.context.expect_page(timeout=20000) as p_info:
                 btn.click()
             adm_page = p_info.value
-            adm_page.wait_for_load_state("networkidle")
+            try:
+                adm_page.wait_for_load_state("domcontentloaded", timeout=20000)
+            except Exception:
+                pass
             adm_page.wait_for_timeout(2000)
 
             options = adm_page.evaluate('''() => {
@@ -82,36 +110,60 @@ def consultar_notificaciones_dfe(usuario: str, clave: str, cuit_objetivo: Option
         page = browser.new_page()
         try:
             _login_arca(page, usuario, clave)
-            page.wait_for_selector("text='Ver todos'", timeout=20000)
-            page.click("text='Ver todos'")
-            page.wait_for_timeout(2000)
-
-            btn_dfe = page.query_selector("//h3[contains(text(), 'DOMICILIO FISCAL ELECTRÓNICO')]/ancestor::a") or page.query_selector("text='DOMICILIO FISCAL ELECTRÓNICO'")
+            btn_dfe = None
+            try:
+                search = page.locator("#buscadorInput").first
+                search.wait_for(state="visible", timeout=15000)
+                search.click(force=True)
+                search.fill("Domicilio Fiscal Electrónico")
+                page.wait_for_timeout(1800)
+                items = page.locator("[id^='rbt-menu-item-']")
+                for i in range(items.count()):
+                    if "domicilio fiscal" in items.nth(i).inner_text().lower():
+                        btn_dfe = items.nth(i)
+                        break
+            except Exception:
+                pass
+            if not btn_dfe:
+                try:
+                    page.wait_for_selector("text='Ver todos'", timeout=15000)
+                    page.click("text='Ver todos'")
+                    page.wait_for_timeout(1500)
+                except Exception:
+                    pass
+                btn_dfe = page.query_selector("//h3[contains(text(), 'DOMICILIO FISCAL ELECTRÓNICO')]/ancestor::a") or page.query_selector("text='DOMICILIO FISCAL ELECTRÓNICO'")
             if not btn_dfe:
                 raise RuntimeError("No se encontró el servicio Domicilio Fiscal Electrónico.")
 
-            with page.context.expect_page() as p_info:
+            with page.context.expect_page(timeout=20000) as p_info:
                 btn_dfe.click()
             dfe_page = p_info.value
-            dfe_page.wait_for_load_state("networkidle")
-            dfe_page.wait_for_timeout(3000)
+            try:
+                dfe_page.wait_for_load_state("domcontentloaded", timeout=20000)
+            except Exception:
+                pass
+            dfe_page.wait_for_timeout(2500)
 
-            # Si se especificó cuit o queremos todos
+            # Si se especificó cuit o queremos todos (P1-6: pasar parámetro seguro a evaluate, cero interpolación JS)
             if cuit_objetivo:
-                clean_target = cuit_objetivo.replace("-", "").strip()
-                dfe_page.evaluate(f'''() => {{
-                    const selects = document.querySelectorAll('select');
-                    for (const s of selects) {{
-                        for (const opt of s.options) {{
-                            if (opt.text.includes('{clean_target}')) {{
-                                s.value = opt.value;
-                                s.dispatchEvent(new Event('change'));
-                                return;
-                            }}
-                        }}
-                    }}
-                }}''')
-                dfe_page.wait_for_timeout(2000)
+                clean_target = "".join(ch for ch in str(cuit_objetivo) if ch.isdigit())
+                if len(clean_target) == 11:
+                    dfe_page.evaluate(
+                        """(target) => {
+                            const selects = document.querySelectorAll('select');
+                            for (const s of selects) {
+                                for (const opt of s.options) {
+                                    if (opt.text.includes(target)) {
+                                        s.value = opt.value;
+                                        s.dispatchEvent(new Event('change'));
+                                        return;
+                                    }
+                                }
+                            }
+                        }""",
+                        clean_target,
+                    )
+                    dfe_page.wait_for_timeout(2000)
 
             # Extraer notificaciones de la tabla
             comunicaciones = dfe_page.evaluate('''() => {

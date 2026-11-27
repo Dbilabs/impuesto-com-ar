@@ -43,12 +43,22 @@ def _now_iso() -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
+def _is_cloud_prod() -> bool:
+    return bool(
+        os.environ.get("FLY_APP_NAME", "").strip()
+        or os.environ.get("RAILWAY_ENVIRONMENT", "").strip()
+        or os.environ.get("REQUIRE_VAULT_KEY", "").strip() == "1"
+    )
+
+
 def _get_fernet() -> "Fernet":
     VAULT_DIR.mkdir(parents=True, exist_ok=True)
     env_key = os.environ.get("IMPUESTO_VAULT_KEY", "").strip()
     if env_key:
         raw = hashlib.sha256(env_key.encode("utf-8")).digest()
         key = base64.urlsafe_b64encode(raw)
+    elif _is_cloud_prod():
+        raise RuntimeError("IMPUESTO_VAULT_KEY es obligatoria en producción (no se autogenera clave local).")
     elif KEY_FILE.exists():
         key = KEY_FILE.read_bytes().strip()
     else:
@@ -56,6 +66,16 @@ def _get_fernet() -> "Fernet":
         KEY_FILE.write_bytes(key)
         os.chmod(KEY_FILE, 0o600)
     return Fernet(key)
+
+
+def obtener_huella_vault_key() -> str:
+    """Devuelve una huella corta (8 hex) de la clave maestra sin exponerla, para detectar rotación accidental."""
+    env_key = os.environ.get("IMPUESTO_VAULT_KEY", "").strip()
+    if env_key:
+        return hashlib.sha256(env_key.encode("utf-8")).hexdigest()[:8]
+    if KEY_FILE.exists():
+        return hashlib.sha256(KEY_FILE.read_bytes().strip()).hexdigest()[:8]
+    return "uninitialized"
 
 
 def _read_enc_json(path: Path, default: Any) -> Any:
@@ -74,8 +94,10 @@ def _write_enc_json(path: Path, obj: Any) -> None:
     VAULT_DIR.mkdir(parents=True, exist_ok=True)
     f = _get_fernet()
     token = f.encrypt(json.dumps(obj, ensure_ascii=False).encode("utf-8"))
-    path.write_bytes(token)
-    os.chmod(path, 0o600)
+    tmp = path.with_suffix(path.suffix + f".tmp.{os.getpid()}.{threading.get_ident()}")
+    tmp.write_bytes(token)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
 
 
 def _load_vault() -> Dict[str, Any]:
@@ -113,8 +135,15 @@ def _hash_token(token: str) -> str:
 # 1. IDENTIDAD MULTI-LLM (TOKENS PERSONALES TIPO GITHUB PAT)
 # =====================================================================
 
-def crear_token_usuario(email: str, label: str = "principal", custom_token: Optional[str] = None) -> Dict[str, Any]:
-    """Crea un Personal Access Token (`imp_live_...` o frase clave personalizada >=16 chars) asociado a un email."""
+def crear_token_usuario(
+    email: str,
+    label: str = "principal",
+    custom_token: Optional[str] = None,
+    *,
+    verificado: bool = False,
+) -> Dict[str, Any]:
+    """Crea un Personal Access Token (`imp_live_...` o frase clave personalizada >=16 chars) asociado a un email.
+    Seguridad P0-1: si el email ya tiene cuenta o es super-admin, EXIGE `verificado=True` (vía OTP o sesión autenticada)."""
     import re
     em = normalizar_email(email)
     if "@" not in em or "." not in em.split("@")[-1]:
@@ -138,6 +167,16 @@ def crear_token_usuario(email: str, label: str = "principal", custom_token: Opti
 
     with _vault_io_lock:
         acl = _load_acl()
+        if not verificado and (em in acl["users"] or es_admin_plataforma(em)):
+            return {
+                "ok": False,
+                "requiere_otp": True,
+                "acceso_denegado": True,
+                "error": (
+                    "Ese email ya tiene cuenta registrada o privilegios administrativos. "
+                    "Para proteger tu cuenta, verificá tu identidad primero con un código de 6 dígitos (`solicitar_codigo_acceso_email`)."
+                ),
+            }
         # Verificar unicidad global (nadie puede usar la misma frase clave de otro usuario)
         for other_em, other_u in acl["users"].items():
             for existing_tok in other_u.get("tokens", []):
@@ -251,14 +290,15 @@ def guardar_credenciales_cifradas(
         vault = _load_vault()
         acl = _load_acl()
 
-        # Si el CUIT ya tiene dueño distinto, impedir que otro lo secuestre sin autorización
+        # Si el CUIT ya tiene dueño distinto (o viene email vacío), impedir que otro lo secuestre o pise la clave (P0-2)
         existing_acl = acl["cuit_acl"].get(cuit_clean)
-        if existing_acl and existing_acl.get("owner_email") and em and existing_acl["owner_email"] != em:
+        if existing_acl and existing_acl.get("owner_email") and (not em or existing_acl["owner_email"] != em):
             return {
                 "ok": False,
+                "acceso_denegado": True,
                 "error": (
                     f"El CUIT {cuit_clean} ya tiene un propietario registrado. "
-                    "Pedile al Owner que te autorice por email desde su chat (`autorizar_usuario_cuit`)."
+                    "Iniciá sesión como Owner o pedile que te autorice por email (`autorizar_usuario_cuit`)."
                 ),
             }
 
@@ -586,7 +626,7 @@ ESTADOS_CUENTA = {"activo", "trial", "pausado", "suspendido"}
 
 
 def obtener_admins_plataforma() -> set:
-    raw = os.environ.get("PLATFORM_ADMIN_EMAILS", "damianbourdieu@gmail.com")
+    raw = os.environ.get("PLATFORM_ADMIN_EMAILS", "").strip()
     return {normalizar_email(x) for x in raw.split(",") if normalizar_email(x)}
 
 
@@ -825,7 +865,11 @@ def admin_ver_movimientos(
 
 _otp_lock = threading.Lock()
 _otp_store: Dict[str, Dict[str, Any]] = {}
+_otp_req_log: Dict[str, List[float]] = {}
+_otp_daily_fails: Dict[str, List[float]] = {}
 OTP_TTL_SEC = 600  # 10 minutos
+OTP_MAX_REQ_15M = 3
+OTP_MAX_FAILS_24H = 20
 
 
 def _enviar_email_otp(destinatario: str, codigo: str) -> Tuple[bool, str]:
@@ -900,16 +944,28 @@ def _enviar_email_otp(destinatario: str, codigo: str) -> Tuple[bool, str]:
 
 
 def solicitar_codigo_otp_email(email: str) -> Dict[str, Any]:
-    """Genera un código OTP de 6 dígitos (SHA-256 en memoria, TTL 10 min) y lo envía por email."""
+    """Genera un código OTP de 6 dígitos (SHA-256 en memoria, TTL 10 min, máx 3 pedidos/15m) y lo envía por email."""
     em = normalizar_email(email)
     if "@" not in em or "." not in em.split("@")[-1]:
         return {"ok": False, "error": "Email inválido."}
 
+    now_ts = datetime.datetime.now(datetime.timezone.utc).timestamp()
     codigo = f"{secrets.randbelow(900000) + 100000}"
-    exp = datetime.datetime.now(datetime.timezone.utc).timestamp() + OTP_TTL_SEC
+    exp = now_ts + OTP_TTL_SEC
 
     with _otp_lock:
-        _otp_store[em] = {"hash": _hash_token(codigo), "exp": exp, "intentos": 0}
+        reqs = [t for t in _otp_req_log.get(em, []) if now_ts - t < 900]
+        if len(reqs) >= OTP_MAX_REQ_15M:
+            return {
+                "ok": False,
+                "rate_limited": True,
+                "error": "Demasiadas solicitudes de código para este email. Esperá unos minutos antes de pedir uno nuevo.",
+            }
+        reqs.append(now_ts)
+        _otp_req_log[em] = reqs
+        prev = _otp_store.get(em)
+        prev_intentos = prev["intentos"] if (prev and now_ts <= prev["exp"]) else 0
+        _otp_store[em] = {"hash": _hash_token(codigo), "exp": exp, "intentos": prev_intentos}
 
     enviado, proveedor = _enviar_email_otp(em, codigo)
     if not enviado:
@@ -937,7 +993,7 @@ def solicitar_codigo_otp_email(email: str) -> Dict[str, Any]:
 
 
 def verificar_codigo_otp_email(email: str, codigo: str, origen_llm: str = "mcp") -> Dict[str, Any]:
-    """Verifica el código OTP de 6 dígitos (uso único, máx 5 intentos) y emite un token_sesion válido."""
+    """Verifica el código OTP de 6 dígitos (uso único, máx 5 intentos y máx 20 fallos/24h) y emite un token_sesion válido."""
     em = normalizar_email(email)
     cod = "".join(ch for ch in str(codigo or "") if ch.isdigit())
     if "@" not in em or len(cod) != 6:
@@ -945,6 +1001,9 @@ def verificar_codigo_otp_email(email: str, codigo: str, origen_llm: str = "mcp")
 
     now_ts = datetime.datetime.now(datetime.timezone.utc).timestamp()
     with _otp_lock:
+        daily = [t for t in _otp_daily_fails.get(em, []) if now_ts - t < 86400]
+        if len(daily) >= OTP_MAX_FAILS_24H:
+            return {"ok": False, "acceso_denegado": True, "rate_limited": True, "error": "Demasiados intentos fallidos hoy. Volvé a intentar más tarde."}
         rec = _otp_store.get(em)
         if not rec:
             return {"ok": False, "acceso_denegado": True, "error": "No hay un código activo para ese email. Pedí uno nuevo."}
@@ -954,13 +1013,17 @@ def verificar_codigo_otp_email(email: str, codigo: str, origen_llm: str = "mcp")
         rec["intentos"] += 1
         if rec["intentos"] > 5:
             _otp_store.pop(em, None)
+            daily.append(now_ts)
+            _otp_daily_fails[em] = daily
             return {"ok": False, "acceso_denegado": True, "error": "Demasiados intentos fallidos. Pedí un código nuevo."}
         if not secrets.compare_digest(rec["hash"], _hash_token(cod)):
+            daily.append(now_ts)
+            _otp_daily_fails[em] = daily
             return {"ok": False, "acceso_denegado": True, "error": "Código incorrecto. Verificá los 6 dígitos en tu correo."}
         # Uso único: consumir el OTP
         _otp_store.pop(em, None)
 
-    tok = crear_token_usuario(email=em, label=f"otp_{origen_llm}")
+    tok = crear_token_usuario(email=em, label=f"otp_{origen_llm}", verificado=True)
     if not tok.get("ok"):
         return tok
     cuits = listar_cuits_autorizados(em)

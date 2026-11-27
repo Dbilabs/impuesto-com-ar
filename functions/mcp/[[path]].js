@@ -1016,23 +1016,29 @@ export async function onRequest({ request, env, params }) {
 
     if (Array.isArray(rpc)) {
       if (rpc.length === 0) return jsonRpcError(null, -32600, "Invalid Request: empty batch");
-      const results = await Promise.all(
-        rpc.map(async (item) => {
+      if (rpc.length > 10) return jsonRpcError(null, -32600, "Invalid Request: máximo 10 mensajes por lote JSON-RPC");
+      // Ejecución en serie (patrón Arcanum) para no multiplicar concurrencia contra ARCA ni agotar memoria
+      const valid = [];
+      for (const item of rpc) {
+        try {
           const subReq = new Request(request.url, {
             method: "POST",
             headers: request.headers,
             body: JSON.stringify(item)
           });
           const subResp = await onRequest({ request: subReq, env, params });
-          if (subResp.status === 202 || subResp.status === 204) return null;
-          try {
-            return await subResp.json();
-          } catch {
-            return null;
+          if (subResp.status !== 202 && subResp.status !== 204) {
+            const parsed = await subResp.json();
+            if (parsed) valid.push(parsed);
           }
-        })
-      );
-      const valid = results.filter(Boolean);
+        } catch (batchErr) {
+          valid.push({
+            jsonrpc: "2.0",
+            id: item?.id ?? null,
+            error: { code: -32603, message: `Error interno procesando solicitud: ${batchErr?.message || "desconocido"}` }
+          });
+        }
+      }
       if (valid.length === 0) {
         return new Response(null, { status: 202, headers: { "Access-Control-Allow-Origin": "*" } });
       }
@@ -1040,7 +1046,8 @@ export async function onRequest({ request, env, params }) {
         status: 200,
         headers: {
           "Content-Type": "application/json; charset=utf-8",
-          "Access-Control-Allow-Origin": "*"
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Expose-Headers": "Mcp-Session-Id"
         }
       });
     }
@@ -1052,11 +1059,11 @@ export async function onRequest({ request, env, params }) {
       const reqVer = rpcParams?.protocolVersion;
       const supportedVers = new Set(["2024-11-05", "2025-03-26", "2025-06-18"]);
       return jsonRpcSuccess(id, {
-        protocolVersion: supportedVers.has(reqVer) ? reqVer : "2024-11-05",
-        capabilities: { tools: {}, prompts: {}, resources: {} },
+        protocolVersion: supportedVers.has(reqVer) ? reqVer : "2025-06-18",
+        capabilities: { tools: { listChanged: false }, prompts: {}, resources: {} },
         serverInfo: {
           name: "impuesto-arca-mcp",
-          version: "3.1.0"
+          version: "3.3.0"
         },
         instructions: [
           "Sos el CONTADOR AGÉNTICO DE CABECERA y CFO de impuesto.com.ar. Hablás en primera persona como un contador argentino de confianza, cálido, claro y resolutivo. NUNCA menciones 'el MCP' ni 'el conector' al usuario final.",
@@ -1158,6 +1165,26 @@ export async function onRequest({ request, env, params }) {
     }
 
     if (method === "tools/list") {
+      const WRITE_TOOLS = new Set([
+        "emitir_factura_wsfe",
+        "ejecutar_accion_bot",
+        "consultar_y_renovar_certificado_mipyme",
+        "vincular_cuenta_en_chat",
+        "configurar_perfil_contribuyente",
+        "registrar_nota_historial",
+        "autorizar_usuario_cuit",
+        "revocar_usuario_cuit",
+        "incorporar_conocimiento_resuelto",
+        "configurar_estudio_contable",
+        "importar_cartera_clientes",
+        "registrar_cierre_y_detectar_anomalias",
+        "aprobar_cierres_socio",
+        "admin_gestionar_suscripcion_cliente",
+        "admin_accion_emergencia_plataforma",
+        "admin_gestionar_feature_flags_y_limites",
+        "admin_gestionar_cupones_y_referidos",
+        "admin_gestionar_soporte_y_anuncios"
+      ]);
       const toolsWithSession = MCP_TOOLS.map(t => {
         const schema = t.inputSchema || { type: "object", properties: {} };
         const props = { ...(schema.properties || {}) };
@@ -1167,7 +1194,17 @@ export async function onRequest({ request, env, params }) {
             description: "Token de sesión opcional devuelto por `iniciar_sesion_en_chat` o `vincular_cuenta_en_chat` (solo si el conector no tiene `?token=` en la URL)."
           };
         }
-        return { ...t, inputSchema: { ...schema, properties: props } };
+        const isReadOnly = !WRITE_TOOLS.has(t.name);
+        return {
+          ...t,
+          inputSchema: { ...schema, properties: props },
+          annotations: {
+            readOnlyHint: isReadOnly,
+            destructiveHint: t.name === "emitir_factura_wsfe" || t.name === "revocar_usuario_cuit" || t.name === "admin_accion_emergencia_plataforma",
+            idempotentHint: isReadOnly,
+            openWorldHint: true
+          }
+        };
       });
       return jsonRpcSuccess(id, { tools: toolsWithSession });
     }
@@ -1175,6 +1212,44 @@ export async function onRequest({ request, env, params }) {
     if (method === "tools/call") {
       const toolName = rpcParams?.name;
       const args = rpcParams?.arguments || {};
+      const confirmadoStrict = args.confirmado === true || (typeof args.confirmado === "string" && args.confirmado.trim().toLowerCase() === "true");
+
+      // Helper de identidad en el Edge (P0-3): valida token contra el backend antes de leer/escribir D1
+      const resolveEdgeIdentity = async () => {
+        const authHdr = request.headers.get("authorization") || "";
+        const bearer = authHdr.toLowerCase().startsWith("bearer ") ? authHdr.slice(7).trim() : "";
+        const tok = bearer || (url.searchParams.get("token") || "").trim() || String(args.token_sesion || "").trim();
+        if (!tok || !env.BOT_API_URL) return null;
+        try {
+          const h = {
+            "Content-Type": "application/json",
+            "X-User-Token": tok,
+            "X-LLM-Origin": host.endsWith(".impuesto.com.ar") ? host.split(".")[0] : "mcp"
+          };
+          if (env.BOT_API_SECRET) h["X-Bot-Secret"] = env.BOT_API_SECRET;
+          const r = await fetch(`${env.BOT_API_URL.replace(/\/$/, "")}/api/v1/mcp/tool`, {
+            method: "POST",
+            headers: h,
+            body: JSON.stringify({ name: "listar_empresas", arguments: {} }),
+            signal: AbortSignal.timeout(4500)
+          });
+          if (!r.ok) return null;
+          const d = await r.json();
+          if (d && d.ok && d.usuario) {
+            return {
+              email: d.usuario,
+              es_owner_plataforma: Boolean(d.es_owner_plataforma),
+              cuits: new Set((d.empresas_vinculadas || []).map(x => String(x.cuit || "").replace(/[^0-9]/g, "")))
+            };
+          }
+        } catch (e) {}
+        return null;
+      };
+      const denyEdgeAuth = (msg = "Autenticación requerida: iniciá sesión primero en el chat con tu email (`solicitar_codigo_acceso_email`) o frase clave (`iniciar_sesion_en_chat`).") =>
+        jsonRpcSuccess(id, {
+          isError: true,
+          content: [{ type: "text", text: JSON.stringify({ ok: false, acceso_denegado: true, requiere_autenticacion: true, error: msg }, null, 2) }]
+        });
 
       // 1. Tool de recordatorios predeterminados (resuelta en el Edge)
       if (toolName === "obtener_recordatorios_fiscales") {
@@ -1229,7 +1304,26 @@ export async function onRequest({ request, env, params }) {
           regla_fiscal_real: "Principio de legalidad y capacidad contributiva (Constitución Nacional Art. 17). Toda obligación tributaria debe emanar de una ley formal y liquidarse sobre hechos imponibles reales."
         };
 
-        if (tema.includes("gasto") || tema.includes("deduc")) {
+        if (
+          tema.includes("jubil") ||
+          tema.includes("autonom") ||
+          tema.includes("autónom") ||
+          tema.includes("doble aporte") ||
+          tema.includes("021")
+        ) {
+          respuesta = {
+            titulo: "Doble aporte jubilatorio (Monotributo + Autónomos) y corrección de deuda en CCMA",
+            analogia_10_anios: "Es como si pagaras dos abonos de colectivos al mismo tiempo para viajar en un solo asiento. Si ya aportás a Autónomos por ser Director de S.A. o Socio Gerente de S.R.L., en el Monotributo solo tenés que pagar la parte del impuesto (código 020), NO otra vez la jubilación (021) ni la obra social (024).",
+            regla_fiscal_real: "Art. 40 de la Ley 24.977 (Régimen Simplificado) y Decreto 1/2010: quienes aportan obligatoriamente a otro régimen previsional (ej. Autónomos por dirección societaria o relación de dependencia) están EXIMIDOS de ingresar las cotizaciones previsionales fijas (021 SIPA y 024 Obra Social) en el Monotributo, tributando únicamente el componente impositivo (020).",
+            como_verificar_y_corregir: [
+              "1) Verificar en CCMA si los períodos impagos de Monotributo tienen devengados solo código 020 (correcto) o también 021 (jubilación) y 024 (obra social) en simultáneo con AUT (Autónomos).",
+              "2) Hacia adelante: ingresar en Portal Monotributo → 'Modificación de datos' → marcar que realizás aportes a otro régimen (no aportante previsional en Monotributo).",
+              "3) Hacia atrás (deuda ya devengada y no pagada): la modificación web no borra automáticamente períodos pasados; se solicita la corrección retroactiva mediante 'Presentaciones Digitales' en ARCA (trámite 'Modificación de datos registrales / Baja o modificación retroactiva de componentes Monotributo') adjuntando constancia de inscripción en Autónomos y actas societarias de designación de cargo.",
+              "4) Si ya hubieras pagado 021/024 de más, esos saldos acreedores pueden reimputarse en CCMA hacia el código 020 o hacia Autónomos."
+            ],
+            recomendacion: "Revisar los códigos exactos (020 vs 021/024 vs AUT) en CCMA y, si hay superposición retroactiva, iniciar Presentación Digital con respaldo de un Contador Público Matriculado antes de incluir esa deuda en un plan de pagos."
+          };
+        } else if (tema.includes("gasto") || tema.includes("deduc")) {
           respuesta = {
             titulo: "¿Qué gastos puedo pasar por la empresa o negocio para pagar menos impuestos?",
             analogia_10_anios: "Imaginá que tenés un puesto de limonada. Si comprás limones, azúcar, vasos descartables y el cartelito con el precio, todo eso es necesario para vender limonada; se lo restás a tus ganancias y pagás menos impuesto. Pero si con la plata de la limonada te comprás una pelota de fútbol o ropa para ir a bailar, la maestra (ARCA) te va a decir: '¡Esa pelota no te ayuda a hacer limonada!', te anula el gasto y te cobra una multa.",
@@ -1284,9 +1378,14 @@ export async function onRequest({ request, env, params }) {
         });
       }
 
-      // 1d. Configuración y Evaluación de Perfil de Contribuyente (Onboarding Inteligente)
+      // 1d. Configuración y Evaluación de Perfil de Contribuyente (Onboarding Inteligente — P0-3 autenticado)
       if (toolName === "configurar_perfil_contribuyente") {
         const cuitClean = (args.cuit || "").replace(/[^0-9]/g, "");
+        const ident = await resolveEdgeIdentity();
+        if (!ident) return denyEdgeAuth();
+        if (cuitClean && !ident.es_owner_plataforma && !ident.cuits.has(cuitClean)) {
+          return denyEdgeAuth(`No tenés permiso para modificar el perfil del CUIT ${cuitClean}.`);
+        }
         const perfil = evaluarPerfilFiscalJS(args);
 
         // Persistir en base de datos D1 si está disponible
@@ -1336,9 +1435,14 @@ export async function onRequest({ request, env, params }) {
         });
       }
 
-      // 1e. Obtener Perfil de Contribuyente
+      // 1e. Obtener Perfil de Contribuyente (P0-3 autenticado)
       if (toolName === "obtener_perfil_contribuyente") {
         const cuitClean = (args.cuit || "").replace(/[^0-9]/g, "");
+        const ident = await resolveEdgeIdentity();
+        if (!ident) return denyEdgeAuth();
+        if (cuitClean && !ident.es_owner_plataforma && !ident.cuits.has(cuitClean)) {
+          return denyEdgeAuth(`No tenés permiso para consultar el perfil del CUIT ${cuitClean}.`);
+        }
         if (cuitClean && env.DB) {
           try {
             const row = await env.DB.prepare("SELECT * FROM perfiles_contribuyentes WHERE cuit = ?").bind(cuitClean).first();
@@ -1728,8 +1832,12 @@ export async function onRequest({ request, env, params }) {
         });
       }
 
-      // 1o. Incorporar conocimiento resuelto a la memoria viva del bot (D1)
+      // 1o. Incorporar conocimiento resuelto a la memoria viva del bot (D1 — P0-3: SOLO SUPER-ADMIN)
       if (toolName === "incorporar_conocimiento_resuelto") {
+        const ident = await resolveEdgeIdentity();
+        if (!ident || !ident.es_owner_plataforma) {
+          return denyEdgeAuth("Acción restringida a administradores autorizados de impuesto.com.ar.");
+        }
         if (env.DB) {
           try {
             await env.DB.prepare(
@@ -1843,7 +1951,8 @@ export async function onRequest({ request, env, params }) {
               "Content-Type": "text/xml; charset=utf-8",
               "SOAPAction": "http://ar.gov.afip.dif.FEV1/FEDummy"
             },
-            body: soapBody
+            body: soapBody,
+            signal: AbortSignal.timeout(10000)
           });
           const xml = await resp.text();
           const getTag = (t) => (xml.match(new RegExp(`<${t}>(.*?)</${t}>`)) || [])[1] || "UNKNOWN";
@@ -1881,8 +1990,8 @@ export async function onRequest({ request, env, params }) {
         }
       }
 
-      // 1s. Borrador rápido WSFEv1 en el Edge (sin impacto hasta confirmado=true)
-      if (toolName === "emitir_factura_wsfe" && !args.confirmado) {
+      // 1s. Borrador rápido WSFEv1 en el Edge (sin impacto hasta confirmado===true estricto — P0-5)
+      if (toolName === "emitir_factura_wsfe" && !confirmadoStrict) {
         const neto = parseFloat(args.importe_neto || 0);
         const iva = parseFloat(args.importe_iva || 0);
         return jsonRpcSuccess(id, {
@@ -1946,10 +2055,12 @@ export async function onRequest({ request, env, params }) {
         });
       }
 
-      // 1u. [B2B] Configurar Estudio Contable (Marca Blanca en D1)
+      // 1u. [B2B] Configurar Estudio Contable (Marca Blanca en D1 — P0-3 autenticado + UUID impredecible)
       if (toolName === "configurar_estudio_contable") {
+        const ident = await resolveEdgeIdentity();
+        if (!ident) return denyEdgeAuth();
         const cuitClean = (args.cuit_estudio || "").replace(/[^0-9]/g, "");
-        const estudioId = "EST-" + (cuitClean.slice(-6) || crypto.randomUUID().slice(0, 6).toUpperCase());
+        const estudioId = "EST-" + crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase();
         const branding = args.branding_pie || `${args.nombre_estudio} · Contadores Públicos Matriculados`;
         if (env.DB) {
           try {
@@ -1978,8 +2089,10 @@ export async function onRequest({ request, env, params }) {
         });
       }
 
-      // 1v. [B2B] Importar Cartera Masiva de Clientes en D1
+      // 1v. [B2B] Importar Cartera Masiva de Clientes en D1 (P0-3 autenticado)
       if (toolName === "importar_cartera_clientes") {
+        const ident = await resolveEdgeIdentity();
+        if (!ident) return denyEdgeAuth();
         const estudioId = args.estudio_id;
         const lista = Array.isArray(args.clientes) ? args.clientes : [];
         let procesados = 0;
@@ -2026,8 +2139,10 @@ export async function onRequest({ request, env, params }) {
         });
       }
 
-      // 1w. [B2B] Tablero Consolidado de Cartera y Vencimientos del Estudio
+      // 1w. [B2B] Tablero Consolidado de Cartera y Vencimientos del Estudio (P0-3 autenticado)
       if (toolName === "tablero_cartera_estudio") {
+        const ident = await resolveEdgeIdentity();
+        if (!ident) return denyEdgeAuth();
         const estudioId = args.estudio_id;
         const periodo = args.periodo || new Date().toISOString().slice(0, 7);
         let clientes = [];
@@ -2099,12 +2214,15 @@ export async function onRequest({ request, env, params }) {
         });
       }
 
-      // 1x. [B2B] Registrar Borrador Junior + Detector de Anomalías (±30%)
+      // 1x. [B2B] Registrar Borrador Junior + Detector de Anomalías (±30% — P0-3 autenticado + P1-16 ID con estudio_id)
       if (toolName === "registrar_cierre_y_detectar_anomalias") {
+        const ident = await resolveEdgeIdentity();
+        if (!ident) return denyEdgeAuth();
         const cuitClean = (args.cuit_cliente || "").replace(/[^0-9]/g, "");
         const imp = (args.impuesto || "IVA").toUpperCase();
         const per = args.periodo || new Date().toISOString().slice(0, 7);
-        const cid = `CIE-${per.replace("-", "")}-${cuitClean.slice(-4)}-${imp.slice(0, 4)}`;
+        const estPrefix = String(args.estudio_id || "EST").replace(/[^0-9A-Za-z_-]/g, "").slice(0, 16);
+        const cid = `CIE-${estPrefix}-${per.replace("-", "")}-${cuitClean.slice(-4)}-${imp.slice(0, 4)}`;
         const actual = parseFloat(args.monto_actual || 0);
         const ant = parseFloat(args.monto_mes_anterior || 0);
         const desvio = ant > 0 ? Math.round(((actual - ant) / ant) * 1000) / 10 : 0;
@@ -2148,17 +2266,19 @@ export async function onRequest({ request, env, params }) {
         });
       }
 
-      // 1y. [B2B] Aprobación en Bloque por el Socio
+      // 1y. [B2B] Aprobación en Bloque por el Socio (P0-3 autenticado + P1-16 conteo real de filas)
       if (toolName === "aprobar_cierres_socio") {
+        const ident = await resolveEdgeIdentity();
+        if (!ident) return denyEdgeAuth();
         const ids = Array.isArray(args.cierre_ids) ? args.cierre_ids : [];
         let aprobados = 0;
         if (env.DB) {
           for (const cid of ids) {
             try {
-              await env.DB.prepare(
+              const r = await env.DB.prepare(
                 "UPDATE cierres_mensuales_estudio SET estado_aprobacion = 'aprobado_por_socio', aprobado_por = ?, notas = COALESCE(notas, '') || ?, actualizado = datetime('now') WHERE estudio_id = ? AND id = ?"
               ).bind(args.aprobado_por, args.observaciones ? ` | Socio: ${args.observaciones}` : "", args.estudio_id, cid).run();
-              aprobados++;
+              if ((r?.meta?.changes || 0) > 0) aprobados++;
             } catch (e) {}
           }
         }
@@ -2170,7 +2290,7 @@ export async function onRequest({ request, env, params }) {
               estudio_id: args.estudio_id,
               aprobado_por: args.aprobado_por,
               cierres_aprobados: ids,
-              cantidad_aprobada: aprobados || ids.length,
+              cantidad_aprobada: aprobados,
               siguiente_paso: "Autorizados por el Socio. Listos para presentación en ARCA y envío Marca Blanca al cliente."
             }, null, 2)
           }]
@@ -2206,8 +2326,8 @@ export async function onRequest({ request, env, params }) {
         });
       }
 
-      // 1aa. Certificado MiPyME (F. 1272) — Diagnóstico y Borrador en el Edge
-      if (toolName === "consultar_y_renovar_certificado_mipyme" && !args.confirmado) {
+      // 1aa. Certificado MiPyME (F. 1272) — Diagnóstico y Borrador en el Edge (P0-5 estricto)
+      if (toolName === "consultar_y_renovar_certificado_mipyme" && !confirmadoStrict) {
         const cuitClean = (args.cuit_empresa || "").replace(/[^0-9]/g, "");
         return jsonRpcSuccess(id, {
           content: [{
@@ -2278,8 +2398,23 @@ export async function onRequest({ request, env, params }) {
             method: "POST",
             headers,
             body: JSON.stringify({ name: toolName, arguments: args }),
-            signal: AbortSignal.timeout(26000)
+            signal: AbortSignal.timeout(14000)
           });
+          if (!resp.ok) {
+            const errBody = await resp.text().catch(() => "");
+            return jsonRpcSuccess(id, {
+              content: [{
+                type: "text",
+                text: JSON.stringify({
+                  ok: false,
+                  estado: "BACKEND_TEMPORALMENTE_NO_DISPONIBLE",
+                  http_status: resp.status,
+                  mensaje: "El motor de consultas ARCA está reiniciando o momentáneamente saturado. Tus datos están a salvo; reintentá en 15 segundos.",
+                  detalle: errBody.slice(0, 200)
+                }, null, 2)
+              }]
+            });
+          }
           const result = await resp.json();
           let outText = (result && typeof result.informe_contador_markdown === "string")
             ? result.informe_contador_markdown
@@ -2296,16 +2431,30 @@ export async function onRequest({ request, env, params }) {
           }
           return jsonRpcSuccess(id, { content: [{ type: "text", text: outText }] });
         } catch (e) {
-          // Manejo inteligente de caídas de ARCA con sugerencia de recordatorio
+          // P1-15: distinguir TimeoutError del proxy (en progreso) vs caída real del backend
+          const isTimeout = e && (e.name === "TimeoutError" || e.name === "AbortError" || String(e.message || "").toLowerCase().includes("timeout"));
+          if (isTimeout) {
+            return jsonRpcSuccess(id, {
+              content: [{
+                type: "text",
+                text: JSON.stringify({
+                  ok: true,
+                  estado: "EN_PROGRESO",
+                  reintentar_en_seg: 20,
+                  mensaje: "La consulta en ARCA sigue procesándose en segundo plano. Esperá ~20 segundos y volvé a consultar para ver el resultado desde caché."
+                }, null, 2)
+              }]
+            });
+          }
           return jsonRpcSuccess(id, {
+            isError: true,
             content: [{
               type: "text",
               text: JSON.stringify({
+                ok: false,
                 estado: "ARCA_TEMPORALMENTE_NO_DISPONIBLE",
-                mensaje: "ARCA (ex-AFIP) no respondió a tiempo o se encuentra momentáneamente saturada. Tus datos y borradores están a salvo.",
-                detalle: e.message,
-                sugerencia_reintento: "Los servidores de ARCA suelen descongestionarse en 2 horas o mañana a las 09:00 hs.",
-                recordatorio_sugerido: "Recordame en 2 horas reintentar la operación en ARCA"
+                mensaje: "El motor de consultas ARCA no respondió en este momento. Tus datos están a salvo; reintentá en unos instantes.",
+                detalle: String(e?.message || "").slice(0, 200)
               }, null, 2)
             }]
           });
@@ -2557,11 +2706,11 @@ export async function onRequest({ request, env, params }) {
         const vincularBase = "https://impuesto.com.ar/vincular";
         const vincularUrl = cuitClean ? `${vincularBase}?cuit=${cuitClean}` : vincularBase;
 
-        // Verificar si el usuario YA viene autenticado con token y tiene CUITs vinculados en la bóveda
+        // Verificar si el usuario YA viene autenticado con token (header, ?token= o args.token_sesion — P1-14)
         let cuentaAutenticada = null;
         const authHdrInit = request.headers.get("authorization") || "";
         const bearerInit = authHdrInit.toLowerCase().startsWith("bearer ") ? authHdrInit.slice(7).trim() : "";
-        const tokenInit = bearerInit || (url.searchParams.get("token") || "").trim();
+        const tokenInit = bearerInit || (url.searchParams.get("token") || "").trim() || String(args.token_sesion || "").trim();
         if (tokenInit && env.BOT_API_URL) {
           try {
             const h = { "Content-Type": "application/json", "X-User-Token": tokenInit, "X-LLM-Origin": host.endsWith(".impuesto.com.ar") ? host.split(".")[0] : "mcp" };
@@ -2841,11 +2990,21 @@ export async function onRequest({ request, env, params }) {
         });
       }
 
-      // Respuesta informativa si no está conectado el microservicio en este momento
+      // P1-13: nunca ecoar args (puede contener token_sesion); devolver -32602 si es desconocida o isError si falta backend
+      const knownTool = MCP_TOOLS.some(t => t.name === toolName);
+      if (!knownTool) {
+        return jsonRpcError(id, -32602, `Herramienta desconocida: ${toolName}`);
+      }
       return jsonRpcSuccess(id, {
+        isError: true,
         content: [{
           type: "text",
-          text: `[ARCA MCP] Consulta recibida para herramienta '${toolName}'. Parámetros: ${JSON.stringify(args)}. El microservicio propio de ARCA procesará esta solicitud de forma segura.`
+          text: JSON.stringify({
+            ok: false,
+            estado: "BACKEND_NO_CONFIGURADO",
+            herramienta: toolName,
+            mensaje: "El backend headless ARCA (BOT_API_URL) no está configurado en este entorno."
+          }, null, 2)
         }]
       });
     }

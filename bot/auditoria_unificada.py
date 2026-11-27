@@ -15,6 +15,8 @@ Ejecuta en 1 sola sesión Playwright headless=True:
 Y adjunta obligatoriamente el Sello de Verificación de bot/doublecheck_arca.py.
 """
 
+import contextlib
+import datetime
 import re
 import time
 from typing import Dict, Any, List
@@ -22,37 +24,79 @@ from playwright.sync_api import sync_playwright
 from .doublecheck_arca import validar_cobertura_auditoria
 from .validador_invariantes import validar_invariantes_auditoria
 
+AR_TZ = datetime.timezone(datetime.timedelta(hours=-3))
 
-def _parse_ar_num(s: str) -> float:
-    if not s:
+
+def _hoy_ar() -> datetime.date:
+    return datetime.datetime.now(AR_TZ).date()
+
+
+def _parse_ar_num(s: str, *, strict: bool = False) -> float:
+    """Parsea montos AR ('1.234.567,89', '1.234.567', '1,5') y US ('1,234,567.89') sin devolver 0 silencioso en strict=True."""
+    if s is None or not str(s).strip():
+        if strict:
+            raise ValueError("Monto vacío")
         return 0.0
-    s = s.strip().replace("$", "").replace(" ", "")
-    # Handle both 1,172,263.79 (CCMA US-style) and 1.426.512,52 (AR-style)
-    if "," in s and "." in s:
-        if s.rfind(",") > s.rfind("."):
-            s = s.replace(".", "").replace(",", ".")
+    raw = str(s).strip().replace("$", "").replace(" ", "").replace("\u00a0", "")
+    neg = raw.startswith("-") or (raw.startswith("(") and raw.endswith(")"))
+    raw = raw.strip("()-+")
+    if not raw or not re.fullmatch(r"[\d\.,]+", raw):
+        if strict:
+            raise ValueError(f"Monto no numérico: {s!r}")
+        return 0.0
+
+    if "," in raw and "." in raw:
+        if raw.rfind(",") > raw.rfind("."):
+            norm = raw.replace(".", "").replace(",", ".")
         else:
-            s = s.replace(",", "")
-    elif "," in s:
-        parts = s.split(",")
-        if len(parts[-1]) == 2:
-            s = s.replace(",", ".")
+            norm = raw.replace(",", "")
+    elif "," in raw:
+        if re.fullmatch(r"\d{1,3}(,\d{3})+", raw):
+            norm = raw.replace(",", "")
+        elif raw.count(",") == 1:
+            norm = raw.replace(",", ".")
         else:
-            s = s.replace(",", "")
+            norm = raw.replace(",", "")
+    elif "." in raw:
+        if re.fullmatch(r"\d{1,3}(\.\d{3})+", raw):
+            norm = raw.replace(".", "")
+        elif raw.count(".") == 1:
+            norm = raw
+        else:
+            norm = raw.replace(".", "")
+    else:
+        norm = raw
+
     try:
-        return float(s)
+        val = float(norm)
+        return -val if neg else val
     except ValueError:
+        if strict:
+            raise ValueError(f"No se pudo parsear monto: {s!r}")
         return 0.0
+
+
+def _launch_browser(p):
+    """Lanza Chromium headless con flags seguros para Docker (/dev/shm 64MB) y sin fugas."""
+    launch_args = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
+    try:
+        return p.chromium.launch(headless=True, channel="chrome", args=launch_args)
+    except Exception:
+        return p.chromium.launch(headless=True, args=launch_args)
 
 
 def _parse_ccma_detalle_periodos(txt: str) -> Dict[str, Any]:
-    """Extrae el desglose por período e impuesto (Monotributo vs Autónomos) del texto de CCMA."""
+    """Extrae el desglose por período e impuesto (Monotributo 020/021/024 vs Autónomos AUT) del texto de CCMA."""
     # Parse blocks like: 11/2026  020  019  019  Obligacion Mensual Monot.  20/11/2026  18,246.86
     # and Saldo  26/11/2026  (18,347.22)
     monot_total = 0.0
+    monot_imp_020 = 0.0
+    monot_jub_021 = 0.0
+    monot_os_024 = 0.0
     auton_vencido = 0.0
     auton_por_vencer = 0.0
     periodos_monot = set()
+    periodos_monot_021 = set()
     periodos_auton_venc = set()
     periodos_auton_fut = set()
 
@@ -79,21 +123,41 @@ def _parse_ccma_detalle_periodos(txt: str) -> Dict[str, Any]:
         if imp in ("020", "021", "024"):
             monot_total += amt
             periodos_monot.add(per)
+            if imp == "020":
+                monot_imp_020 += amt
+            elif imp == "021":
+                monot_jub_021 += amt
+                periodos_monot_021.add(per)
+            elif imp == "024":
+                monot_os_024 += amt
         elif imp == "AUT":
-            if sub == "019" and fecha_vto.endswith("/2026") and int(fecha_vto.split("/")[1]) == 12:
+            es_futuro = False
+            if sub == "019":
+                try:
+                    dt_vto = datetime.datetime.strptime(fecha_vto, "%d/%m/%Y").date()
+                    es_futuro = dt_vto > _hoy_ar()
+                except ValueError:
+                    es_futuro = False
+            if es_futuro:
                 auton_por_vencer += amt
                 periodos_auton_fut.add(per)
             else:
                 auton_vencido += amt
                 periodos_auton_venc.add(per)
 
+    doble_jub = (monot_jub_021 > 0 and (auton_vencido > 0 or auton_por_vencer > 0))
     return {
         "monotributo_vencido_total": round(monot_total, 2),
+        "monotributo_impositivo_020": round(monot_imp_020, 2),
+        "monotributo_jubilacion_021": round(monot_jub_021, 2),
+        "monotributo_obra_social_024": round(monot_os_024, 2),
         "monotributo_periodos_impagos": sorted(periodos_monot),
+        "monotributo_periodos_con_021_jubilacion": sorted(periodos_monot_021),
         "autonomos_vencido_total": round(auton_vencido, 2),
         "autonomos_periodos_vencidos": sorted(periodos_auton_venc),
         "autonomos_por_vencer_total": round(auton_por_vencer, 2),
         "autonomos_periodos_por_vencer": sorted(periodos_auton_fut),
+        "alerta_doble_aporte_jubilatorio": doble_jub,
         "superposicion_con_planes_vigentes": False,
         "nota_conciliacion": "Cero superposición con planes vigentes: los períodos incluidos en Mis Facilidades ya figuran acreditados en $0 en CCMA.",
     }
@@ -103,70 +167,73 @@ def consultar_ccma_preciso(cuit: str, clave: str) -> Dict[str, Any]:
     """Consulta CCMA con cálculo real de deuda + desglose por período (Monotributo vs Autónomos)."""
     cuit_clean = "".join(ch for ch in (cuit or "") if ch.isdigit())
     with sync_playwright() as p:
+        browser = _launch_browser(p)
         try:
-            browser = p.chromium.launch(headless=True, channel="chrome")
-        except Exception:
-            browser = p.chromium.launch(headless=True)
-        ctx = browser.new_context(viewport={"width": 1440, "height": 900})
-        page = ctx.new_page()
-        page.goto("https://auth.afip.gob.ar/contribuyente_/login.xhtml", wait_until="domcontentloaded", timeout=30000)
-        page.fill("#F1\\:username", cuit_clean)
-        page.click("#F1\\:btnSiguiente")
-        page.wait_for_selector("#F1\\:password", timeout=15000)
-        page.fill("#F1\\:password", clave)
-        page.click("#F1\\:btnIngresar")
-        # Detección rápida de Clave Fiscal incorrecta o bloqueada antes de esperar 45s
-        for _ in range(15):
-            if "portalcf.cloud.afip.gob.ar" in page.url or "portalcf.cloud.arca.gob.ar" in page.url:
-                break
+            ctx = browser.new_context(viewport={"width": 1440, "height": 900})
+            page = ctx.new_page()
+            page.goto("https://auth.afip.gob.ar/contribuyente_/login.xhtml", wait_until="domcontentloaded", timeout=30000)
+            page.fill("#F1\\:username", cuit_clean)
+            page.click("#F1\\:btnSiguiente")
+            page.wait_for_selector("#F1\\:password", timeout=15000)
+            page.fill("#F1\\:password", clave)
+            page.click("#F1\\:btnIngresar")
+            # Detección rápida de Clave Fiscal incorrecta o bloqueada antes de esperar 45s
+            for _ in range(15):
+                if "portalcf.cloud.afip.gob.ar" in page.url or "portalcf.cloud.arca.gob.ar" in page.url:
+                    break
+                try:
+                    body_low = page.inner_text("body").lower()
+                    if "clave o usuario incorrecto" in body_low:
+                        raise RuntimeError("CLAVE_FISCAL_INCORRECTA: ARCA informó 'Clave o usuario incorrecto' para este CUIT. Actualizá tu Clave Fiscal en el chat o en https://impuesto.com.ar/vincular.")
+                    if "clave bloqueada" in body_low or "usuario bloqueado" in body_low:
+                        raise RuntimeError("CLAVE_FISCAL_BLOQUEADA: ARCA informó que la Clave Fiscal está bloqueada.")
+                except RuntimeError:
+                    raise
+                except Exception:
+                    pass
+                time.sleep(1.5)
+            if "portalcf.cloud." not in page.url:
+                page.wait_for_url("**/portalcf.cloud.**", timeout=25000, wait_until="domcontentloaded")
             try:
-                body_low = page.inner_text("body").lower()
-                if "clave o usuario incorrecto" in body_low:
-                    raise RuntimeError("CLAVE_FISCAL_INCORRECTA: ARCA informó 'Clave o usuario incorrecto' para este CUIT. Actualizá tu Clave Fiscal en el chat o en https://impuesto.com.ar/vincular.")
-                if "clave bloqueada" in body_low or "usuario bloqueado" in body_low:
-                    raise RuntimeError("CLAVE_FISCAL_BLOQUEADA: ARCA informó que la Clave Fiscal está bloqueada.")
-            except RuntimeError:
-                raise
+                page.wait_for_selector("#buscadorInput", timeout=25000)
+            except Exception:
+                page.wait_for_load_state("domcontentloaded", timeout=15000)
+            time.sleep(1.5)
+            page.keyboard.press("Escape")
+
+            search = page.locator("#buscadorInput").first
+            search.click(force=True)
+            search.fill("CCMA")
+            time.sleep(1.8)
+            ccma = None
+            items = page.locator("[id^='rbt-menu-item-']")
+            for i in range(items.count()):
+                if "ccma" in items.nth(i).inner_text().lower():
+                    with ctx.expect_page(timeout=20000) as np:
+                        items.nth(i).click()
+                    ccma = np.value
+                    break
+            if not ccma:
+                return {"ok": False, "error": "No se pudo abrir CCMA."}
+            ccma.wait_for_load_state("domcontentloaded", timeout=30000)
+            time.sleep(2)
+            btn = ccma.locator("input[type='submit'], input[type='button'], button, a").filter(has_text="Deuda")
+            if btn.count() > 0:
+                btn.first.click()
+                time.sleep(4)
+            txt = ccma.inner_text("body")
+        finally:
+            try:
+                browser.close()
             except Exception:
                 pass
-            time.sleep(1.5)
-        if "portalcf.cloud." not in page.url:
-            page.wait_for_url("**/portalcf.cloud.**", timeout=25000, wait_until="domcontentloaded")
-        try:
-            page.wait_for_selector("#buscadorInput", timeout=25000)
-        except Exception:
-            page.wait_for_load_state("domcontentloaded", timeout=15000)
-        time.sleep(1.5)
-        page.keyboard.press("Escape")
 
-        search = page.locator("#buscadorInput").first
-        search.click(force=True)
-        search.fill("CCMA")
-        time.sleep(1.8)
-        ccma = None
-        items = page.locator("[id^='rbt-menu-item-']")
-        for i in range(items.count()):
-            if "ccma" in items.nth(i).inner_text().lower():
-                with ctx.expect_page(timeout=20000) as np:
-                    items.nth(i).click()
-                ccma = np.value
-                break
-        if not ccma:
-            browser.close()
-            return {"ok": False, "error": "No se pudo abrir CCMA."}
-        ccma.wait_for_load_state("domcontentloaded", timeout=30000)
-        time.sleep(2)
-        btn = ccma.locator("input[type='submit'], input[type='button'], button, a").filter(has_text="Deuda")
-        if btn.count() > 0:
-            btn.first.click()
-            time.sleep(4)
-        txt = ccma.inner_text("body")
-        browser.close()
-
-        m_deud = re.search(r"Total Saldo Deudor:\s*([\d\.,]+)", txt)
-        m_cap = re.search(r"Obligaci[oó]n Mensual:\s*([\d\.,]+)", txt)
-        m_acc = re.search(r"Accesorios:\s*([\d\.,]+)", txt)
-        m_acre = re.search(r"Total Saldo Acreedor:\s*([\d\.,]+)", txt)
+        m_deud = re.search(r"Total Saldo Deudor:\s*\$?\s*([\d\.,]+)", txt)
+        m_cap = re.search(r"Obligaci[oó]n Mensual:\s*\$?\s*([\d\.,]+)", txt)
+        m_acc = re.search(r"Accesorios:\s*\$?\s*([\d\.,]+)", txt)
+        m_acre = re.search(r"Total Saldo Acreedor:\s*\$?\s*([\d\.,]+)", txt)
+        if not (m_deud or m_cap or m_acre) and "no registra" not in txt.lower():
+            return {"ok": False, "cuit": cuit_clean, "error": "PARSE_ERROR: No se detectó la tabla de saldos en CCMA (posible sesión expirada o cambio de pantalla ARCA)."}
         return {
             "ok": True,
             "cuit": cuit_clean,
@@ -199,12 +266,11 @@ def auditar_estado_integral_arca(cuit: str, clave: str) -> Dict[str, Any]:
     verificadas: List[str] = []
     fallidas: List[str] = []
 
-    with sync_playwright() as p:
-        try:
-            browser = p.chromium.launch(headless=True, channel="chrome")
-        except Exception:
-            browser = p.chromium.launch(headless=True)
-        ctx = browser.new_context(viewport={"width": 1440, "height": 900})
+    with sync_playwright() as p, contextlib.closing(_launch_browser(p)) as browser:
+        ctx = browser.new_context(viewport={"width": 1280, "height": 800})
+        ctx.set_default_timeout(12000)
+        ctx.set_default_navigation_timeout(25000)
+        ctx.route("**/*", lambda route: route.abort() if route.request.resource_type in ("image", "font", "media") else route.continue_())
         page = ctx.new_page()
 
         # 1. Login único al Portal CF
@@ -258,6 +324,7 @@ def auditar_estado_integral_arca(cuit: str, clave: str) -> Dict[str, Any]:
             return None
 
         # A. CCMA
+        ccma = None
         try:
             ccma = open_service("CCMA", "CCMA")
             if ccma:
@@ -266,23 +333,33 @@ def auditar_estado_integral_arca(cuit: str, clave: str) -> Dict[str, Any]:
                     btn.first.click()
                     time.sleep(4)
                 txt = ccma.inner_text("body")
-                m_deud = re.search(r"Total Saldo Deudor:\s*([\d\.,]+)", txt)
-                m_cap = re.search(r"Obligaci[oó]n Mensual:\s*([\d\.,]+)", txt)
-                m_acc = re.search(r"Accesorios:\s*([\d\.,]+)", txt)
-                m_acre = re.search(r"Total Saldo Acreedor:\s*([\d\.,]+)", txt)
+                m_deud = re.search(r"Total Saldo Deudor:\s*\$?\s*([\d\.,]+)", txt)
+                m_cap = re.search(r"Obligaci[oó]n Mensual:\s*\$?\s*([\d\.,]+)", txt)
+                m_acc = re.search(r"Accesorios:\s*\$?\s*([\d\.,]+)", txt)
+                m_acre = re.search(r"Total Saldo Acreedor:\s*\$?\s*([\d\.,]+)", txt)
+                if not (m_deud or m_cap or m_acre) and "no registra" not in txt.lower():
+                    raise RuntimeError("PARSE_ERROR: CCMA no mostró los totales esperados (sesión expirada o pantalla incompleta).")
                 resultado["ccma"] = {
-                    "saldo_deudor_vencido": _parse_ar_num(m_deud.group(1)) if m_deud else 0.0,
-                    "capital_mensual": _parse_ar_num(m_cap.group(1)) if m_cap else 0.0,
-                    "intereses_accesorios": _parse_ar_num(m_acc.group(1)) if m_acc else 0.0,
-                    "saldo_acreedor": _parse_ar_num(m_acre.group(1)) if m_acre else 0.0,
+                    "saldo_deudor_vencido": _parse_ar_num(m_deud.group(1), strict=True) if m_deud else 0.0,
+                    "capital_mensual": _parse_ar_num(m_cap.group(1), strict=True) if m_cap else 0.0,
+                    "intereses_accesorios": _parse_ar_num(m_acc.group(1), strict=True) if m_acc else 0.0,
+                    "saldo_acreedor": _parse_ar_num(m_acre.group(1), strict=True) if m_acre else 0.0,
                     "tiene_pfp_mis_facilidades": "Mis Facilidades" in txt,
                     "desglose_por_regimen": _parse_ccma_detalle_periodos(txt),
                 }
                 verificadas.append("ccma")
-                ccma.close()
+            else:
+                fallidas.append("ccma")
+                resultado["ccma"] = {"error": "No se pudo abrir el servicio CCMA en el portal."}
         except Exception as e:
             fallidas.append("ccma")
-            resultado["ccma"] = {"error": str(e)}
+            resultado["ccma"] = {"error": str(e)[:250]}
+        finally:
+            if ccma:
+                try:
+                    ccma.close()
+                except Exception:
+                    pass
 
         # B. Mis Facilidades (Planes vigentes + cupo RG 5321)
         try:
@@ -391,6 +468,7 @@ def auditar_estado_integral_arca(cuit: str, clave: str) -> Dict[str, Any]:
             resultado["mis_facilidades"] = {"error": str(e)}
 
         # C. SCT (antes de admin_mono para no invalidar la sesión SSO del Portal CF!)
+        sct = None
         try:
             sct = open_service("Sistema de Cuentas Tributarias", "Sistema de Cuentas Tributarias")
             if sct and sct.locator("select").count() > 0:
@@ -406,25 +484,37 @@ def auditar_estado_integral_arca(cuit: str, clave: str) -> Dict[str, Any]:
                 sct.get_by_text("Estado de Cumplimiento", exact=False).locator("visible=true").first.click()
                 time.sleep(2)
                 inps = sct.locator("input[type='text']:visible")
+                hoy_ar = _hoy_ar()
                 if inps.count() >= 2:
-                    inps.nth(0).fill("20250000")
-                    inps.nth(1).fill("20260000")
+                    inps.nth(0).fill(f"{hoy_ar.year - 1}0000")
+                    inps.nth(1).fill(f"{hoy_ar.year}0000")
                 sct.locator("input[type='submit'][value='Siguiente']").first.click()
                 time.sleep(3.5)
                 stxt = sct.inner_text("body")
                 m_sd = re.search(r"Deuda\s*\n\s*\$\s*([\d\.,]+)", stxt)
                 m_sld = re.search(r"Saldo Libre Disponibilidad\s*\n\s*\$\s*([\d\.,]+)", stxt)
+                if not (m_sd or m_sld) and "estado de cumplimiento" not in stxt.lower():
+                    raise RuntimeError("PARSE_ERROR: SCT no devolvió la tabla de Estado de Cumplimiento.")
                 resultado["sct"] = {
-                    "deuda_dgi_ventana_actual": _parse_ar_num(m_sd.group(1)) if m_sd else 0.0,
-                    "saldo_libre_disponibilidad": _parse_ar_num(m_sld.group(1)) if m_sld else 0.0,
+                    "deuda_dgi_ventana_actual": _parse_ar_num(m_sd.group(1), strict=True) if m_sd else 0.0,
+                    "saldo_libre_disponibilidad": _parse_ar_num(m_sld.group(1), strict=True) if m_sld else 0.0,
                 }
                 verificadas.append("sct")
-                sct.close()
+            else:
+                fallidas.append("sct")
+                resultado["sct"] = {"error": "No se pudo abrir SCT o seleccionar CUIT."}
         except Exception as e:
             fallidas.append("sct")
-            resultado["sct"] = {"error": str(e)}
+            resultado["sct"] = {"error": str(e)[:250]}
+        finally:
+            if sct:
+                try:
+                    sct.close()
+                except Exception:
+                    pass
 
         # D. Portal Monotributo (al final para que el re-login SSO admin_mono no corte SCT!)
+        mono = None
         try:
             mono = ctx.new_page()
             mono.goto("https://auth.afip.gob.ar/contribuyente_/login.xhtml?action=SYSTEM&system=admin_mono", wait_until="domcontentloaded", timeout=25000)
@@ -444,8 +534,10 @@ def auditar_estado_integral_arca(cuit: str, clave: str) -> Dict[str, Any]:
             m_cat = re.search(r"Categor[ií]a\s+([A-K])", mtxt)
             m_fact = re.search(r"\$([\d\.,]+)\s*\n\s*Monto facturado", mtxt)
             m_tope = re.search(r"\$([\d\.,]+)\s*\n\s*Tope categor", mtxt)
-            fact_val = _parse_ar_num(m_fact.group(1)) if m_fact else 0.0
-            tope_val = _parse_ar_num(m_tope.group(1)) if m_tope else 0.0
+            if not (m_cat or m_fact or m_tope) and "no sos monotributista" not in mtxt.lower() and "adherirse" not in mtxt.lower():
+                raise RuntimeError("PARSE_ERROR: Portal Monotributo no cargó datos de categoría ni facturación.")
+            fact_val = _parse_ar_num(m_fact.group(1), strict=True) if m_fact else 0.0
+            tope_val = _parse_ar_num(m_tope.group(1), strict=True) if m_tope else 0.0
             resultado["portal_monotributo"] = {
                 "categoria": m_cat.group(1) if m_cat else "No detectada",
                 "facturado_acumulado": fact_val,
@@ -454,13 +546,17 @@ def auditar_estado_integral_arca(cuit: str, clave: str) -> Dict[str, Any]:
                 "tiene_periodo_vencido_en_curso": "Pagar período vencido" in mtxt,
             }
             verificadas.append("portal_monotributo")
-            mono.close()
         except Exception as e:
             fallidas.append("portal_monotributo")
-            resultado["portal_monotributo"] = {"error": str(e)}
+            resultado["portal_monotributo"] = {"error": str(e)[:250]}
+        finally:
+            if mono:
+                try:
+                    mono.close()
+                except Exception:
+                    pass
 
-        browser.close()
-
+    resultado["ok"] = len(fallidas) == 0
     resultado["doublecheck"] = validar_cobertura_auditoria("estado_de_cuenta_y_deudas", verificadas, fallidas)
     resultado["control_invariantes_contables"] = validar_invariantes_auditoria(resultado)
 
@@ -530,16 +626,38 @@ def auditar_estado_integral_arca(cuit: str, clave: str) -> Dict[str, Any]:
     mf_d = resultado.get("mis_facilidades", {})
     mono_d = resultado.get("portal_monotributo", {})
     sct_d = resultado.get("sct", {})
-    pasivo_total = round(float(ccma_d.get("saldo_deudor_vencido", 0)) + float(mf_d.get("total_capital_remanente_vigentes", 0)), 2)
+    deuda_sct = float(sct_d.get("deuda_dgi_ventana_actual", 0) or 0)
+    pasivo_total = round(
+        float(ccma_d.get("saldo_deudor_vencido", 0) or 0)
+        + float(mf_d.get("total_capital_remanente_vigentes", 0) or 0)
+        + deuda_sct,
+        2,
+    )
+    ccma_linea = (
+        f"⚠️ NO VERIFICADO ({ccma_d.get('error', 'sin datos')})"
+        if "ccma" in fallidas
+        else f"${ccma_d.get('saldo_deudor_vencido', 0):,.2f} (Monotributo: ${desg_d.get('monotributo_vencido_total', 0):,.2f} | Autónomos: ${desg_d.get('autonomos_vencido_total', 0):,.2f} | Sin superposición con planes vigentes)"
+    )
+    cuotas_imp = int(mf_d.get("total_cuotas_impagas", 0) or 0)
+    estado_planes_txt = "al día (0 cuotas impagas)" if cuotas_imp == 0 else f"CON MORA ({cuotas_imp} cuota(s) impagas)"
+    mf_linea = (
+        f"⚠️ NO VERIFICADO ({mf_d.get('error', 'sin datos')})"
+        if "mis_facilidades" in fallidas
+        else f"{mf_d.get('cantidad_planes_vigentes', 0)} planes {estado_planes_txt} · Capital remanente: **${mf_d.get('total_capital_remanente_vigentes', 0):,.2f}** · Débito automático día 16: **${mf_d.get('total_debito_mensual_dia_16', 0):,.2f}/mes**"
+    )
+    sct_linea = (
+        f"⚠️ NO VERIFICADO ({sct_d.get('error', 'sin datos')})"
+        if "sct" in fallidas
+        else f"Deuda DGI ventana actual: ${deuda_sct:,.2f} · Saldo a favor (SLD): ${sct_d.get('saldo_libre_disponibilidad', 0):,.2f}"
+    )
 
     autos_md = "\n".join(f"- **{a['titulo']}:** {a['cadencia']} (`{a['cron']}`)" for a in automatizaciones)
     resultado["informe_contador_markdown"] = (
         f"## 1. Tu Diagnóstico Real en ARCA (CUIT {cuit_fmt})\n"
-        f"- **Deuda vencida exigible hoy (CCMA):** ${ccma_d.get('saldo_deudor_vencido', 0):,.2f} "
-        f"(Monotributo: ${desg_d.get('monotributo_vencido_total', 0):,.2f} | Autónomos: ${desg_d.get('autonomos_vencido_total', 0):,.2f} | Sin superposición con planes vigentes).\n"
-        f"- **Planes vigentes (Mis Facilidades):** {mf_d.get('cantidad_planes_vigentes', 0)} planes al día ({mf_d.get('total_cuotas_impagas', 0)} cuotas impagas) · "
-        f"Capital remanente: **${mf_d.get('total_capital_remanente_vigentes', 0):,.2f}** · Débito automático día 16: **${mf_d.get('total_debito_mensual_dia_16', 0):,.2f}/mes**.\n"
-        f"- **Pasivo total real en ARCA hoy:** **${pasivo_total:,.2f}** (Saldo a favor Ganancias SCT: ${sct_d.get('saldo_libre_disponibilidad', 0):,.2f}).\n"
+        f"- **Deuda vencida exigible hoy (CCMA):** {ccma_linea}.\n"
+        f"- **Planes vigentes (Mis Facilidades):** {mf_linea}.\n"
+        f"- **Sistema de Cuentas Tributarias (SCT):** {sct_linea}.\n"
+        f"- **Pasivo total real en ARCA hoy:** **${pasivo_total:,.2f}**.\n"
         f"- **Monotributo:** Categoría **{mono_d.get('categoria', 'N/D')}** · Facturado 12m: ${mono_d.get('facturado_acumulado', 0):,.2f} / Tope: ${mono_d.get('tope_categoria', 0):,.2f} (Margen: **${mono_d.get('margen_disponible_categoria', 0):,.2f}**).\n"
         f"- **Entidades vinculadas detectadas:** {', '.join(resultado.get('cuits_representadas_en_arca', []))}.\n"
         f"- **Sello de Verificación:** {resultado['doublecheck']['sello_verificacion']}\n\n"
