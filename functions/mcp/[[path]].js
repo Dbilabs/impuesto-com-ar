@@ -912,6 +912,7 @@ export async function onRequest({ request, env, params }) {
   const url = new URL(request.url);
   const host = url.hostname.toLowerCase();
   const DEDICATED_MCP_HOSTS = new Set([
+    "conectar.impuesto.com.ar",
     "conector.impuesto.com.ar",
     "claude.impuesto.com.ar",
     "chatgpt.impuesto.com.ar",
@@ -2867,16 +2868,17 @@ function jsonRpcError(id, code, message) {
 function htmlLanding(urlObj) {
   const host = (urlObj.hostname || "").toLowerCase();
   const BRANDS = {
-    "conector.impuesto.com.ar": { name: "Todos los LLMs", title: "Conector Universal ARCA — conector.impuesto.com.ar", h1: "Un solo conector ARCA para todos tus asistentes IA" },
-    "claude.impuesto.com.ar": { name: "Claude", title: "Conector ARCA MCP para Claude — conector.impuesto.com.ar", h1: "Conectá ARCA directamente a Claude" },
-    "chatgpt.impuesto.com.ar": { name: "ChatGPT", title: "Conector ARCA MCP para ChatGPT — conector.impuesto.com.ar", h1: "Conectá ARCA directamente a ChatGPT" },
-    "gemini.impuesto.com.ar": { name: "Google Gemini", title: "Conector ARCA MCP para Gemini — conector.impuesto.com.ar", h1: "Conectá ARCA directamente a Google Gemini" },
-    "copilot.impuesto.com.ar": { name: "Microsoft Copilot", title: "Conector ARCA MCP para Copilot — conector.impuesto.com.ar", h1: "Conectá ARCA directamente a Microsoft Copilot" },
-    "cursor.impuesto.com.ar": { name: "Cursor", title: "Conector ARCA MCP para Cursor — conector.impuesto.com.ar", h1: "Conectá ARCA directamente a Cursor" },
-    "perplexity.impuesto.com.ar": { name: "Perplexity", title: "Conector ARCA MCP para Perplexity — conector.impuesto.com.ar", h1: "Conectá ARCA directamente a Perplexity" },
-    "mcp.impuesto.com.ar": { name: "Universal MCP", title: "Conector Universal ARCA — conector.impuesto.com.ar", h1: "Un solo conector ARCA para todos tus asistentes IA" }
+    "conectar.impuesto.com.ar": { name: "Todos los LLMs", title: "Conectar ARCA — conectar.impuesto.com.ar", h1: "Un solo enlace para conectar ARCA a todos tus asistentes IA" },
+    "conector.impuesto.com.ar": { name: "Todos los LLMs", title: "Conectar ARCA — conectar.impuesto.com.ar", h1: "Un solo enlace para conectar ARCA a todos tus asistentes IA" },
+    "claude.impuesto.com.ar": { name: "Claude", title: "Conectar ARCA en Claude — conectar.impuesto.com.ar", h1: "Conectá ARCA directamente a Claude" },
+    "chatgpt.impuesto.com.ar": { name: "ChatGPT", title: "Conectar ARCA en ChatGPT — conectar.impuesto.com.ar", h1: "Conectá ARCA directamente a ChatGPT" },
+    "gemini.impuesto.com.ar": { name: "Google Gemini", title: "Conectar ARCA en Gemini — conectar.impuesto.com.ar", h1: "Conectá ARCA directamente a Google Gemini" },
+    "copilot.impuesto.com.ar": { name: "Microsoft Copilot", title: "Conectar ARCA en Copilot — conectar.impuesto.com.ar", h1: "Conectá ARCA directamente a Microsoft Copilot" },
+    "cursor.impuesto.com.ar": { name: "Cursor", title: "Conectar ARCA en Cursor — conectar.impuesto.com.ar", h1: "Conectá ARCA directamente a Cursor" },
+    "perplexity.impuesto.com.ar": { name: "Perplexity", title: "Conectar ARCA en Perplexity — conectar.impuesto.com.ar", h1: "Conectá ARCA directamente a Perplexity" },
+    "mcp.impuesto.com.ar": { name: "Universal MCP", title: "Conectar ARCA — conectar.impuesto.com.ar", h1: "Un solo enlace para conectar ARCA a todos tus asistentes IA" }
   };
-  const brand = BRANDS[host] || BRANDS["conector.impuesto.com.ar"];
+  const brand = BRANDS[host] || BRANDS["conectar.impuesto.com.ar"];
   const title = brand.title;
   const h1 = brand.h1;
 
@@ -2914,8 +2916,8 @@ p{color:var(--muted);font-size:15.5px;margin:0 0 20px}
 <p>Pegá esta única URL en la sección de Conectores / MCP de cualquier asistente IA. Todo lo demás (vinculación de CUIT, auditorías 360°, facturación, tareas programadas e historial compartido) ocurre 100% dentro del chat.</p>
 
 <div class="url-card active">
-  <div><div class="url-lbl">★ URL Única para todos los LLMs (Gemini · Claude · ChatGPT · Copilot · Cursor · Perplexity)</div><div class="url-text">https://conector.impuesto.com.ar</div></div>
-  <button class="btn" onclick="navigator.clipboard.writeText('https://conector.impuesto.com.ar');this.innerText='¡Copiado!'">Copiar URL</button>
+  <div><div class="url-lbl">★ URL Única para todos los LLMs (Gemini · Claude · ChatGPT · Copilot · Cursor · Perplexity)</div><div class="url-text">https://conectar.impuesto.com.ar</div></div>
+  <button class="btn" onclick="navigator.clipboard.writeText('https://conectar.impuesto.com.ar');this.innerText='¡Copiado!'">Copiar URL</button>
 </div>
 
 <ol class="steps">

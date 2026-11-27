@@ -557,12 +557,12 @@ def api_vincular(req: VincularRequest):
         res["email"] = email
         res["token_id"] = tok["token_id"]
         res["token"] = t
-        res["url_conector_universal"] = f"https://conector.impuesto.com.ar/?token={t}"
+        res["url_conector_universal"] = f"https://conectar.impuesto.com.ar/?token={t}"
         res["urls_privadas_mcp"] = {
-            "conector": f"https://conector.impuesto.com.ar/?token={t}",
-            "gemini": f"https://conector.impuesto.com.ar/?token={t}",
-            "claude": f"https://conector.impuesto.com.ar/?token={t}",
-            "chatgpt": f"https://conector.impuesto.com.ar/?token={t}",
+            "conectar": f"https://conectar.impuesto.com.ar/?token={t}",
+            "gemini": f"https://conectar.impuesto.com.ar/?token={t}",
+            "claude": f"https://conectar.impuesto.com.ar/?token={t}",
+            "chatgpt": f"https://conectar.impuesto.com.ar/?token={t}",
         }
         if res.get("cuit"):
             registrar_evento_historial(

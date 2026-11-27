@@ -12,6 +12,7 @@
 import { onRequest as handleMcp } from "./mcp/[[path]].js";
 
 const MCP_HOSTS = new Set([
+  "conectar.impuesto.com.ar",
   "conector.impuesto.com.ar",
   "claude.impuesto.com.ar",
   "chatgpt.impuesto.com.ar",
