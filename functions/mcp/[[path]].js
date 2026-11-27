@@ -39,59 +39,12 @@ const MCP_TOOLS = [
   },
   {
     name: "consultar_situacion_monotributo",
-    description: "Ingresa en vivo al portal oficial de MONOTRIBUTO en ARCA. Extrae categoría vigente, facturación anual acumulada, margen disponible hasta el tope de exclusión, próxima fecha de recategorización, deuda de períodos vencidos y genera el Plan de Acción con bots ejecutores.",
+    description: "Ingresa en vivo al portal oficial de MONOTRIBUTO en ARCA. Extrae categoría vigente, facturación anual acumulada, margen disponible hasta el tope de exclusión, próxima fecha de recategorización y deuda de períodos vencidos.",
     inputSchema: {
       type: "object",
       properties: {
         cuit: { type: "string", description: "CUIT a consultar (11 dígitos; opcional si solo hay 1 CUIT vinculado en la bóveda)" }
       }
-    }
-  },
-  {
-    name: "preparar_factura_empresa",
-    description: "Prepara un borrador fiscal verificado de factura (A, B, C o E) para Empresas (S.R.L., S.A., Responsables Inscriptos) o Monotributistas. Determina automáticamente la letra según condición frente al IVA, calcula alícuotas (21%, 10.5%, 27%), verifica el punto de venta e indica el impacto en el Libro de IVA Digital y F. 2002.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        emisor_cuit: { type: "string", description: "CUIT de la empresa o profesional que emite" },
-        emisor_razon_social: { type: "string", description: "Razón social del emisor (ej. 'DISTRIBUIDORA ANDINA S.R.L.')" },
-        emisor_condicion: { type: "string", description: "Condición frente al IVA del emisor (ej. 'IVA Responsable Inscripto' o 'Monotributo')" },
-        receptor_cuit: { type: "string", description: "CUIT del cliente" },
-        receptor_razon_social: { type: "string", description: "Razón social o nombre del cliente" },
-        receptor_condicion: { type: "string", description: "Condición frente al IVA del cliente (ej. 'IVA Responsable Inscripto', 'Consumidor Final')" },
-        items: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              descripcion: { type: "string" },
-              cantidad: { type: "number" },
-              precio_unitario: { type: "number" },
-              alicuota_iva: { type: "string", description: "'21', '10.5', '27', o '0'" }
-            },
-            required: ["descripcion", "precio_unitario"]
-          },
-          description: "Lista de ítems a facturar"
-        },
-        punto_venta: { type: "integer", default: 1, description: "Número del Punto de Venta habilitado en ARCA" },
-        concepto: { type: "string", enum: ["Servicios", "Productos", "Productos y Servicios"], default: "Servicios" },
-        cbu_cobranza: { type: "string", description: "CBU bancaria para cobrar la factura" }
-      },
-      required: ["emisor_cuit", "receptor_cuit", "items"]
-    }
-  },
-  {
-    name: "ejecutar_accion_bot",
-    description: "Ejecuta un bot de acción tributaria en ARCA para Monotributo o Personas Jurídicas (generar VEP, simular recategorización, presentar F. 2002 borrador, o solicitar constancias) con confirmación previa.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        bot_id: { type: "string", description: "ID del bot (ej. 'bot_pago_cuota_vencida', 'bot_recategorizacion_alerta', 'bot_descarga_credencial', 'bot_iva_f2002_presentacion')" },
-        cuit: { type: "string", description: "CUIT sobre el cual operar" },
-        parametros: { type: "object", description: "Parámetros específicos de la acción" },
-        confirmado: { type: "boolean", description: "Debe ser true para impactar en ARCA; false para modo simulación/borrador." }
-      },
-      required: ["bot_id", "cuit"]
     }
   },
   {
@@ -104,37 +57,6 @@ const MCP_TOOLS = [
         regimen: { type: "string", enum: ["auto", "monotributo", "empresa", "responsable_inscripto"], default: "auto", description: "Régimen tributario" }
       },
       required: ["cuit"]
-    }
-  },
-  {
-    name: "liquidar_iva_mensual",
-    description: "Liquida la posición mensual de IVA con la metodología oficial del F. 2002 de ARCA, prepara el Libro de IVA Digital (RG 4597) y explica el resultado en lenguaje ultra sencillo.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        cuit: { type: "string" },
-        periodo: { type: "string", description: "YYYY-MM" },
-        ventas: { type: "array", items: { type: "object" } },
-        compras: { type: "array", items: { type: "object" } },
-        retenciones_bancarias: { type: "number", default: 0 },
-        saldo_tecnico_anterior: { type: "number", default: 0 }
-      },
-      required: ["cuit", "periodo"]
-    }
-  },
-  {
-    name: "liquidar_ingresos_brutos",
-    description: "Liquida Ingresos Brutos mensual (CABA/AGIP, PBA/ARBA o Convenio Multilateral CM03), audita deducciones bancarias y detecta si el SIRCREB te está reteniendo plata de más.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        cuit: { type: "string" },
-        periodo: { type: "string" },
-        jurisdiccion: { type: "string", enum: ["CABA", "PBA", "CONVENIO_MULTILATERAL"] },
-        facturacion_bruta: { type: "number" },
-        retenciones_bancarias_sircreb: { type: "number", default: 0 }
-      },
-      required: ["cuit", "periodo", "jurisdiccion", "facturacion_bruta"]
     }
   },
   {
@@ -151,36 +73,13 @@ const MCP_TOOLS = [
   },
   {
     name: "consultar_asesor_tributario",
-    description: "Asesor impositivo senior de Argentina. Responde consultas complejas sobre deducciones, Monotributo vs SRL, dividendos y defensas de ARCA, con analogías sencillas ('para un chico de 10 años') y citas técnicas a las leyes y artículos vigentes.",
+    description: "Asesor impositivo senior de Argentina. Responde consultas complejas sobre deducciones, Monotributo vs SRL, doble jubilación Monotributo + Autónomos, dividendos y defensas de ARCA, con analogías sencillas y citas técnicas a las leyes vigentes.",
     inputSchema: {
       type: "object",
       properties: {
-        tema: { type: "string", description: "Tema a consultar (ej. 'que gastos deducir', 'monotributo vs srl', 'saldo a favor', 'retirar plata')" }
+        tema: { type: "string", description: "Tema a consultar (ej. 'doble jubilacion monotributo autonomo', 'que gastos deducir', 'monotributo vs srl', 'retirar plata')" }
       },
       required: ["tema"]
-    }
-  },
-  {
-    name: "consultar_catalogo_tramites",
-    description: "Consulta el catálogo de más de 80 trámites automatizables en ARCA, Rentas y BCRA (Monotributo, Facturación, IVA, IIBB, Ganancias, Sueldos, Sociedades, Certificaciones).",
-    inputSchema: {
-      type: "object",
-      properties: {
-        categoria: { type: "string", description: "Categoría opcional (ej. 'MONOTRIBUTO', 'FACTURACION', 'IVA_Y_LIBRO_DIGITAL', 'INGRESOS_BRUTOS', 'SUELDOS_Y_RRHH', 'CERTIFICACIONES')" }
-      }
-    }
-  },
-  {
-    name: "calcular_cupo_dolares_freelancer",
-    description: "Calcula el cupo restante de USD 24.000 anuales del BCRA para exportadores de servicios libres de pesificación forzosa en MULC y prepara la liquidación cambiaria bancaria.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        cuit: { type: "string" },
-        dolares_ingresados_anio: { type: "number", default: 0 },
-        nuevo_cobro_usd: { type: "number" }
-      },
-      required: ["cuit", "nuevo_cobro_usd"]
     }
   },
   {
@@ -1250,6 +1149,18 @@ export async function onRequest({ request, env, params }) {
           isError: true,
           content: [{ type: "text", text: JSON.stringify({ ok: false, acceso_denegado: true, requiere_autenticacion: true, error: msg }, null, 2) }]
         });
+      // P0-3 cierre total: verificar pertenencia de estudio_id por owner_email en D1
+      const assertEstudioOwner = async (estudioId, ident) => {
+        if (!estudioId || !ident) return false;
+        if (ident.es_owner_plataforma) return true;
+        if (!env.DB) return false;
+        try {
+          const row = await env.DB.prepare("SELECT owner_email FROM estudios_contables WHERE id = ?").bind(estudioId).first();
+          return Boolean(row && row.owner_email && row.owner_email.toLowerCase() === ident.email.toLowerCase());
+        } catch (e) {
+          return false;
+        }
+      };
 
       // 1. Tool de recordatorios predeterminados (resuelta en el Edge)
       if (toolName === "obtener_recordatorios_fiscales") {
@@ -2055,7 +1966,7 @@ export async function onRequest({ request, env, params }) {
         });
       }
 
-      // 1u. [B2B] Configurar Estudio Contable (Marca Blanca en D1 — P0-3 autenticado + UUID impredecible)
+      // 1u. [B2B] Configurar Estudio Contable (Marca Blanca en D1 — P0-3 con owner_email + UUID impredecible)
       if (toolName === "configurar_estudio_contable") {
         const ident = await resolveEdgeIdentity();
         if (!ident) return denyEdgeAuth();
@@ -2065,13 +1976,14 @@ export async function onRequest({ request, env, params }) {
         if (env.DB) {
           try {
             await env.DB.prepare(`
-              INSERT INTO estudios_contables (id, nombre_estudio, cuit_estudio, socio_responsable, branding_pie, creado)
-              VALUES (?, ?, ?, ?, ?, datetime('now'))
+              INSERT INTO estudios_contables (id, owner_email, nombre_estudio, cuit_estudio, socio_responsable, branding_pie, creado)
+              VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
               ON CONFLICT(id) DO UPDATE SET
                 nombre_estudio = excluded.nombre_estudio,
                 socio_responsable = excluded.socio_responsable,
                 branding_pie = excluded.branding_pie
-            `).bind(estudioId, args.nombre_estudio, cuitClean, args.socio_responsable, branding).run();
+              WHERE estudios_contables.owner_email = excluded.owner_email
+            `).bind(estudioId, ident.email, args.nombre_estudio, cuitClean, args.socio_responsable, branding).run();
           } catch (e) {}
         }
         return jsonRpcSuccess(id, {
@@ -2089,11 +2001,14 @@ export async function onRequest({ request, env, params }) {
         });
       }
 
-      // 1v. [B2B] Importar Cartera Masiva de Clientes en D1 (P0-3 autenticado)
+      // 1v. [B2B] Importar Cartera Masiva de Clientes en D1 (P0-3 pertenencia verificada)
       if (toolName === "importar_cartera_clientes") {
         const ident = await resolveEdgeIdentity();
         if (!ident) return denyEdgeAuth();
         const estudioId = args.estudio_id;
+        if (!(await assertEstudioOwner(estudioId, ident))) {
+          return denyEdgeAuth(`No tenés permiso para operar el estudio ${estudioId}.`);
+        }
         const lista = Array.isArray(args.clientes) ? args.clientes : [];
         let procesados = 0;
         if (env.DB) {
@@ -2139,11 +2054,14 @@ export async function onRequest({ request, env, params }) {
         });
       }
 
-      // 1w. [B2B] Tablero Consolidado de Cartera y Vencimientos del Estudio (P0-3 autenticado)
+      // 1w. [B2B] Tablero Consolidado de Cartera y Vencimientos del Estudio (P0-3 pertenencia verificada)
       if (toolName === "tablero_cartera_estudio") {
         const ident = await resolveEdgeIdentity();
         if (!ident) return denyEdgeAuth();
         const estudioId = args.estudio_id;
+        if (!(await assertEstudioOwner(estudioId, ident))) {
+          return denyEdgeAuth(`No tenés permiso para ver la cartera del estudio ${estudioId}.`);
+        }
         const periodo = args.periodo || new Date().toISOString().slice(0, 7);
         let clientes = [];
         let cierres = [];
@@ -2214,10 +2132,13 @@ export async function onRequest({ request, env, params }) {
         });
       }
 
-      // 1x. [B2B] Registrar Borrador Junior + Detector de Anomalías (±30% — P0-3 autenticado + P1-16 ID con estudio_id)
+      // 1x. [B2B] Registrar Borrador Junior + Detector de Anomalías (±30% — P0-3 pertenencia + P1-16 ID con estudio_id)
       if (toolName === "registrar_cierre_y_detectar_anomalias") {
         const ident = await resolveEdgeIdentity();
         if (!ident) return denyEdgeAuth();
+        if (!(await assertEstudioOwner(args.estudio_id, ident))) {
+          return denyEdgeAuth(`No tenés permiso para registrar cierres en el estudio ${args.estudio_id}.`);
+        }
         const cuitClean = (args.cuit_cliente || "").replace(/[^0-9]/g, "");
         const imp = (args.impuesto || "IVA").toUpperCase();
         const per = args.periodo || new Date().toISOString().slice(0, 7);
@@ -2266,10 +2187,13 @@ export async function onRequest({ request, env, params }) {
         });
       }
 
-      // 1y. [B2B] Aprobación en Bloque por el Socio (P0-3 autenticado + P1-16 conteo real de filas)
+      // 1y. [B2B] Aprobación en Bloque por el Socio (P0-3 pertenencia + P1-16 conteo real de filas)
       if (toolName === "aprobar_cierres_socio") {
         const ident = await resolveEdgeIdentity();
         if (!ident) return denyEdgeAuth();
+        if (!(await assertEstudioOwner(args.estudio_id, ident))) {
+          return denyEdgeAuth(`No tenés permiso para aprobar cierres del estudio ${args.estudio_id}.`);
+        }
         const ids = Array.isArray(args.cierre_ids) ? args.cierre_ids : [];
         let aprobados = 0;
         if (env.DB) {
@@ -2387,10 +2311,12 @@ export async function onRequest({ request, env, params }) {
           const userToken = bearerToken || (url.searchParams.get("token") || "").trim() || String(args.token_sesion || "").trim();
           const llmOrigin = host.endsWith(".impuesto.com.ar") ? host.split(".")[0] : "mcp";
 
+          const clientIp = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for") || "";
           const headers = {
             "Content-Type": "application/json",
             "X-LLM-Origin": llmOrigin
           };
+          if (clientIp) headers["CF-Connecting-IP"] = clientIp;
           if (env.BOT_API_SECRET) headers["X-Bot-Secret"] = env.BOT_API_SECRET;
           if (userToken) headers["X-User-Token"] = userToken;
 
@@ -2431,8 +2357,28 @@ export async function onRequest({ request, env, params }) {
           }
           return jsonRpcSuccess(id, { content: [{ type: "text", text: outText }] });
         } catch (e) {
-          // P1-15: distinguir TimeoutError del proxy (en progreso) vs caída real del backend
+          // R1 + P1-15: tools de escritura (emisión/presentación) NUNCA devuelven EN_PROGRESO ante timeout
           const isTimeout = e && (e.name === "TimeoutError" || e.name === "AbortError" || String(e.message || "").toLowerCase().includes("timeout"));
+          const isMutatingCall =
+            (toolName === "emitir_factura_wsfe" && confirmadoStrict) ||
+            (toolName === "consultar_y_renovar_certificado_mipyme" && confirmadoStrict) ||
+            toolName === "vincular_cuenta_en_chat" ||
+            toolName === "autorizar_usuario_cuit" ||
+            toolName === "revocar_usuario_cuit";
+          if (isTimeout && isMutatingCall) {
+            return jsonRpcSuccess(id, {
+              isError: true,
+              content: [{
+                type: "text",
+                text: JSON.stringify({
+                  ok: false,
+                  estado: "ESTADO_INCIERTO_NO_REINTENTAR",
+                  herramienta: toolName,
+                  mensaje: "Estado incierto: la solicitud de escritura superó el tiempo de espera. Consultá el último comprobante autorizado antes de reintentar (o usá exactamente la misma `idempotency_key`)."
+                }, null, 2)
+              }]
+            });
+          }
           if (isTimeout) {
             return jsonRpcSuccess(id, {
               content: [{

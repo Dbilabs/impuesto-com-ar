@@ -85,6 +85,33 @@ AUDIT_INFLIGHT: Dict[str, Dict[str, Any]] = {}
 TOOL_CACHE: Dict[str, Dict[str, Any]] = {}
 TOOL_INFLIGHT: Dict[str, Dict[str, Any]] = {}
 _BAD_CREDS_CB: Dict[str, Dict[str, Any]] = {}
+_wsfe_locks: Dict[str, threading.Lock] = {}
+_WSFE_IDEM_CACHE: Dict[str, Dict[str, Any]] = {}
+LOCK_ACQUIRE_TIMEOUT_SEC = float(os.environ.get("LOCK_ACQUIRE_TIMEOUT_SEC", "180.0"))
+
+
+def _get_wsfe_lock(cuit: str, pto_vta: int, cbte_tipo: int) -> threading.Lock:
+    key = f"{cuit}:{pto_vta}:{cbte_tipo}"
+    with _audit_lock:
+        lk = _wsfe_locks.get(key)
+        if lk is None:
+            lk = threading.Lock()
+            _wsfe_locks[key] = lk
+        return lk
+
+
+def _extract_client_ip(request: Optional[Request]) -> str:
+    if not request:
+        return "unknown"
+    cf_ip = (request.headers.get("cf-connecting-ip") or request.headers.get("x-client-ip") or "").strip()
+    if cf_ip:
+        return cf_ip
+    xff = (request.headers.get("x-forwarded-for") or "").strip()
+    if xff:
+        parts = [p.strip() for p in xff.split(",") if p.strip()]
+        if parts:
+            return parts[-1]
+    return (request.client.host if request.client else "unknown") or "unknown"
 
 
 def _parse_bool_strict(val: Any) -> bool:
@@ -282,10 +309,41 @@ def _resolve_creds_authorized(
     }
 
 
+def _is_bad_cred_error(err_str: str) -> bool:
+    u = (err_str or "").upper()
+    return any(
+        k in u
+        for k in (
+            "CLAVE_FISCAL_INCORRECTA",
+            "CLAVE_FISCAL_BLOQUEADA",
+            "CAMBIO DE CLAVE",
+            "CAPTCHA",
+        )
+    )
+
+
 def _run_auditoria_background(cuit: str, clave: str, entry: Dict[str, Any], actor_email: str = "", origen_llm: str = "mcp") -> None:
+    cuit_lk = _get_cuit_lock(cuit)
+    got_cuit = cuit_lk.acquire(timeout=LOCK_ACQUIRE_TIMEOUT_SEC)
+    got_sem = False
     try:
-        with _get_cuit_lock(cuit), PLAYWRIGHT_SEM:
-            res = auditar_estado_integral_arca(cuit=cuit, clave=clave)
+        if not got_cuit:
+            raise TimeoutError(f"Timeout esperando lock del CUIT {cuit} (otra consulta en curso).")
+        # P0-7 cierre total: re-chequear circuit breaker DESPUÉS de adquirir el lock del CUIT
+        cb_err = _check_bad_creds(cuit, clave)
+        if cb_err:
+            now = time.time()
+            with _audit_lock:
+                entry["result"] = cb_err
+                entry["finished_at"] = now
+                AUDIT_CACHE[cuit] = {"ts": now, "is_error": True, "data": cb_err}
+                if AUDIT_INFLIGHT.get(cuit) is entry:
+                    AUDIT_INFLIGHT.pop(cuit, None)
+            return
+        got_sem = PLAYWRIGHT_SEM.acquire(timeout=LOCK_ACQUIRE_TIMEOUT_SEC)
+        if not got_sem:
+            raise TimeoutError("Timeout esperando disponibilidad del motor headless ARCA.")
+        res = auditar_estado_integral_arca(cuit=cuit, clave=clave)
         now = time.time()
         with _audit_lock:
             entry["result"] = res
@@ -308,16 +366,16 @@ def _run_auditoria_background(cuit: str, clave: str, entry: Dict[str, Any], acto
         logger.exception(f"Error en auditoria_unificada background para {cuit}")
         now = time.time()
         err_str = str(e)
-        is_bad_cred = "CLAVE_FISCAL_INCORRECTA" in err_str or "CLAVE_FISCAL_BLOQUEADA" in err_str
-        if is_bad_cred:
+        if _is_bad_cred_error(err_str):
             _mark_bad_creds(cuit, clave, err_str)
             err_obj = {
                 "ok": False,
-                "estado": "CLAVE_FISCAL_BLOQUEADA" if "BLOQUEADA" in err_str else "CLAVE_FISCAL_INCORRECTA",
+                "estado": "CLAVE_FISCAL_BLOQUEADA" if "BLOQUEADA" in err_str.upper() else "CLAVE_FISCAL_INCORRECTA",
                 "cuit": cuit,
-                "error": err_str,
+                "error": err_str[:300],
                 "mensaje": (
-                    f"ARCA rechazó la Clave Fiscal del CUIT {cuit}. Frenamos nuevos reintentos automáticos para evitar bloqueos. "
+                    f"ARCA rechazó la Clave Fiscal o pidió validación manual para el CUIT {cuit}. "
+                    "Frenamos nuevos reintentos automáticos para evitar bloqueos. "
                     "Actualizá tu Clave Fiscal correcta en el chat (`vincular_cuenta_en_chat`) o en https://impuesto.com.ar/vincular."
                 ),
             }
@@ -339,6 +397,10 @@ def _run_auditoria_background(cuit: str, clave: str, entry: Dict[str, Any], acto
             if AUDIT_INFLIGHT.get(cuit) is entry:
                 AUDIT_INFLIGHT.pop(cuit, None)
     finally:
+        if got_sem:
+            PLAYWRIGHT_SEM.release()
+        if got_cuit:
+            cuit_lk.release()
         entry["event"].set()
 
 
@@ -459,9 +521,27 @@ def _run_tool_sin_timeout(
             TOOL_INFLIGHT[cache_key] = inflight
 
             def _worker():
+                cuit_lk = _get_cuit_lock(cuit)
+                got_cuit = cuit_lk.acquire(timeout=LOCK_ACQUIRE_TIMEOUT_SEC)
+                got_sem = False
                 try:
-                    with _get_cuit_lock(cuit), PLAYWRIGHT_SEM:
-                        res = fn()
+                    if not got_cuit:
+                        raise TimeoutError(f"Timeout esperando lock del CUIT {cuit}.")
+                    # P0-7 cierre total: re-chequear circuit breaker DESPUÉS de adquirir el lock
+                    if clave:
+                        cb_inner = _check_bad_creds(cuit, clave)
+                        if cb_inner:
+                            ts_cb = time.time()
+                            with _audit_lock:
+                                inflight["result"] = cb_inner
+                                TOOL_CACHE[cache_key] = {"ts": ts_cb, "is_error": True, "data": cb_inner}
+                                if TOOL_INFLIGHT.get(cache_key) is inflight:
+                                    TOOL_INFLIGHT.pop(cache_key, None)
+                            return
+                    got_sem = PLAYWRIGHT_SEM.acquire(timeout=LOCK_ACQUIRE_TIMEOUT_SEC)
+                    if not got_sem:
+                        raise TimeoutError("Timeout esperando disponibilidad del motor headless ARCA.")
+                    res = fn()
                     ts_done = time.time()
                     is_err_res = isinstance(res, dict) and res.get("ok") is False
                     with _audit_lock:
@@ -475,15 +555,14 @@ def _run_tool_sin_timeout(
                     logger.exception(f"Error en {cache_key}")
                     ts_err = time.time()
                     err_str = str(e)
-                    is_bad_cred = "CLAVE_FISCAL_INCORRECTA" in err_str or "CLAVE_FISCAL_BLOQUEADA" in err_str
-                    if is_bad_cred and clave:
+                    if _is_bad_cred_error(err_str) and clave:
                         _mark_bad_creds(cuit, clave, err_str)
                         err_obj = {
                             "ok": False,
-                            "estado": "CLAVE_FISCAL_BLOQUEADA" if "BLOQUEADA" in err_str else "CLAVE_FISCAL_INCORRECTA",
+                            "estado": "CLAVE_FISCAL_BLOQUEADA" if "BLOQUEADA" in err_str.upper() else "CLAVE_FISCAL_INCORRECTA",
                             "cuit": cuit,
                             "modulo": label,
-                            "error": err_str,
+                            "error": err_str[:300],
                             "mensaje": f"ARCA rechazó la Clave Fiscal del CUIT {cuit}. Actualizala antes de reintentar para evitar bloqueos.",
                         }
                     else:
@@ -501,6 +580,10 @@ def _run_tool_sin_timeout(
                         if TOOL_INFLIGHT.get(cache_key) is inflight:
                             TOOL_INFLIGHT.pop(cache_key, None)
                 finally:
+                    if got_sem:
+                        PLAYWRIGHT_SEM.release()
+                    if got_cuit:
+                        cuit_lk.release()
                     inflight["event"].set()
 
             executor.submit(_worker)
@@ -721,8 +804,22 @@ def api_vincular(
     email = normalizar_email(req.email or "")
     actor_email = resolver_email_por_token(_extract_user_token(x_user_token, authorization))
     es_verificado = bool(actor_email and email and actor_email == email)
-    res: Dict[str, Any] = {"ok": True}
 
+    # P0-1 & P0-2 cierre total: VERIFICAR identidad PRIMERO antes de guardar credenciales o emitir tokens
+    if not email or "@" not in email:
+        return {"ok": False, "acceso_denegado": True, "error": "Indicá un email válido para vincular tu cuenta."}
+    if not es_verificado:
+        return {
+            "ok": False,
+            "requiere_otp": True,
+            "acceso_denegado": True,
+            "error": (
+                "Para vincular un CUIT o generar un token primero verificá tu email con un código de 6 dígitos "
+                "(`solicitar_codigo_acceso_email` + `verificar_codigo_acceso_email`) e incluí tu `token_sesion`."
+            ),
+        }
+
+    res: Dict[str, Any] = {"ok": True}
     if req.modo != "solo_token_llm":
         res = guardar_credenciales_cifradas(
             cuit=req.cuit or "",
@@ -731,46 +828,43 @@ def api_vincular(
             cert_pem=req.cert_pem,
             key_pem=req.key_pem,
             alias=req.alias,
-            owner_email=email or None,
+            owner_email=email,
         )
         if not res.get("ok"):
             return res
         if res.get("cuit"):
             _clear_bad_creds(res["cuit"])
 
-    if email:
-        tok = crear_token_usuario(
+    tok = crear_token_usuario(
+        email=email,
+        label=req.etiqueta_token or "principal",
+        custom_token=req.token_personalizado or None,
+        verificado=True,
+    )
+    if not tok.get("ok"):
+        return tok
+    t = tok["token"]
+    res["email"] = email
+    res["token_id"] = tok["token_id"]
+    res["token"] = t
+    res["url_conector_universal"] = f"https://conectar.impuesto.com.ar/?token={t}"
+    res["urls_privadas_mcp"] = {
+        "conectar": f"https://conectar.impuesto.com.ar/?token={t}",
+        "gemini": f"https://conectar.impuesto.com.ar/?token={t}",
+        "claude": f"https://conectar.impuesto.com.ar/?token={t}",
+        "chatgpt": f"https://conectar.impuesto.com.ar/?token={t}",
+    }
+    if res.get("cuit"):
+        registrar_evento_historial(
             email=email,
-            label=req.etiqueta_token or "principal",
-            custom_token=req.token_personalizado or None,
-            verificado=es_verificado,
+            cuit=res["cuit"],
+            origen_llm="portal_web",
+            accion="vincular_cuit",
+            titulo=f"CUIT {res['cuit']} vinculado bajo propiedad de {email}",
+            detalle=f"Modo: {req.modo} · Token ID: {tok['token_id']}",
         )
-        if not tok.get("ok"):
-            return tok
-        t = tok["token"]
-        res["email"] = email
-        res["token_id"] = tok["token_id"]
-        res["token"] = t
-        res["url_conector_universal"] = f"https://conectar.impuesto.com.ar/?token={t}"
-        res["urls_privadas_mcp"] = {
-            "conectar": f"https://conectar.impuesto.com.ar/?token={t}",
-            "gemini": f"https://conectar.impuesto.com.ar/?token={t}",
-            "claude": f"https://conectar.impuesto.com.ar/?token={t}",
-            "chatgpt": f"https://conectar.impuesto.com.ar/?token={t}",
-        }
-        if res.get("cuit"):
-            registrar_evento_historial(
-                email=email,
-                cuit=res["cuit"],
-                origen_llm="portal_web",
-                accion="vincular_cuit",
-                titulo=f"CUIT {res['cuit']} vinculado bajo propiedad de {email}",
-                detalle=f"Modo: {req.modo} · Token ID: {tok['token_id']}",
-            )
-            if req.clave_fiscal:
-                _precalentar_auditoria_en_background(res["cuit"], req.clave_fiscal, actor_email=email, origen_llm="prewarm_web")
-    elif req.modo == "solo_token_llm":
-        return {"ok": False, "error": "Ingresá tu email para generar tu token personal multi-LLM."}
+        if req.clave_fiscal:
+            _precalentar_auditoria_en_background(res["cuit"], req.clave_fiscal, actor_email=email, origen_llm="prewarm_web")
 
     return res
 
@@ -906,25 +1000,34 @@ def run_mcp_tool(
         }
 
     if tool == "solicitar_codigo_acceso_email":
-        return solicitar_codigo_otp_email(email=args.get("email", ""))
+        return solicitar_codigo_otp_email(email=args.get("email", ""), client_ip=_extract_client_ip(request))
 
     if tool == "verificar_codigo_acceso_email":
         return verificar_codigo_otp_email(
             email=args.get("email", ""),
             codigo=args.get("codigo", ""),
             origen_llm=origen_llm,
+            client_ip=_extract_client_ip(request),
         )
 
     if tool == "iniciar_sesion_en_chat":
+        from .limite_login import LIMITE_LOGIN_CHAT
         em = normalizar_email(args.get("email", ""))
+        client_ip = _extract_client_ip(request)
+        key_u = em or "anon"
+        ok_lim, msg_lim = LIMITE_LOGIN_CHAT.chequear(client_ip, key_u)
+        if not ok_lim:
+            return {"ok": False, "acceso_denegado": True, "rate_limited": True, "error": msg_lim}
         secreto = (args.get("frase_clave_o_token") or args.get("frase_clave") or args.get("token_sesion") or "").strip()
         resolved = resolver_email_por_token(secreto)
         if not resolved or (em and resolved != em):
+            LIMITE_LOGIN_CHAT.registrar_fallo(client_ip, key_u)
             return {
                 "ok": False,
                 "acceso_denegado": True,
-                "error": "Email o frase clave/token incorrectos. Verificá tu frase clave o vinculá tu cuenta nueva con `vincular_cuenta_en_chat`.",
+                "error": "Email o frase clave/token incorrectos. Verificá tu frase clave o pedí un código de 6 dígitos (`solicitar_codigo_acceso_email`).",
             }
+        LIMITE_LOGIN_CHAT.registrar_exito(client_ip, resolved)
         cuits = listar_cuits_autorizados(resolved)
         return {
             "ok": True,
@@ -1341,22 +1444,64 @@ def run_mcp_tool(
                 "acceso_denegado": True,
                 "error": f"El CUIT emisor ({cuit_emisor_req}) no coincide con el CUIT autorizado ({cuit}). Operación bloqueada por seguridad.",
             }
-        res = emitir_comprobante_wsfe(
+        pto_vta_in = int(args.get("pto_vta", 1))
+        cbte_tipo_in = int(args.get("cbte_tipo", 11))
+        ambiente_in = (args.get("ambiente") or "homologacion").strip().lower()
+        idem_key = str(args.get("idempotency_key") or "").strip()
+
+        if confirmado_strict:
+            if not idem_key:
+                return {
+                    "ok": False,
+                    "error": "Para emitir con confirmado=true debés enviar `idempotency_key` única por venta (evita emitir dos CAE duplicados ante un reintento).",
+                }
+            cache_idem_k = f"{cuit}:{ambiente_in}:{idem_key}"
+            with _audit_lock:
+                prev_em = _WSFE_IDEM_CACHE.get(cache_idem_k)
+                if prev_em is not None:
+                    out_dup = dict(prev_em)
+                    out_dup["idempotente_reusado"] = True
+                    return out_dup
+            wsfe_lk = _get_wsfe_lock(cuit, pto_vta_in, cbte_tipo_in)
+            with wsfe_lk:
+                with _audit_lock:
+                    prev_em = _WSFE_IDEM_CACHE.get(cache_idem_k)
+                    if prev_em is not None:
+                        out_dup = dict(prev_em)
+                        out_dup["idempotente_reusado"] = True
+                        return out_dup
+                res = emitir_comprobante_wsfe(
+                    cuit_emisor=cuit,
+                    pto_vta=pto_vta_in,
+                    cbte_tipo=cbte_tipo_in,
+                    receptor_cuit=args.get("receptor_cuit", ""),
+                    importe_neto=float(args.get("importe_neto", 0)),
+                    importe_iva=float(args.get("importe_iva", 0)),
+                    concepto=int(args.get("concepto", 2)),
+                    ambiente=ambiente_in,
+                    confirmado=True,
+                    cbte_asoc=args.get("cbte_asoc"),
+                    condicion_iva_receptor_id=args.get("condicion_iva_receptor_id"),
+                )
+                if isinstance(res, dict) and res.get("ok"):
+                    with _audit_lock:
+                        _WSFE_IDEM_CACHE[cache_idem_k] = dict(res)
+                    registrar_evento_historial(actor_email, cuit, origen_llm, "emitir_factura_wsfe", f"Factura WSFE a {args.get('receptor_cuit','')} por ${args.get('importe_neto',0)}")
+                return res
+
+        return emitir_comprobante_wsfe(
             cuit_emisor=cuit,
-            pto_vta=int(args.get("pto_vta", 1)),
-            cbte_tipo=int(args.get("cbte_tipo", 11)),
+            pto_vta=pto_vta_in,
+            cbte_tipo=cbte_tipo_in,
             receptor_cuit=args.get("receptor_cuit", ""),
             importe_neto=float(args.get("importe_neto", 0)),
             importe_iva=float(args.get("importe_iva", 0)),
             concepto=int(args.get("concepto", 2)),
-            ambiente=args.get("ambiente", "homologacion"),
-            confirmado=confirmado_strict,
+            ambiente=ambiente_in,
+            confirmado=False,
             cbte_asoc=args.get("cbte_asoc"),
             condicion_iva_receptor_id=args.get("condicion_iva_receptor_id"),
         )
-        if confirmado_strict:
-            registrar_evento_historial(actor_email, cuit, origen_llm, "emitir_factura_wsfe", f"Factura WSFE a {args.get('receptor_cuit','')} por ${args.get('importe_neto',0)}")
-        return res
 
     if tool == "generar_certificado_csr_arca":
         from .arca_ws import generar_csr_arca

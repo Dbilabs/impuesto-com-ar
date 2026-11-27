@@ -167,14 +167,16 @@ def crear_token_usuario(
 
     with _vault_io_lock:
         acl = _load_acl()
-        if not verificado and (em in acl["users"] or es_admin_plataforma(em)):
+        # P0-1 cierre total: TODO token requiere identidad verificada (OTP o sesión autenticada previa),
+        # incluso para emails nuevos (impide reclamar emails de contadores invitados como editor).
+        if not verificado:
             return {
                 "ok": False,
                 "requiere_otp": True,
                 "acceso_denegado": True,
                 "error": (
-                    "Ese email ya tiene cuenta registrada o privilegios administrativos. "
-                    "Para proteger tu cuenta, verificá tu identidad primero con un código de 6 dígitos (`solicitar_codigo_acceso_email`)."
+                    "Para emitir un token de sesión primero debés verificar tu email con un código de 6 dígitos "
+                    "(`solicitar_codigo_acceso_email` + `verificar_codigo_acceso_email`)."
                 ),
             }
         # Verificar unicidad global (nadie puede usar la misma frase clave de otro usuario)
@@ -943,26 +945,24 @@ def _enviar_email_otp(destinatario: str, codigo: str) -> Tuple[bool, str]:
     return False, "SIN_PROVEEDOR_EMAIL"
 
 
-def solicitar_codigo_otp_email(email: str) -> Dict[str, Any]:
-    """Genera un código OTP de 6 dígitos (SHA-256 en memoria, TTL 10 min, máx 3 pedidos/15m) y lo envía por email."""
+def solicitar_codigo_otp_email(email: str, client_ip: str = "unknown") -> Dict[str, Any]:
+    """Genera un código OTP de 6 dígitos (SHA-256 en memoria, TTL 10 min) con límite en 3 niveles (IP+user, user, global)."""
+    from .limite_login import LIMITE_OTP_ENVIO
+
     em = normalizar_email(email)
     if "@" not in em or "." not in em.split("@")[-1]:
         return {"ok": False, "error": "Email inválido."}
+
+    ok_lim, msg_lim = LIMITE_OTP_ENVIO.chequear(client_ip, em)
+    if not ok_lim:
+        return {"ok": False, "rate_limited": True, "error": msg_lim}
+    LIMITE_OTP_ENVIO.registrar_fallo(client_ip, em)
 
     now_ts = datetime.datetime.now(datetime.timezone.utc).timestamp()
     codigo = f"{secrets.randbelow(900000) + 100000}"
     exp = now_ts + OTP_TTL_SEC
 
     with _otp_lock:
-        reqs = [t for t in _otp_req_log.get(em, []) if now_ts - t < 900]
-        if len(reqs) >= OTP_MAX_REQ_15M:
-            return {
-                "ok": False,
-                "rate_limited": True,
-                "error": "Demasiadas solicitudes de código para este email. Esperá unos minutos antes de pedir uno nuevo.",
-            }
-        reqs.append(now_ts)
-        _otp_req_log[em] = reqs
         prev = _otp_store.get(em)
         prev_intentos = prev["intentos"] if (prev and now_ts <= prev["exp"]) else 0
         _otp_store[em] = {"hash": _hash_token(codigo), "exp": exp, "intentos": prev_intentos}
@@ -977,7 +977,7 @@ def solicitar_codigo_otp_email(email: str) -> Dict[str, Any]:
                 "mensaje": (
                     "El envío automático de códigos por email aún no tiene un proveedor SMTP/Resend configurado en el servidor "
                     "(falta configurar RESEND_API_KEY o SMTP_HOST/SMTP_USER/SMTP_PASS). "
-                    "Mientras tanto, iniciá sesión en el chat con tu frase clave (`iniciar_sesion_en_chat`) o vinculá tu cuenta (`vincular_cuenta_en_chat`)."
+                    "Mientras tanto, iniciá sesión en el chat con tu frase clave (`iniciar_sesion_en_chat`)."
                 ),
             }
         return {"ok": False, "envio_email_configurado": True, "error": proveedor}
@@ -992,37 +992,41 @@ def solicitar_codigo_otp_email(email: str) -> Dict[str, Any]:
     }
 
 
-def verificar_codigo_otp_email(email: str, codigo: str, origen_llm: str = "mcp") -> Dict[str, Any]:
-    """Verifica el código OTP de 6 dígitos (uso único, máx 5 intentos y máx 20 fallos/24h) y emite un token_sesion válido."""
+def verificar_codigo_otp_email(email: str, codigo: str, origen_llm: str = "mcp", client_ip: str = "unknown") -> Dict[str, Any]:
+    """Verifica el código OTP de 6 dígitos (uso único, máx 5 intentos + límite 3 niveles sin DoS de 24h) y emite token_sesion."""
+    from .limite_login import LIMITE_OTP_VERIF
+
     em = normalizar_email(email)
     cod = "".join(ch for ch in str(codigo or "") if ch.isdigit())
     if "@" not in em or len(cod) != 6:
         return {"ok": False, "acceso_denegado": True, "error": "Indicá tu email y el código numérico de 6 dígitos."}
 
+    ok_lim, msg_lim = LIMITE_OTP_VERIF.chequear(client_ip, em)
+    if not ok_lim:
+        return {"ok": False, "acceso_denegado": True, "rate_limited": True, "error": msg_lim}
+
     now_ts = datetime.datetime.now(datetime.timezone.utc).timestamp()
     with _otp_lock:
-        daily = [t for t in _otp_daily_fails.get(em, []) if now_ts - t < 86400]
-        if len(daily) >= OTP_MAX_FAILS_24H:
-            return {"ok": False, "acceso_denegado": True, "rate_limited": True, "error": "Demasiados intentos fallidos hoy. Volvé a intentar más tarde."}
         rec = _otp_store.get(em)
         if not rec:
+            LIMITE_OTP_VERIF.registrar_fallo(client_ip, em)
             return {"ok": False, "acceso_denegado": True, "error": "No hay un código activo para ese email. Pedí uno nuevo."}
         if now_ts > rec["exp"]:
             _otp_store.pop(em, None)
+            LIMITE_OTP_VERIF.registrar_fallo(client_ip, em)
             return {"ok": False, "acceso_denegado": True, "error": "El código venció (superó los 10 minutos). Pedí uno nuevo."}
         rec["intentos"] += 1
         if rec["intentos"] > 5:
             _otp_store.pop(em, None)
-            daily.append(now_ts)
-            _otp_daily_fails[em] = daily
+            LIMITE_OTP_VERIF.registrar_fallo(client_ip, em)
             return {"ok": False, "acceso_denegado": True, "error": "Demasiados intentos fallidos. Pedí un código nuevo."}
         if not secrets.compare_digest(rec["hash"], _hash_token(cod)):
-            daily.append(now_ts)
-            _otp_daily_fails[em] = daily
+            LIMITE_OTP_VERIF.registrar_fallo(client_ip, em)
             return {"ok": False, "acceso_denegado": True, "error": "Código incorrecto. Verificá los 6 dígitos en tu correo."}
         # Uso único: consumir el OTP
         _otp_store.pop(em, None)
 
+    LIMITE_OTP_VERIF.registrar_exito(client_ip, em)
     tok = crear_token_usuario(email=em, label=f"otp_{origen_llm}", verificado=True)
     if not tok.get("ok"):
         return tok

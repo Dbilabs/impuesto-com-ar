@@ -55,12 +55,14 @@ CREATE INDEX IF NOT EXISTS idx_conocimiento_estado ON conocimiento_aprendido (es
 -- Modo Estudio Contable (B2B Multi-Cliente)
 CREATE TABLE IF NOT EXISTS estudios_contables (
   id TEXT PRIMARY KEY,
+  owner_email TEXT NOT NULL DEFAULT '',
   nombre_estudio TEXT NOT NULL,
   cuit_estudio TEXT NOT NULL,
   socio_responsable TEXT,
   branding_pie TEXT,
   creado TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_estudios_owner ON estudios_contables (owner_email);
 
 CREATE TABLE IF NOT EXISTS cartera_clientes (
   id TEXT PRIMARY KEY,

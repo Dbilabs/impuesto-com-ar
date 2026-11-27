@@ -65,6 +65,8 @@ def listar_empresas_representadas(usuario: str, clave: str) -> List[Dict[str, st
             args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
         )
         page = browser.new_page()
+        page.set_default_timeout(12000)
+        page.set_default_navigation_timeout(25000)
         try:
             _login_arca(page, usuario, clave)
             page.wait_for_selector("text='Ver todos'", timeout=20000)
@@ -108,6 +110,8 @@ def consultar_notificaciones_dfe(usuario: str, clave: str, cuit_objetivo: Option
             args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
         )
         page = browser.new_page()
+        page.set_default_timeout(12000)
+        page.set_default_navigation_timeout(25000)
         try:
             _login_arca(page, usuario, clave)
             btn_dfe = None
@@ -144,26 +148,31 @@ def consultar_notificaciones_dfe(usuario: str, clave: str, cuit_objetivo: Option
                 pass
             dfe_page.wait_for_timeout(2500)
 
-            # Si se especificó cuit o queremos todos (P1-6: pasar parámetro seguro a evaluate, cero interpolación JS)
+            # Si se especificó cuit o queremos todos (P1-6 + R3: validar que el CUIT pedido realmente exista en el select)
             if cuit_objetivo:
                 clean_target = "".join(ch for ch in str(cuit_objetivo) if ch.isdigit())
-                if len(clean_target) == 11:
-                    dfe_page.evaluate(
-                        """(target) => {
-                            const selects = document.querySelectorAll('select');
-                            for (const s of selects) {
-                                for (const opt of s.options) {
-                                    if (opt.text.includes(target)) {
-                                        s.value = opt.value;
-                                        s.dispatchEvent(new Event('change'));
-                                        return;
-                                    }
+                if len(clean_target) != 11:
+                    raise ValueError(f"CUIT objetivo inválido para DFE: {cuit_objetivo!r}")
+                selected = dfe_page.evaluate(
+                    """(target) => {
+                        const selects = document.querySelectorAll('select');
+                        if (!selects.length) return { hasSelect: false, matched: false };
+                        for (const s of selects) {
+                            for (const opt of s.options) {
+                                if (opt.text.replace(/[^0-9]/g, '').includes(target)) {
+                                    s.value = opt.value;
+                                    s.dispatchEvent(new Event('change'));
+                                    return { hasSelect: true, matched: true };
                                 }
                             }
-                        }""",
-                        clean_target,
-                    )
-                    dfe_page.wait_for_timeout(2000)
+                        }
+                        return { hasSelect: true, matched: false };
+                    }""",
+                    clean_target,
+                )
+                if selected and selected.get("hasSelect") and not selected.get("matched"):
+                    raise RuntimeError(f"CUIT_NO_ENCONTRADO_EN_DFE: El CUIT {clean_target} no figura entre los representados disponibles en DFE.")
+                dfe_page.wait_for_timeout(2000)
 
             # Extraer notificaciones de la tabla
             comunicaciones = dfe_page.evaluate('''() => {

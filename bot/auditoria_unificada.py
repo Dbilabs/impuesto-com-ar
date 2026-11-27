@@ -169,7 +169,10 @@ def consultar_ccma_preciso(cuit: str, clave: str) -> Dict[str, Any]:
     with sync_playwright() as p:
         browser = _launch_browser(p)
         try:
-            ctx = browser.new_context(viewport={"width": 1440, "height": 900})
+            ctx = browser.new_context(viewport={"width": 1280, "height": 800})
+            ctx.set_default_timeout(12000)
+            ctx.set_default_navigation_timeout(25000)
+            ctx.route("**/*", lambda route: route.abort() if route.request.resource_type in ("image", "font", "media") else route.continue_())
             page = ctx.new_page()
             page.goto("https://auth.afip.gob.ar/contribuyente_/login.xhtml", wait_until="domcontentloaded", timeout=30000)
             page.fill("#F1\\:username", cuit_clean)
@@ -232,15 +235,16 @@ def consultar_ccma_preciso(cuit: str, clave: str) -> Dict[str, Any]:
         m_cap = re.search(r"Obligaci[oó]n Mensual:\s*\$?\s*([\d\.,]+)", txt)
         m_acc = re.search(r"Accesorios:\s*\$?\s*([\d\.,]+)", txt)
         m_acre = re.search(r"Total Saldo Acreedor:\s*\$?\s*([\d\.,]+)", txt)
-        if not (m_deud or m_cap or m_acre) and "no registra" not in txt.lower():
-            return {"ok": False, "cuit": cuit_clean, "error": "PARSE_ERROR: No se detectó la tabla de saldos en CCMA (posible sesión expirada o cambio de pantalla ARCA)."}
+        sin_deuda_explicito = any(k in txt.lower() for k in ("no registra deuda", "no posee deuda", "sin deuda"))
+        if not m_deud and not sin_deuda_explicito:
+            return {"ok": False, "cuit": cuit_clean, "error": "PARSE_ERROR: No se detectó 'Total Saldo Deudor' en CCMA (posible sesión expirada o pantalla incompleta)."}
         return {
             "ok": True,
             "cuit": cuit_clean,
-            "saldo_deudor_vencido": _parse_ar_num(m_deud.group(1)) if m_deud else 0.0,
-            "capital_mensual": _parse_ar_num(m_cap.group(1)) if m_cap else 0.0,
-            "intereses_accesorios": _parse_ar_num(m_acc.group(1)) if m_acc else 0.0,
-            "saldo_acreedor": _parse_ar_num(m_acre.group(1)) if m_acre else 0.0,
+            "saldo_deudor_vencido": _parse_ar_num(m_deud.group(1), strict=True) if m_deud else 0.0,
+            "capital_mensual": _parse_ar_num(m_cap.group(1), strict=True) if m_cap else 0.0,
+            "intereses_accesorios": _parse_ar_num(m_acc.group(1), strict=True) if m_acc else 0.0,
+            "saldo_acreedor": _parse_ar_num(m_acre.group(1), strict=True) if m_acre else 0.0,
             "tiene_pfp_mis_facilidades": "Mis Facilidades" in txt,
             "desglose_por_regimen": _parse_ccma_detalle_periodos(txt),
         }
@@ -337,8 +341,9 @@ def auditar_estado_integral_arca(cuit: str, clave: str) -> Dict[str, Any]:
                 m_cap = re.search(r"Obligaci[oó]n Mensual:\s*\$?\s*([\d\.,]+)", txt)
                 m_acc = re.search(r"Accesorios:\s*\$?\s*([\d\.,]+)", txt)
                 m_acre = re.search(r"Total Saldo Acreedor:\s*\$?\s*([\d\.,]+)", txt)
-                if not (m_deud or m_cap or m_acre) and "no registra" not in txt.lower():
-                    raise RuntimeError("PARSE_ERROR: CCMA no mostró los totales esperados (sesión expirada o pantalla incompleta).")
+                sin_deuda_explicito = any(k in txt.lower() for k in ("no registra deuda", "no posee deuda", "sin deuda"))
+                if not m_deud and not sin_deuda_explicito:
+                    raise RuntimeError("PARSE_ERROR: CCMA no mostró 'Total Saldo Deudor' ni constancia explícita sin deuda.")
                 resultado["ccma"] = {
                     "saldo_deudor_vencido": _parse_ar_num(m_deud.group(1), strict=True) if m_deud else 0.0,
                     "capital_mensual": _parse_ar_num(m_cap.group(1), strict=True) if m_cap else 0.0,
@@ -493,8 +498,8 @@ def auditar_estado_integral_arca(cuit: str, clave: str) -> Dict[str, Any]:
                 stxt = sct.inner_text("body")
                 m_sd = re.search(r"Deuda\s*\n\s*\$\s*([\d\.,]+)", stxt)
                 m_sld = re.search(r"Saldo Libre Disponibilidad\s*\n\s*\$\s*([\d\.,]+)", stxt)
-                if not (m_sd or m_sld) and "estado de cumplimiento" not in stxt.lower():
-                    raise RuntimeError("PARSE_ERROR: SCT no devolvió la tabla de Estado de Cumplimiento.")
+                if not (m_sd or m_sld):
+                    raise RuntimeError("PARSE_ERROR: SCT no devolvió importes de Deuda ni Saldo Libre Disponibilidad.")
                 resultado["sct"] = {
                     "deuda_dgi_ventana_actual": _parse_ar_num(m_sd.group(1), strict=True) if m_sd else 0.0,
                     "saldo_libre_disponibilidad": _parse_ar_num(m_sld.group(1), strict=True) if m_sld else 0.0,
@@ -534,8 +539,8 @@ def auditar_estado_integral_arca(cuit: str, clave: str) -> Dict[str, Any]:
             m_cat = re.search(r"Categor[ií]a\s+([A-K])", mtxt)
             m_fact = re.search(r"\$([\d\.,]+)\s*\n\s*Monto facturado", mtxt)
             m_tope = re.search(r"\$([\d\.,]+)\s*\n\s*Tope categor", mtxt)
-            if not (m_cat or m_fact or m_tope) and "no sos monotributista" not in mtxt.lower() and "adherirse" not in mtxt.lower():
-                raise RuntimeError("PARSE_ERROR: Portal Monotributo no cargó datos de categoría ni facturación.")
+            if not m_cat and "no sos monotributista" not in mtxt.lower() and "adherirse" not in mtxt.lower():
+                raise RuntimeError("PARSE_ERROR: Portal Monotributo no mostró categoría ni estado de no adherido.")
             fact_val = _parse_ar_num(m_fact.group(1), strict=True) if m_fact else 0.0
             tope_val = _parse_ar_num(m_tope.group(1), strict=True) if m_tope else 0.0
             resultado["portal_monotributo"] = {
@@ -651,13 +656,19 @@ def auditar_estado_integral_arca(cuit: str, clave: str) -> Dict[str, Any]:
         else f"Deuda DGI ventana actual: ${deuda_sct:,.2f} · Saldo a favor (SLD): ${sct_d.get('saldo_libre_disponibilidad', 0):,.2f}"
     )
 
+    pasivo_linea = (
+        f"⚠️ NO VERIFICADO (faltan módulos: {', '.join(fallidas)})"
+        if fallidas
+        else f"**${pasivo_total:,.2f}**"
+    )
+
     autos_md = "\n".join(f"- **{a['titulo']}:** {a['cadencia']} (`{a['cron']}`)" for a in automatizaciones)
     resultado["informe_contador_markdown"] = (
         f"## 1. Tu Diagnóstico Real en ARCA (CUIT {cuit_fmt})\n"
         f"- **Deuda vencida exigible hoy (CCMA):** {ccma_linea}.\n"
         f"- **Planes vigentes (Mis Facilidades):** {mf_linea}.\n"
         f"- **Sistema de Cuentas Tributarias (SCT):** {sct_linea}.\n"
-        f"- **Pasivo total real en ARCA hoy:** **${pasivo_total:,.2f}**.\n"
+        f"- **Pasivo total real en ARCA hoy:** {pasivo_linea}.\n"
         f"- **Monotributo:** Categoría **{mono_d.get('categoria', 'N/D')}** · Facturado 12m: ${mono_d.get('facturado_acumulado', 0):,.2f} / Tope: ${mono_d.get('tope_categoria', 0):,.2f} (Margen: **${mono_d.get('margen_disponible_categoria', 0):,.2f}**).\n"
         f"- **Entidades vinculadas detectadas:** {', '.join(resultado.get('cuits_representadas_en_arca', []))}.\n"
         f"- **Sello de Verificación:** {resultado['doublecheck']['sello_verificacion']}\n\n"

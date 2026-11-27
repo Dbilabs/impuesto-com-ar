@@ -14,6 +14,7 @@ export async function onRequest({ request, env, params }) {
   if (request.headers.get("Content-Type")) headers.set("Content-Type", request.headers.get("Content-Type"));
   if (request.headers.get("Authorization")) headers.set("Authorization", request.headers.get("Authorization"));
   if (request.headers.get("X-User-Token")) headers.set("X-User-Token", request.headers.get("X-User-Token"));
+  if (request.headers.get("CF-Connecting-IP")) headers.set("CF-Connecting-IP", request.headers.get("CF-Connecting-IP"));
   if (env.BOT_API_SECRET) headers.set("X-Bot-Secret", env.BOT_API_SECRET);
 
   const resp = await fetch(target, {

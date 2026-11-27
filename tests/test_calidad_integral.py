@@ -28,6 +28,7 @@ os.environ["PLATFORM_ADMIN_EMAILS"] = "admin_fixture@impuesto.test"
 
 from bot import boveda_segura as _bv_mod
 from bot import backoffice_growth as _bg_mod
+from bot import validador_invariantes as _vi_mod
 
 _tmp_path = Path(_TEST_TMPDIR.name)
 _bv_mod.VAULT_DIR = _tmp_path
@@ -36,10 +37,15 @@ _bv_mod.ACL_FILE = _tmp_path / "acl.enc"
 _bv_mod.HISTORY_FILE = _tmp_path / "historial.enc"
 _bv_mod.KEY_FILE = _tmp_path / ".vault_key"
 _bv_mod.BILLING_FILE = _tmp_path / "admin_billing.enc"
+_vi_mod.INCIDENTES_FILE = _tmp_path / "incidentes_calidad.json"
 for _attr in ("GROWTH_FILE", "HISTORY_FILE", "VAULT_FILE", "ACL_FILE", "BILLING_FILE"):
     if hasattr(_bg_mod, _attr):
         setattr(_bg_mod, _attr, _tmp_path / f"{_attr.lower()}.enc")
 _bg_mod.HISTORY_FILE = _bv_mod.HISTORY_FILE
+
+
+def _tok_verificado(email: str, label: str = "test") -> str:
+    return _bv_mod.crear_token_usuario(email, label, verificado=True)["token"]
 
 from fastapi.testclient import TestClient
 from bot.main import app
@@ -59,14 +65,19 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
         self.assertEqual(r_vinc.status_code, 200)
         self.assertIn("AES-256", r_vinc.text)
 
-        # Vincular con dueño, verificar sin fuga autenticado y revocar como Owner (P0-2)
+        # Vincular con dueño verificado, verificar sin fuga autenticado y revocar como Owner (P0-2)
         test_cuit = "20301234567"
-        r_save = client.post("/api/v1/vincular", json={
-            "email": "test01_owner@impuesto.test",
-            "cuit": test_cuit,
-            "clave_fiscal": "TestSecret999",
-            "modo": "solo_lectura_cifrada",
-        })
+        tok_pre = _tok_verificado("test01_owner@impuesto.test")
+        r_save = client.post(
+            "/api/v1/vincular",
+            headers={"X-User-Token": tok_pre},
+            json={
+                "email": "test01_owner@impuesto.test",
+                "cuit": test_cuit,
+                "clave_fiscal": "TestSecret999",
+                "modo": "solo_lectura_cifrada",
+            },
+        )
         self.assertEqual(r_save.status_code, 200)
         self.assertTrue(r_save.json()["ok"])
         tok = r_save.json()["token"]
@@ -226,21 +237,26 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
         self.assertTrue(r_anon.json().get("requiere_autenticacion"))
         self.assertTrue(r_anon.json().get("acceso_denegado"))
 
-        # 2. Owner vincula CUIT y obtiene token + URLs privadas
-        r_link = client.post("/api/v1/vincular", json={
-            "email": owner_email,
-            "cuit": cuit_test,
-            "clave_fiscal": "ClaveSoloTest123",
-            "modo": "solo_lectura_cifrada",
-            "etiqueta_token": "gemini_test",
-        })
+        # 2. Owner verificado vincula CUIT y obtiene token + URLs privadas
+        tok_owner_pre = _tok_verificado(owner_email)
+        r_link = client.post(
+            "/api/v1/vincular",
+            headers={"X-User-Token": tok_owner_pre},
+            json={
+                "email": owner_email,
+                "cuit": cuit_test,
+                "clave_fiscal": "ClaveSoloTest123",
+                "modo": "solo_lectura_cifrada",
+                "etiqueta_token": "gemini_test",
+            },
+        )
         self.assertTrue(r_link.json().get("ok"))
         tok_owner = r_link.json().get("token")
         self.assertTrue(tok_owner.startswith("imp_live_"))
         self.assertIn("gemini", r_link.json().get("urls_privadas_mcp", {}))
 
-        # 3. Intruso con su propio token NO ve el CUIT del Owner ni puede consultarlo
-        tok_attacker = bv.crear_token_usuario(attacker_email, "intruso")["token"]
+        # 3. Intruso con su propio token verificado NO ve el CUIT del Owner ni puede consultarlo
+        tok_attacker = bv.crear_token_usuario(attacker_email, "intruso", verificado=True)["token"]
         r_att_list = client.post(
             "/api/v1/mcp/tool",
             headers={"X-User-Token": tok_attacker, "X-LLM-Origin": "gemini"},
@@ -262,8 +278,8 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
         )
         self.assertTrue(r_auth.json().get("ok"))
 
-        # 5. Socio genera token y ve el CUIT + deja nota desde ChatGPT -> Owner la ve desde Gemini
-        tok_socio = bv.crear_token_usuario(socio_email, "chatgpt")["token"]
+        # 5. Socio genera token tras OTP y ve el CUIT + deja nota desde ChatGPT -> Owner la ve desde Gemini
+        tok_socio = bv.crear_token_usuario(socio_email, "chatgpt", verificado=True)["token"]
         r_soc_list = client.post(
             "/api/v1/mcp/tool",
             headers={"X-User-Token": tok_socio, "X-LLM-Origin": "chatgpt"},
@@ -421,10 +437,11 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
         email_chat = "chat_only_user@impuesto.test"
         frase = "Mate-Mendoza-Fiscal-7741"
 
-        # 1. Sin header ni ?token=: vincula 100% en el chat
+        # 1. Tras OTP verificado, vincula 100% en el chat con frase clave personalizada
+        tok_otp = _tok_verificado(email_chat)
         r_v = client.post(
             "/api/v1/mcp/tool",
-            headers={"X-LLM-Origin": "gemini"},
+            headers={"X-LLM-Origin": "gemini", "X-User-Token": tok_otp},
             json={
                 "name": "vincular_cuenta_en_chat",
                 "arguments": {"email": email_chat, "cuit": cuit_chat, "clave_fiscal": "ClaveTestChat99", "frase_clave": frase},
@@ -516,12 +533,17 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
         cuit_test = "20999999992"
         em = "deadlock_test@impuesto.test"
 
-        r_link = client.post("/api/v1/vincular", json={
-            "email": em,
-            "cuit": cuit_test,
-            "clave_fiscal": "ClaveTest123",
-            "modo": "solo_lectura_cifrada",
-        })
+        tok_pre = _tok_verificado(em)
+        r_link = client.post(
+            "/api/v1/vincular",
+            headers={"X-User-Token": tok_pre},
+            json={
+                "email": em,
+                "cuit": cuit_test,
+                "clave_fiscal": "ClaveTest123",
+                "modo": "solo_lectura_cifrada",
+            },
+        )
         tok = r_link.json()["token"]
 
         # 1. Simular auditoría en curso (inflight) y llamar a consultar_ccma_cuenta_corriente
@@ -569,45 +591,79 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
         self.assertAlmostEqual(desg["monotributo_jubilacion_021"], 12500.00, places=2)
         self.assertTrue(desg["alerta_doble_aporte_jubilatorio"])
 
-    def test_sec_p0_1_bloquea_account_takeover_sin_otp(self):
-        """P0-1: nadie puede obtener token de una cuenta existente ni de super-admin sin OTP verificado."""
+    def test_sec_p0_1_poc_reclamo_email_invitado_bloqueado(self):
+        """P0-1 PoC exacto de Claude: owner autoriza a un contador invitado como editor; atacante intenta reclamar ese email sin OTP vía solo_token_llm -> BLOQUEADO."""
         client = TestClient(app)
-        # 1. Admin sin OTP -> bloqueado
+        cuit_v = "20555555551"
+        owner_em = "owner_poc1@impuesto.test"
+        contador_em = "contador_invitado_poc1@impuesto.test"
+
+        tok_owner = _tok_verificado(owner_em)
+        r1 = client.post("/api/v1/vincular", headers={"X-User-Token": tok_owner}, json={
+            "email": owner_em, "cuit": cuit_v, "clave_fiscal": "ClaveReal1",
+        })
+        self.assertTrue(r1.json().get("ok"))
+
+        # Owner autoriza al contador como editor (el contador todavía no inició sesión nunca)
+        r_auth = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_owner}, json={
+            "name": "autorizar_usuario_cuit",
+            "arguments": {"cuit": cuit_v, "email_invitado": contador_em, "rol": "editor"},
+        })
+        self.assertTrue(r_auth.json().get("ok"))
+
+        # Ataque PoC 1: atacante intenta reclamar contador_em vía POST /api/v1/vincular solo_token_llm sin OTP
+        r_attack = client.post("/api/v1/vincular", json={
+            "email": contador_em,
+            "modo": "solo_token_llm",
+            "token_personalizado": "Frase-Atacante-2026-9999",
+        })
+        self.assertFalse(r_attack.json().get("ok"))
+        self.assertTrue(r_attack.json().get("requiere_otp"))
+        self.assertIsNone(_bv_mod.resolver_email_por_token("Frase-Atacante-2026-9999"))
+
+        # Admin sin OTP -> también bloqueado
         r_adm = client.post("/api/v1/mcp/tool", json={
             "name": "vincular_cuenta_en_chat",
-            "arguments": {"email": "admin_fixture@impuesto.test", "cuit": "20555555551", "clave_fiscal": "Fake123"},
+            "arguments": {"email": "admin_fixture@impuesto.test", "cuit": "20555555559", "clave_fiscal": "Fake123"},
         })
         self.assertFalse(r_adm.json().get("ok"))
         self.assertTrue(r_adm.json().get("requiere_otp"))
 
-        # 2. Usuario ya existente -> segundo intento sin OTP bloqueado
-        r1 = client.post("/api/v1/vincular", json={
-            "email": "victima_p01@impuesto.test", "cuit": "20555555552", "clave_fiscal": "RealPass1",
-        })
-        self.assertTrue(r1.json().get("ok"))
-        r_takeover = client.post("/api/v1/vincular", json={
-            "email": "victima_p01@impuesto.test", "modo": "solo_token_llm",
-        })
-        self.assertFalse(r_takeover.json().get("ok"))
-        self.assertTrue(r_takeover.json().get("requiere_otp"))
-
-    def test_sec_p0_2_bloquea_borrado_y_sobrescritura_sin_dueño(self):
-        """P0-2: email vacío no puede pisar clave de CUIT ajeno, y DELETE requiere Owner autenticado."""
+    def test_sec_p0_2_poc_pisar_clave_con_email_owner_bloqueado(self):
+        """P0-2 PoC exacto de Claude: conociendo solo el email del owner, POST /api/v1/vincular SIN token NO debe pisar la Clave Fiscal."""
         client = TestClient(app)
         cuit_v = "20555555553"
-        r1 = client.post("/api/v1/vincular", json={"email": "dueno_p02@impuesto.test", "cuit": cuit_v, "clave_fiscal": "RealSecret"})
+        owner_em = "dueno_poc2@impuesto.test"
+        tok_owner = _tok_verificado(owner_em)
+        r1 = client.post("/api/v1/vincular", headers={"X-User-Token": tok_owner}, json={
+            "email": owner_em, "cuit": cuit_v, "clave_fiscal": "ClaveReal1",
+        })
         self.assertTrue(r1.json().get("ok"))
+
+        # Ataque PoC 2: atacante envía email del owner + clave basura sin token
+        r_attack = client.post("/api/v1/vincular", json={
+            "email": owner_em, "cuit": cuit_v, "clave_fiscal": "basura",
+        })
+        self.assertFalse(r_attack.json().get("ok"))
+        self.assertTrue(r_attack.json().get("requiere_otp"))
+        # Verificar que la clave real en la bóveda NO fue pisada
+        rec = _bv_mod.obtener_credenciales_descifradas(cuit_v)
+        self.assertEqual(rec["clave_fiscal"], "ClaveReal1")
+
         # Email vacío intentando pisar la clave -> rechazado
         r_empty = client.post("/api/v1/vincular", json={"email": "", "cuit": cuit_v, "clave_fiscal": "Basura999"})
         self.assertFalse(r_empty.json().get("ok"))
         self.assertTrue(r_empty.json().get("acceso_denegado"))
+
         # Otro usuario intentando DELETE -> 403
-        tok_other = _bv_mod.crear_token_usuario("intruso_p02@impuesto.test", "t", verificado=True)["token"]
+        tok_other = _tok_verificado("intruso_p02@impuesto.test")
         self.assertEqual(client.delete(f"/api/v1/vincular/{cuit_v}", headers={"X-User-Token": tok_other}).status_code, 403)
 
-    def test_sec_p0_5_emision_cruzada_y_confirmado_string_false(self):
-        """P0-5: cuit_emisor != cuit autorizado es bloqueado y confirmado='false' NO es True."""
+    def test_sec_p0_5_emision_cruzada_idempotencia_y_confirmado_estricto(self):
+        """P0-5 + R1: cuit_emisor != cuit autorizado es bloqueado, confirmado='false' NO es True, y confirmado=true exige idempotency_key y no duplica CAE."""
+        from unittest.mock import patch
         from bot import main as bot_main
+        from bot import arca_ws
         self.assertFalse(bot_main._parse_bool_strict("false"))
         self.assertFalse(bot_main._parse_bool_strict("0"))
         self.assertTrue(bot_main._parse_bool_strict(True))
@@ -615,14 +671,41 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
 
         client = TestClient(app)
         cuit_propio = "20555555554"
-        r_v = client.post("/api/v1/vincular", json={"email": "emisor_p05@impuesto.test", "cuit": cuit_propio, "clave_fiscal": "Clave1"})
+        tok_pre = _tok_verificado("emisor_p05@impuesto.test")
+        r_v = client.post("/api/v1/vincular", headers={"X-User-Token": tok_pre}, json={
+            "email": "emisor_p05@impuesto.test", "cuit": cuit_propio, "clave_fiscal": "Clave1",
+        })
         tok = r_v.json()["token"]
+        # 1. Emisión cruzada bloqueada
         r_cross = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok}, json={
             "name": "emitir_factura_wsfe",
             "arguments": {"cuit": cuit_propio, "cuit_emisor": "30715875086", "cbte_tipo": 11, "importe_neto": 100, "confirmado": "false"},
         })
         self.assertFalse(r_cross.json().get("ok"))
         self.assertTrue(r_cross.json().get("acceso_denegado"))
+
+        # 2. confirmado=true sin idempotency_key -> rechazado
+        r_noidem = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok}, json={
+            "name": "emitir_factura_wsfe",
+            "arguments": {"cuit": cuit_propio, "cuit_emisor": cuit_propio, "cbte_tipo": 11, "importe_neto": 100, "confirmado": True},
+        })
+        self.assertFalse(r_noidem.json().get("ok"))
+
+        # 3. confirmado=true con idempotency_key -> 2 llamadas solo emiten 1 CAE
+        emisiones = {"n": 0}
+        def fake_emit(**kw):
+            emisiones["n"] += 1
+            return {"ok": True, "cae": "76471234567890", "cbte_nro": 1}
+        with patch.object(arca_ws, "emitir_comprobante_wsfe", side_effect=fake_emit):
+            payload = {
+                "name": "emitir_factura_wsfe",
+                "arguments": {"cuit": cuit_propio, "cuit_emisor": cuit_propio, "cbte_tipo": 11, "importe_neto": 100, "confirmado": True, "idempotency_key": "venta-0001"},
+            }
+            r_e1 = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok}, json=payload)
+            r_e2 = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok}, json=payload)
+            self.assertTrue(r_e1.json().get("ok"))
+            self.assertTrue(r_e2.json().get("idempotente_reusado"))
+            self.assertEqual(emisiones["n"], 1)
 
     def test_sec_p0_6_parser_ar_num_estricto(self):
         """P0-6: _parse_ar_num distingue miles de decimales y no devuelve 0 silencioso en strict=True."""
@@ -633,8 +716,8 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
         with self.assertRaises(ValueError):
             _parse_ar_num("N/A", strict=True)
 
-    def test_sec_p0_7_circuit_breaker_clave_fiscal_incorrecta(self):
-        """P0-7: tras 1 error CLAVE_FISCAL_INCORRECTA, el circuit breaker frena nuevos logins hasta actualizar la clave."""
+    def test_sec_p0_7_circuit_breaker_y_recheck_en_lock(self):
+        """P0-7: tras 1 error CLAVE_FISCAL_INCORRECTA, el circuit breaker frena nuevos logins incluso si otra tool estaba esperando el lock."""
         from unittest.mock import patch
         from bot import main as bot_main
         cuit_cb = "20555555555"
@@ -648,11 +731,23 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
              patch.object(bot_main, "AUDIT_SYNC_WAIT_SEC", 1.0):
             r1 = bot_main._ejecutar_auditoria_sin_timeout(cuit_cb, "Mala123")
             self.assertEqual(r1.get("estado"), "CLAVE_FISCAL_INCORRECTA")
-            # Segundo llamado con la misma clave NO dispara Playwright
             r2 = bot_main._ejecutar_auditoria_sin_timeout(cuit_cb, "Mala123", forzar_refresco=True)
             self.assertTrue(r2.get("circuit_breaker_activo"))
             self.assertEqual(calls["n"], 1)
         bot_main._clear_bad_creds(cuit_cb)
+
+    def test_sec_r2_limite_login_3_niveles(self):
+        """R2: el limitador de 3 niveles frena fuerza bruta por IP+usuario sin bloquear 24h."""
+        from bot.limite_login import LimiteLogin
+        lim = LimiteLogin(por_ip_usuario=3, por_usuario=10, global_por_min=50)
+        for _ in range(3):
+            lim.registrar_fallo("1.2.3.4", "user@test.com")
+        ok, msg = lim.chequear("1.2.3.4", "user@test.com")
+        self.assertFalse(ok)
+        self.assertIn("Esperá", msg)
+        # Otra IP todavía puede operar hasta el umbral por usuario (sin DoS de 24h)
+        ok_other, _ = lim.chequear("5.6.7.8", "user@test.com")
+        self.assertTrue(ok_other)
 
 
 if __name__ == "__main__":

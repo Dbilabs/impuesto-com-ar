@@ -12,30 +12,36 @@ los subtotales no cuadran con el total oficial del organismo, este validador lo 
 en milisegundos, registra el incidente para corrección automática y avisa con transparencia.
 """
 
+import os
 import json
 import datetime
+import threading
 from pathlib import Path
 from typing import Dict, Any, List
 
 INCIDENTES_FILE = Path(__file__).resolve().parent.parent / "data" / "incidentes_calidad.json"
+_inc_lock = threading.Lock()
 
 
 def registrar_incidente_calidad(origen: str, alertas: List[Dict[str, Any]], contexto: Dict[str, Any] = None):
-    """Persiste incidentes de cuadre/parser (sin datos sensibles) para mejora continua."""
+    """Persiste incidentes de cuadre/parser de forma atómica (sin datos sensibles) para mejora continua."""
     if not alertas:
         return
     try:
-        INCIDENTES_FILE.parent.mkdir(parents=True, exist_ok=True)
-        prev = []
-        if INCIDENTES_FILE.exists():
-            prev = json.loads(INCIDENTES_FILE.read_text(encoding="utf-8"))
-        prev.append({
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "origen": origen,
-            "alertas": alertas,
-            "contexto": contexto or {},
-        })
-        INCIDENTES_FILE.write_text(json.dumps(prev[-200:], ensure_ascii=False, indent=2), encoding="utf-8")
+        with _inc_lock:
+            INCIDENTES_FILE.parent.mkdir(parents=True, exist_ok=True)
+            prev = []
+            if INCIDENTES_FILE.exists():
+                prev = json.loads(INCIDENTES_FILE.read_text(encoding="utf-8"))
+            prev.append({
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "origen": origen,
+                "alertas": alertas,
+                "contexto": contexto or {},
+            })
+            tmp = INCIDENTES_FILE.with_suffix(f".tmp.{os.getpid()}.{threading.get_ident()}")
+            tmp.write_text(json.dumps(prev[-200:], ensure_ascii=False, indent=2), encoding="utf-8")
+            os.replace(tmp, INCIDENTES_FILE)
     except Exception:
         pass
 
