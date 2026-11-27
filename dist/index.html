@@ -30,28 +30,37 @@
 <header class="hdr"><div class="wrap">
 <a class="logo" href="/" aria-label="impuesto.com.ar, inicio"><svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#0B6E4F"/><path d="M9 17l4 4 10-10" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg><span style="color:var(--ink)">impuesto<span>.com.ar</span></span></a>
 <nav class="nav" aria-label="Principal"><a href="/iva/">IVA</a><a href="/iibb/">Ingresos Brutos</a><a href="/ganancias/">Ganancias</a><a href="/retenciones/">Retenciones</a><a href="/empresas/">Empresas</a><a href="/integraciones/">Integraciones</a><a href="/herramientas/">Herramientas</a></nav>
-<a class="btn sm" href="/diagnostico/">Diagnóstico gratis</a>
+<a class="btn sm" href="#conectar-ahora">Conectar en mi IA</a>
 </div></header><main id="contenido">
 <section class="hero"><div class="wrap">
 <div class="hero-txt">
-<span class="pill">Segunda opinión gratis · 2 minutos</span>
-<h1>Tus impuestos bien llevados te hacen ganar plata</h1>
-<p class="lead">¿Querés saber qué no te está diciendo tu contador o tu departamento de impuestos? Un especialista revisa tu caso y te muestra dónde pagás de más, qué podés recuperar y cómo planificar.</p>
+<span class="pill">⚡ Contador Público Agéntico y CFO · 24/7 en tu propia IA</span>
+<h1>Tus impuestos resueltos desde el chat que ya usás</h1>
+<p class="lead">Sin instalar apps nuevas ni salir a configurar webs. Todo ocurre 100% dentro de <strong>ChatGPT, Claude, Gemini, Copilot o Cursor</strong>: auditoría real en ARCA, facturación con CAE, pre-cierre de IVA, balances y alertas automáticas.</p>
 <ul class="checks">
-<li>Para empresas, responsables inscriptos y profesionales</li>
-<li>Te atiende un contador matriculado de un estudio aliado</li>
-<li>El diagnóstico no te pide la clave fiscal</li>
-<li>Recibís la propuesta antes de decidir nada</li>
+<li>Para Monotributistas, Responsables Inscriptos, Empresas y Estudios Contables</li>
+<li>Cruce real en ARCA (CCMA, Mis Facilidades, SCT, DFE y Mis Comprobantes)</li>
+<li>Cifrado AES-256 en modo solo lectura · Historial compartido entre todos tus LLMs</li>
+<li>Autorizá socios o analistas por email desde el chat sin compartir tu Clave Fiscal</li>
 </ul>
 </div>
-<div style="flex:1 1 420px;min-width:0"><div class="tool" id="diagnostico" data-diag data-email="info@impuesto.com.ar">
-<div class="stepinfo"><span class="d-num">Paso 1 de 4</span><span>Gratis · 2 minutos</span></div>
-<div class="bar"><i></i></div>
-<h2 class="d-title" style="margin:0 0 14px;font-size:24px">¿Para quién es la consulta?</h2>
-<div class="d-body"><noscript><p>Para hacer el diagnóstico necesitás JavaScript activado. También podés escribirnos a <a href="mailto:info@impuesto.com.ar">info@impuesto.com.ar</a>.</p></noscript></div>
-<button type="button" class="d-back" hidden style="background:none;border:0;padding:12px 0 0;font:inherit;color:var(--muted);cursor:pointer;min-height:44px">← Volver</button>
-<template id="tpl-form-persona"><form novalidate><label for="f-nombre">Nombre y apellido</label><input id="f-nombre" type="text" name="nombre" autocomplete="name" required><div class="row2"><label for="f-email">Email</label><input id="f-email" type="email" name="email" autocomplete="email" required><label for="f-whatsapp">WhatsApp</label><input id="f-whatsapp" type="tel" name="whatsapp" autocomplete="tel" placeholder="11 1234 5678" required></div><label for="f-provincia">Provincia</label><select id="f-provincia" name="provincia" required><option value="">Elegí una opción</option><option>Ciudad Autónoma de Buenos Aires</option><option>Buenos Aires</option><option>Catamarca</option><option>Chaco</option><option>Chubut</option><option>Córdoba</option><option>Corrientes</option><option>Entre Ríos</option><option>Formosa</option><option>Jujuy</option><option>La Pampa</option><option>La Rioja</option><option>Mendoza</option><option>Misiones</option><option>Neuquén</option><option>Río Negro</option><option>Salta</option><option>San Juan</option><option>San Luis</option><option>Santa Cruz</option><option>Santa Fe</option><option>Santiago del Estero</option><option>Tierra del Fuego</option><option>Tucumán</option></select><label for="f-mensaje">Contanos tu caso (opcional)</label><textarea id="f-mensaje" name="mensaje" maxlength="1200"></textarea><div class="hp" aria-hidden="true"><label>No completar<input type="text" name="web" tabindex="-1" autocomplete="off"></label></div><label class="chk"><input type="checkbox" name="consentimiento" value="si" required><span>Acepto que impuesto.com.ar comparta mis datos con el estudio contable aliado más adecuado para mi caso (estudios contables aliados) para que me contacte, según la <a href="/privacidad/">política de privacidad</a>.</span></label><button class="btn" type="submit" style="width:100%;margin-top:6px">Quiero mi diagnóstico gratis</button><p class="err" role="alert"></p></form></template>
-<template id="tpl-form-empresa"><form novalidate><div class="row2"><label for="f-nombre">Nombre y apellido</label><input id="f-nombre" type="text" name="nombre" autocomplete="name" required><label for="f-cargo">Cargo</label><input id="f-cargo" type="text" name="cargo" autocomplete="organization-title" required></div><label for="f-empresa">Empresa</label><input id="f-empresa" type="text" name="empresa" autocomplete="organization" required><div class="row2"><label for="f-email">Email laboral</label><input id="f-email" type="email" name="email" autocomplete="email" required><label for="f-whatsapp">WhatsApp / teléfono</label><input id="f-whatsapp" type="tel" name="whatsapp" autocomplete="tel" required></div><div class="row2"><label for="f-facturacion">Facturación anual aproximada</label><select id="f-facturacion" name="facturacion" required><option value="">Elegí una opción</option><option>Hasta $500 millones</option><option>Entre $500 y $3.000 millones</option><option>Entre $3.000 y $15.000 millones</option><option>Más de $15.000 millones</option><option>Prefiero no decirlo</option></select><label for="f-provincia">Provincia principal</label><select id="f-provincia" name="provincia" required><option value="">Elegí una opción</option><option>Ciudad Autónoma de Buenos Aires</option><option>Buenos Aires</option><option>Catamarca</option><option>Chaco</option><option>Chubut</option><option>Córdoba</option><option>Corrientes</option><option>Entre Ríos</option><option>Formosa</option><option>Jujuy</option><option>La Pampa</option><option>La Rioja</option><option>Mendoza</option><option>Misiones</option><option>Neuquén</option><option>Río Negro</option><option>Salta</option><option>San Juan</option><option>San Luis</option><option>Santa Cruz</option><option>Santa Fe</option><option>Santiago del Estero</option><option>Tierra del Fuego</option><option>Tucumán</option></select></div><label for="f-mensaje">Contanos el caso (opcional)</label><textarea id="f-mensaje" name="mensaje" maxlength="1200"></textarea><div class="hp" aria-hidden="true"><label>No completar<input type="text" name="web" tabindex="-1" autocomplete="off"></label></div><label class="chk"><input type="checkbox" name="consentimiento" value="si" required><span>Acepto que impuesto.com.ar comparta mis datos con el estudio contable aliado más adecuado para mi caso (estudios contables aliados) para que me contacte, según la <a href="/privacidad/">política de privacidad</a>.</span></label><button class="btn" type="submit" style="width:100%;margin-top:6px">Quiero mi diagnóstico gratis</button><p class="err" role="alert"></p></form></template>
+<div style="flex:1 1 420px;min-width:0"><div class="tool" id="conectar-ahora" style="border:2px solid rgba(11,110,79,.22)">
+<div class="stepinfo"><span style="color:var(--acc);font-weight:700">✦ Arrancá en 10 segundos</span><span>ChatGPT · Claude · Gemini · Copilot</span></div>
+<h2 style="margin:10px 0 8px;font-size:23px;line-height:1.25">Simplemente escribí esto en tu chat:</h2>
+<p style="margin:0 0 14px;color:var(--muted);font-size:14.5px">Abrí ChatGPT, Claude, Gemini o el asistente que uses y mandale esta frase:</p>
+<div style="background:#F0FDF4;border:1.5px solid #0B6E4F;border-radius:14px;padding:16px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px">
+  <code id="frase-conectar" style="font-size:17px;font-weight:800;color:#074F39;letter-spacing:-.01em;word-break:break-word">quiero conectar.impuesto.com.ar</code>
+  <button type="button" class="btn sm" onclick="navigator.clipboard.writeText('quiero conectar.impuesto.com.ar');this.textContent='¡Copiado!';setTimeout(()=>this.textContent='Copiar',2000)" style="flex-shrink:0">Copiar</button>
+</div>
+<div style="background:#F8FAFC;border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:16px;font-size:13.5px">
+  <div><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted2)">URL única del conector (para pegar 1 sola vez)</div><strong style="font-family:ui-monospace,monospace;color:var(--ink)">https://conectar.impuesto.com.ar</strong></div>
+  <button type="button" class="btn sec sm" onclick="navigator.clipboard.writeText('https://conectar.impuesto.com.ar');this.textContent='¡Copiada!';setTimeout(()=>this.textContent='Copiar URL',2000)" style="flex-shrink:0">Copiar URL</button>
+</div>
+<p style="margin:0 0 14px;font-size:13.5px;color:var(--muted)">Todo el resto —vincular tu CUIT, auditar ARCA, emitir facturas/NC/ND y programar tus vencimientos— <strong>sucede 100% dentro del chat</strong>.</p>
+<div style="display:flex;gap:10px;flex-wrap:wrap">
+  <a class="btn sm" href="https://conectar.impuesto.com.ar" style="flex:1">Ver cómo conectar →</a>
+  <a class="btn sec sm" href="/diagnostico/" style="flex:1">Segunda opinión humana</a>
+</div>
 </div></div>
 </div></section>
 
@@ -68,7 +77,7 @@ Dejamos obsoletos a los estudios contables tradicionales y a las apps cerradas d
 Sin horarios de oficina de 9 a 18 hs. Sin tener que aprender otra app gris ni esperar días por un VEP. Conectá tu propia IA (Claude, ChatGPT o WhatsApp) para que audite tus cuentas, ejecute más de <strong>80 trámites oficiales en ARCA en 15 segundos</strong> y te dé análisis claros, visuales y accionables sin jerga contable.
 </p>
 <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
-<a class="btn" href="/mcp">Conectar con Claude / ChatGPT →</a>
+<a class="btn" href="https://conectar.impuesto.com.ar">Conectar en ChatGPT / Claude / Gemini →</a>
 <a class="btn sec" href="/estudios/">Modo Estudio Contable (B2B)</a>
 <a class="btn sec" href="/whatsapp/">Conectar mi WhatsApp</a>
 </div>
@@ -166,7 +175,7 @@ Sin horarios de oficina de 9 a 18 hs. Sin tener que aprender otra app gris ni es
         <div><strong>ABM Puntos de Venta y CBU:</strong> Habilitación de puntos electrónicos y declaración de cuentas bancarias.</div>
       </li>
     </ul>
-    <a class="btn sm" href="/mcp" style="margin-top:auto">Conectar Empresa con MCP →</a>
+    <a class="btn sm" href="https://conectar.impuesto.com.ar" style="margin-top:auto">Conectar Empresa en mi IA →</a>
   </div>
 
   <div class="card" style="border-top:4px solid #0052CC">

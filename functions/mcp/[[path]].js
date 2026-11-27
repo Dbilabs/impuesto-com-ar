@@ -2911,13 +2911,17 @@ p{color:var(--muted);font-size:15.5px;margin:0 0 20px}
 </head>
 <body>
 <div class="box">
-<span class="pill">Conector Universal ARCA · Compatible con Gemini, Claude, ChatGPT, Copilot y Cursor</span>
+<span class="pill">Conector Universal ARCA · ChatGPT · Claude · Gemini · Copilot · Cursor</span>
 <h1>${h1}</h1>
-<p>Pegá esta única URL en la sección de Conectores / MCP de cualquier asistente IA. Todo lo demás (vinculación de CUIT, auditorías 360°, facturación, tareas programadas e historial compartido) ocurre 100% dentro del chat.</p>
+<p>Simplemente escribí <strong>"quiero conectar.impuesto.com.ar"</strong> en el chat de ChatGPT, Claude, Gemini o el asistente que uses (o pegá esta única URL en Conectores una sola vez). Todo lo demás ocurre 100% dentro del chat.</p>
 
 <div class="url-card active">
-  <div><div class="url-lbl">★ URL Única para todos los LLMs (Gemini · Claude · ChatGPT · Copilot · Cursor · Perplexity)</div><div class="url-text">https://conectar.impuesto.com.ar</div></div>
-  <button class="btn" onclick="navigator.clipboard.writeText('https://conectar.impuesto.com.ar');this.innerText='¡Copiado!'">Copiar URL</button>
+  <div><div class="url-lbl">💬 Escribí esta frase en tu chat</div><div class="url-text">quiero conectar.impuesto.com.ar</div></div>
+  <button class="btn" onclick="navigator.clipboard.writeText('quiero conectar.impuesto.com.ar');this.innerText='¡Copiado!'">Copiar frase</button>
+</div>
+<div class="url-card">
+  <div><div class="url-lbl">★ URL Única del Conector (para pegar 1 sola vez en Conectores)</div><div class="url-text">https://conectar.impuesto.com.ar</div></div>
+  <button class="btn" onclick="navigator.clipboard.writeText('https://conectar.impuesto.com.ar');this.innerText='¡Copiada!'">Copiar URL</button>
 </div>
 
 <ol class="steps">
