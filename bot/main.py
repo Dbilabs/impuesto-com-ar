@@ -47,6 +47,8 @@ from .boveda_segura import (
     admin_listar_clientes,
     admin_ver_movimientos,
     admin_gestionar_suscripcion,
+    solicitar_codigo_otp_email,
+    verificar_codigo_otp_email,
 )
 from .backoffice_growth import (
     esta_en_mantenimiento,
@@ -222,6 +224,24 @@ def _run_auditoria_background(cuit: str, clave: str, entry: Dict[str, Any], acto
             AUDIT_INFLIGHT.pop(cuit, None)
     finally:
         entry["event"].set()
+
+
+def _precalentar_auditoria_en_background(cuit: str, clave: str, actor_email: str = "", origen_llm: str = "prewarm") -> None:
+    """Dispara la Auditoría 360° en segundo plano apenas se vincula un CUIT para que la primera consulta responda en <1s."""
+    if os.environ.get("DISABLE_AUDIT_PREWARM", "").strip() == "1":
+        return
+    if not cuit or not clave or cuit.startswith("20333333") or cuit.startswith("20444444") or cuit.startswith("20999999"):
+        return
+    now = time.time()
+    with _audit_lock:
+        if cuit in AUDIT_INFLIGHT:
+            return
+        cached = AUDIT_CACHE.get(cuit)
+        if cached and (now - cached["ts"]) < AUDIT_TTL_SEC:
+            return
+        inflight = {"started_at": now, "event": threading.Event(), "result": None}
+        AUDIT_INFLIGHT[cuit] = inflight
+        executor.submit(_run_auditoria_background, cuit, clave, inflight, actor_email, origen_llm)
 
 
 def _ejecutar_auditoria_sin_timeout(
@@ -573,6 +593,8 @@ def api_vincular(req: VincularRequest):
                 titulo=f"CUIT {res['cuit']} vinculado bajo propiedad de {email}",
                 detalle=f"Modo: {req.modo} · Token ID: {tok['token_id']}",
             )
+            if req.clave_fiscal:
+                _precalentar_auditoria_en_background(res["cuit"], req.clave_fiscal, actor_email=email, origen_llm="prewarm_web")
     elif req.modo == "solo_token_llm":
         return {"ok": False, "error": "Ingresá tu email para generar tu token personal multi-LLM."}
 
@@ -654,6 +676,7 @@ def run_mcp_tool(
             titulo=f"CUIT {cuit_in} vinculado 100% en chat ({origen_llm})",
             detalle=f"Owner: {em} · Modo: {modo_in}",
         )
+        _precalentar_auditoria_en_background(cuit_in, clave_in, actor_email=em, origen_llm=f"prewarm_{origen_llm}")
         return {
             "ok": True,
             "usuario": em,
@@ -670,6 +693,16 @@ def run_mcp_tool(
                 "Confirmale al usuario en 2 líneas que ya está vinculado y arrancá directo con lo que necesite."
             ),
         }
+
+    if tool == "solicitar_codigo_acceso_email":
+        return solicitar_codigo_otp_email(email=args.get("email", ""))
+
+    if tool == "verificar_codigo_acceso_email":
+        return verificar_codigo_otp_email(
+            email=args.get("email", ""),
+            codigo=args.get("codigo", ""),
+            origen_llm=origen_llm,
+        )
 
     if tool == "iniciar_sesion_en_chat":
         em = normalizar_email(args.get("email", ""))

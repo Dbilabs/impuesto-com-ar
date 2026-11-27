@@ -885,6 +885,29 @@ const MCP_TOOLS = [
     }
   },
   {
+    name: "solicitar_codigo_acceso_email",
+    description: "[LOGIN UNIVERSAL SIN CONTRASEÑA · 100% MAILS] Envía un código numérico de 6 dígitos (válido 10 min) a cualquier email (corporativo .com.ar, Microsoft 365, Outlook, Gmail, etc.) para iniciar sesión 100% dentro del chat sin recordar contraseñas ni tokens.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        email: { type: "string", description: "Email del usuario (personal, corporativo o Microsoft/Google)" }
+      },
+      required: ["email"]
+    }
+  },
+  {
+    name: "verificar_codigo_acceso_email",
+    description: "[LOGIN UNIVERSAL SIN CONTRASEÑA] Verifica el código de 6 dígitos recibido por email e inicia sesión al instante devolviendo `token_sesion` y los CUITs autorizados del usuario.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        email: { type: "string", description: "Email del usuario" },
+        codigo: { type: "string", description: "Código numérico de 6 dígitos recibido por email" }
+      },
+      required: ["email", "codigo"]
+    }
+  },
+  {
     name: "iniciar_sesion_en_chat",
     description: "[LOGIN 100% EN CHAT · MULTI-LLM] Inicia sesión en el chat actual usando el email y la frase clave personal (o token) del usuario, devolviendo `token_sesion` y todos sus CUITs autorizados sin salir del LLM ni editar la URL del conector.",
     inputSchema: {

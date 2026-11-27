@@ -421,6 +421,55 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
         # Limpieza
         client.delete(f"/api/v1/vincular/{cuit_chat}")
 
+    def test_12_login_otp_6_digitos_universal(self):
+        from unittest.mock import patch
+        from fastapi.testclient import TestClient
+        from bot.main import app
+        from bot import boveda_segura as bv
+
+        client = TestClient(app)
+        em = "finanzas@empresa-microsoft.com.ar"
+        captured = {}
+
+        def fake_send(dest, code):
+            captured["dest"] = dest
+            captured["code"] = code
+            return True, "resend"
+
+        with patch.object(bv, "_enviar_email_otp", side_effect=fake_send):
+            r_req = client.post(
+                "/api/v1/mcp/tool",
+                headers={"X-LLM-Origin": "copilot"},
+                json={"name": "solicitar_codigo_acceso_email", "arguments": {"email": em}},
+            )
+            self.assertTrue(r_req.json().get("ok"))
+            self.assertEqual(len(captured["code"]), 6)
+
+            # Código incorrecto bloqueado
+            r_bad = client.post(
+                "/api/v1/mcp/tool",
+                headers={"X-LLM-Origin": "copilot"},
+                json={"name": "verificar_codigo_acceso_email", "arguments": {"email": em, "codigo": "000000"}},
+            )
+            self.assertTrue(r_bad.json().get("acceso_denegado"))
+
+            # Código correcto emite token_sesion válido
+            r_ok = client.post(
+                "/api/v1/mcp/tool",
+                headers={"X-LLM-Origin": "copilot"},
+                json={"name": "verificar_codigo_acceso_email", "arguments": {"email": em, "codigo": captured["code"]}},
+            )
+            self.assertTrue(r_ok.json().get("ok"))
+            self.assertTrue(r_ok.json().get("token_sesion", "").startswith("imp_live_"))
+
+            # Uso único: reintentar el mismo código falla
+            r_reuse = client.post(
+                "/api/v1/mcp/tool",
+                headers={"X-LLM-Origin": "copilot"},
+                json={"name": "verificar_codigo_acceso_email", "arguments": {"email": em, "codigo": captured["code"]}},
+            )
+            self.assertTrue(r_reuse.json().get("acceso_denegado"))
+
 
 if __name__ == "__main__":
     unittest.main()

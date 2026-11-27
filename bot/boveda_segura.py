@@ -815,3 +815,158 @@ def admin_ver_movimientos(
             break
 
     return {"ok": True, "total_eventos": len(out), "movimientos": out}
+
+
+# =====================================================================
+# 5. LOGIN UNIVERSAL POR CÓDIGO DE 6 DÍGITOS (OTP EMAIL — 100% MAILS)
+# =====================================================================
+
+_otp_lock = threading.Lock()
+_otp_store: Dict[str, Dict[str, Any]] = {}
+OTP_TTL_SEC = 600  # 10 minutos
+
+
+def _enviar_email_otp(destinatario: str, codigo: str) -> Tuple[bool, str]:
+    """Envía el código OTP de 6 dígitos usando Resend API o SMTP si están configurados."""
+    import urllib.request
+    import smtplib
+    from email.message import EmailMessage
+
+    from_addr = os.environ.get("MAIL_FROM", "impuesto.com.ar <hola@impuesto.com.ar>")
+    subject = f"Tu código de acceso a impuesto.com.ar: {codigo}"
+    body_txt = (
+        f"Tu código de acceso único (válido por 10 minutos) es: {codigo}\n\n"
+        "Ingresalo directamente en tu chat de ChatGPT, Claude, Gemini o Copilot.\n"
+        "Si no solicitaste este código, ignorá este correo."
+    )
+    body_html = (
+        f"<div style='font-family:system-ui,sans-serif;max-width:480px;padding:24px'>"
+        f"<h2 style='color:#0B6E4F;margin:0 0 12px'>Tu código de acceso a impuesto.com.ar</h2>"
+        f"<p style='font-size:15px;color:#334155'>Ingresá este código de 6 dígitos en tu chat (vence en 10 minutos):</p>"
+        f"<div style='font-size:34px;font-weight:800;letter-spacing:6px;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:12px;padding:16px;text-align:center;color:#074F39;margin:16px 0'>{codigo}</div>"
+        f"<p style='font-size:13px;color:#64748B'>Funciona con cualquier asistente (ChatGPT, Claude, Gemini, Copilot, Cursor). Si no lo pediste, ignorá este mensaje.</p></div>"
+    )
+
+    resend_key = os.environ.get("RESEND_API_KEY", "").strip()
+    if resend_key:
+        try:
+            payload = json.dumps({
+                "from": from_addr,
+                "to": [destinatario],
+                "subject": subject,
+                "text": body_txt,
+                "html": body_html,
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                "https://api.resend.com/emails",
+                data=payload,
+                headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                if 200 <= resp.status < 300:
+                    return True, "resend"
+            return False, "Resend devolvió un error al enviar el correo."
+        except Exception as e:
+            return False, f"Error enviando correo vía Resend: {e}"
+
+    smtp_host = os.environ.get("SMTP_HOST", "").strip()
+    smtp_user = os.environ.get("SMTP_USER", "").strip()
+    smtp_pass = os.environ.get("SMTP_PASS", "").strip()
+    if smtp_host and smtp_user and smtp_pass:
+        try:
+            smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+            msg = EmailMessage()
+            msg["Subject"] = subject
+            msg["From"] = from_addr
+            msg["To"] = destinatario
+            msg.set_content(body_txt)
+            msg.add_alternative(body_html, subtype="html")
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as s:
+                s.starttls()
+                s.login(smtp_user, smtp_pass)
+                s.send_message(msg)
+            return True, "smtp"
+        except Exception as e:
+            return False, f"Error enviando correo vía SMTP: {e}"
+
+    return False, "SIN_PROVEEDOR_EMAIL"
+
+
+def solicitar_codigo_otp_email(email: str) -> Dict[str, Any]:
+    """Genera un código OTP de 6 dígitos (SHA-256 en memoria, TTL 10 min) y lo envía por email."""
+    em = normalizar_email(email)
+    if "@" not in em or "." not in em.split("@")[-1]:
+        return {"ok": False, "error": "Email inválido."}
+
+    codigo = f"{secrets.randbelow(900000) + 100000}"
+    exp = datetime.datetime.now(datetime.timezone.utc).timestamp() + OTP_TTL_SEC
+
+    with _otp_lock:
+        _otp_store[em] = {"hash": _hash_token(codigo), "exp": exp, "intentos": 0}
+
+    enviado, proveedor = _enviar_email_otp(em, codigo)
+    if not enviado:
+        if proveedor == "SIN_PROVEEDOR_EMAIL":
+            return {
+                "ok": False,
+                "envio_email_configurado": False,
+                "email": em,
+                "mensaje": (
+                    "El envío automático de códigos por email aún no tiene un proveedor SMTP/Resend configurado en el servidor "
+                    "(falta configurar RESEND_API_KEY o SMTP_HOST/SMTP_USER/SMTP_PASS). "
+                    "Mientras tanto, iniciá sesión en el chat con tu frase clave (`iniciar_sesion_en_chat`) o vinculá tu cuenta (`vincular_cuenta_en_chat`)."
+                ),
+            }
+        return {"ok": False, "envio_email_configurado": True, "error": proveedor}
+
+    return {
+        "ok": True,
+        "envio_email_configurado": True,
+        "proveedor": proveedor,
+        "email": em,
+        "vence_en_minutos": 10,
+        "mensaje": f"Te enviamos un código de 6 dígitos a {em} (válido por 10 minutos). Escribilo acá mismo en el chat para entrar.",
+    }
+
+
+def verificar_codigo_otp_email(email: str, codigo: str, origen_llm: str = "mcp") -> Dict[str, Any]:
+    """Verifica el código OTP de 6 dígitos (uso único, máx 5 intentos) y emite un token_sesion válido."""
+    em = normalizar_email(email)
+    cod = "".join(ch for ch in str(codigo or "") if ch.isdigit())
+    if "@" not in em or len(cod) != 6:
+        return {"ok": False, "acceso_denegado": True, "error": "Indicá tu email y el código numérico de 6 dígitos."}
+
+    now_ts = datetime.datetime.now(datetime.timezone.utc).timestamp()
+    with _otp_lock:
+        rec = _otp_store.get(em)
+        if not rec:
+            return {"ok": False, "acceso_denegado": True, "error": "No hay un código activo para ese email. Pedí uno nuevo."}
+        if now_ts > rec["exp"]:
+            _otp_store.pop(em, None)
+            return {"ok": False, "acceso_denegado": True, "error": "El código venció (superó los 10 minutos). Pedí uno nuevo."}
+        rec["intentos"] += 1
+        if rec["intentos"] > 5:
+            _otp_store.pop(em, None)
+            return {"ok": False, "acceso_denegado": True, "error": "Demasiados intentos fallidos. Pedí un código nuevo."}
+        if not secrets.compare_digest(rec["hash"], _hash_token(cod)):
+            return {"ok": False, "acceso_denegado": True, "error": "Código incorrecto. Verificá los 6 dígitos en tu correo."}
+        # Uso único: consumir el OTP
+        _otp_store.pop(em, None)
+
+    tok = crear_token_usuario(email=em, label=f"otp_{origen_llm}")
+    if not tok.get("ok"):
+        return tok
+    cuits = listar_cuits_autorizados(em)
+    return {
+        "ok": True,
+        "usuario": em,
+        "es_owner_plataforma": es_admin_plataforma(em),
+        "token_sesion": tok["token"],
+        "empresas_vinculadas": cuits,
+        "mensaje": f"¡Listo! Sesión iniciada como {em} ({len(cuits)} CUIT(s) autorizados).",
+        "instruccion_para_ia": (
+            "Pasá este `token_sesion` en todas las herramientas que llames en este chat (NO muestres el token al usuario). "
+            "Si ya tiene CUITs vinculados, avanzá directo; si aún no tiene, pedile CUIT + Clave Fiscal con `vincular_cuenta_en_chat`."
+        ),
+    }
