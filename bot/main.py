@@ -55,6 +55,8 @@ from .boveda_segura import (
     marcar_cuit_validado,
     liberar_cuit_pendiente,
     es_owner_validado,
+    cargar_presupuesto_cuit,
+    guardar_presupuesto_cuit,
 )
 from .backoffice_growth import (
     esta_en_mantenimiento,
@@ -89,6 +91,7 @@ TOOL_CACHE: Dict[str, Dict[str, Any]] = {}
 TOOL_INFLIGHT: Dict[str, Dict[str, Any]] = {}
 _BAD_CREDS_CB: Dict[str, Dict[str, Any]] = {}
 _CUIT_FAIL_BUDGET: Dict[str, list] = {}
+_PENDING_REFRESH_TS: Dict[str, float] = {}
 CUIT_MAX_FAILS_24H = int(os.environ.get("CUIT_MAX_FAILS_24H", "2"))
 _wsfe_locks: Dict[str, threading.Lock] = {}
 _WSFE_IDEM_CACHE: Dict[str, Dict[str, Any]] = {}
@@ -131,16 +134,41 @@ def _hash_clave(cuit: str, clave: str) -> str:
     return hashlib.sha256(f"{cuit}:{clave}".encode("utf-8")).hexdigest()
 
 
+def _load_budget_locked(cuit: str, now: float) -> list:
+    """Carga presupuesto persistido en volumen (N1-d) y purga entradas >24h."""
+    disk = {}
+    try:
+        disk = cargar_presupuesto_cuit() or {}
+    except Exception:
+        disk = {}
+    mem_fails = _CUIT_FAIL_BUDGET.get(cuit, [])
+    disk_fails = disk.get(cuit, [])
+    merged = sorted({float(t) for t in (mem_fails + disk_fails) if now - float(t) < 86400.0})
+    if merged:
+        _CUIT_FAIL_BUDGET[cuit] = merged
+    else:
+        _CUIT_FAIL_BUDGET.pop(cuit, None)
+    return merged
+
+
+def _save_budget_locked(cuit: str, fails: list) -> None:
+    try:
+        disk = cargar_presupuesto_cuit() or {}
+        if fails:
+            disk[cuit] = fails
+        else:
+            disk.pop(cuit, None)
+        guardar_presupuesto_cuit(disk)
+    except Exception:
+        pass
+
+
 def _check_cuit_fail_budget(cuit: str) -> Optional[Dict[str, Any]]:
-    """N1 cierre total: presupuesto de máx. 2 logins fallidos cada 24h por CUIT (independiente de la clave o email)."""
+    """N1 cierre total: presupuesto persistido de máx. 2 logins fallidos cada 24h por CUIT (independiente de la clave)."""
     c = normalizar_cuit(cuit)
     now = time.time()
     with _audit_lock:
-        fails = [t for t in _CUIT_FAIL_BUDGET.get(c, []) if now - t < 86400.0]
-        if fails:
-            _CUIT_FAIL_BUDGET[c] = fails
-        else:
-            _CUIT_FAIL_BUDGET.pop(c, None)
+        fails = _load_budget_locked(c, now)
         if len(fails) >= CUIT_MAX_FAILS_24H:
             return {
                 "ok": False,
@@ -182,19 +210,22 @@ def _check_bad_creds(cuit: str, clave: str) -> Optional[Dict[str, Any]]:
 def _mark_bad_creds(cuit: str, clave: str, err_msg: str) -> None:
     c = normalizar_cuit(cuit)
     now = time.time()
-    estado = "CLAVE_FISCAL_BLOQUEADA" if "BLOQUEADA" in err_msg.upper() else "CLAVE_FISCAL_INCORRECTA"
+    u = (err_msg or "").upper()
+    estado = "CLAVE_FISCAL_BLOQUEADA" if "BLOQUEADA" in u else "CLAVE_FISCAL_INCORRECTA"
     with _audit_lock:
         _BAD_CREDS_CB[c] = {
             "clave_hash": _hash_clave(c, clave),
             "estado": estado,
-            "error": err_msg,
+            "error": err_msg[:300],
             "ts": now,
         }
-        fails = [t for t in _CUIT_FAIL_BUDGET.get(c, []) if now - t < 86400.0]
+        fails = _load_budget_locked(c, now)
         fails.append(now)
         _CUIT_FAIL_BUDGET[c] = fails
-    # N1: si el CUIT estaba pendiente_validacion, liberarlo de inmediato para que no quede secuestrado
-    liberar_cuit_pendiente(c)
+        _save_budget_locked(c, fails)
+    # N1-b / N1-f: liberar CUIT pendiente solo si la clave fallida coincide y nunca ante CAMBIO DE CLAVE
+    if "CAMBIO DE CLAVE" not in u:
+        liberar_cuit_pendiente(c, clave_fallida=clave)
 
 
 def _clear_bad_creds(cuit: str, *, clear_budget: bool = False) -> None:
@@ -203,6 +234,16 @@ def _clear_bad_creds(cuit: str, *, clear_budget: bool = False) -> None:
         _BAD_CREDS_CB.pop(c, None)
         if clear_budget:
             _CUIT_FAIL_BUDGET.pop(c, None)
+            _save_budget_locked(c, [])
+        AUDIT_CACHE.pop(c, None)
+        for k in [k for k in TOOL_CACHE if c in k]:
+            TOOL_CACHE.pop(k, None)
+
+
+def _invalidar_cache_cuit(cuit: str) -> None:
+    """Invalida caché de auditoría/tools para un CUIT al guardar clave nueva (N1-b) sin tocar el presupuesto 24h."""
+    c = normalizar_cuit(cuit)
+    with _audit_lock:
         AUDIT_CACHE.pop(c, None)
         for k in [k for k in TOOL_CACHE if c in k]:
             TOOL_CACHE.pop(k, None)
@@ -364,6 +405,18 @@ def _is_bad_cred_error(err_str: str) -> bool:
     )
 
 
+def _es_fallo_login_fail_closed(exc: Exception, err_str: str, cuit: str, actor_email: str) -> bool:
+    """N1-c: fail-closed ante errores/timeouts durante el login a ARCA (o cualquier fallo en CUIT aún no validado)."""
+    if _is_bad_cred_error(err_str):
+        return True
+    low = (err_str or "").lower()
+    if any(k in low for k in ("portalcf.cloud", "auth.afip", "auth.arca", "login.xhtml", "f1:password", "f1:btningresar")):
+        return True
+    if isinstance(exc, TimeoutError) and not es_owner_validado(actor_email, cuit):
+        return True
+    return False
+
+
 def _run_auditoria_background(cuit: str, clave: str, entry: Dict[str, Any], actor_email: str = "", origen_llm: str = "mcp") -> None:
     cuit_lk = _get_cuit_lock(cuit)
     got_cuit = cuit_lk.acquire(timeout=LOCK_ACQUIRE_TIMEOUT_SEC)
@@ -412,7 +465,7 @@ def _run_auditoria_background(cuit: str, clave: str, entry: Dict[str, Any], acto
         logger.exception(f"Error en auditoria_unificada background para {cuit}")
         now = time.time()
         err_str = str(e)
-        if _is_bad_cred_error(err_str):
+        if _es_fallo_login_fail_closed(e, err_str, cuit, actor_email):
             _mark_bad_creds(cuit, clave, err_str)
             err_obj = {
                 "ok": False,
@@ -420,7 +473,7 @@ def _run_auditoria_background(cuit: str, clave: str, entry: Dict[str, Any], acto
                 "cuit": cuit,
                 "error": err_str[:300],
                 "mensaje": (
-                    f"ARCA rechazó la Clave Fiscal o pidió validación manual para el CUIT {cuit}. "
+                    f"ARCA rechazó el login o no completó la autenticación para el CUIT {cuit}. "
                     "Frenamos nuevos reintentos automáticos para evitar bloqueos. "
                     "Actualizá tu Clave Fiscal correcta en el chat (`vincular_cuenta_en_chat`) o en https://impuesto.com.ar/vincular."
                 ),
@@ -884,9 +937,12 @@ def api_vincular(
         )
         if not res.get("ok"):
             return res
-        # N1: solo limpiar _BAD_CREDS_CB si quien actualiza es el owner ya validado (nunca el presupuesto de un atacante)
-        if res.get("cuit") and owner_ya_validado:
-            _clear_bad_creds(res["cuit"], clear_budget=False)
+        # N1-b: invalidar caché siempre al guardar clave nueva; solo limpiar _BAD_CREDS_CB si es owner validado
+        if res.get("cuit"):
+            if owner_ya_validado:
+                _clear_bad_creds(res["cuit"], clear_budget=False)
+            else:
+                _invalidar_cache_cuit(res["cuit"])
 
     tok = crear_token_usuario(
         email=email,
@@ -950,10 +1006,10 @@ def api_revocar_vincular(
     actor_email = resolver_email_por_token(_extract_user_token(x_user_token, authorization))
     if not actor_email:
         raise HTTPException(status_code=401, detail="Autenticación requerida para revocar credenciales")
-    ok_perm, _, reason = verificar_permiso_cuit(actor_email, cuit, nivel="owner")
-    if not ok_perm and not es_admin_plataforma(actor_email):
+    ok_perm, role_del, reason = verificar_permiso_cuit(actor_email, cuit, nivel="lectura")
+    if not (ok_perm and role_del == "owner") and not es_admin_plataforma(actor_email):
         raise HTTPException(status_code=403, detail=reason)
-    _clear_bad_creds(cuit)
+    _invalidar_cache_cuit(cuit)
     return revocar_credenciales(cuit)
 
 
@@ -1031,6 +1087,8 @@ def run_mcp_tool(
             return res_v
         if owner_ya_validado_chat:
             _clear_bad_creds(cuit_in, clear_budget=False)
+        else:
+            _invalidar_cache_cuit(cuit_in)
 
         registrar_evento_historial(
             email=em,
@@ -1359,10 +1417,23 @@ def run_mcp_tool(
         return err
 
     if tool == "auditar_estado_integral_arca":
+        forzar_req = _parse_bool_strict(args.get("forzar_refresco", False))
+        if forzar_req and not es_owner_validado(actor_email, cuit):
+            now_r = time.time()
+            with _audit_lock:
+                last_r = _PENDING_REFRESH_TS.get(cuit, 0.0)
+                if now_r - last_r < 600.0:
+                    return {
+                        "ok": False,
+                        "rate_limited": True,
+                        "cuit": cuit,
+                        "error": "Límite de reintentos con forzar_refresco en CUIT pendiente de validación (máx. 1 cada 10 min).",
+                    }
+                _PENDING_REFRESH_TS[cuit] = now_r
         return _ejecutar_auditoria_sin_timeout(
             cuit=cuit,
             clave=clave,
-            forzar_refresco=bool(args.get("forzar_refresco", False)),
+            forzar_refresco=forzar_req,
             actor_email=actor_email,
             origen_llm=origen_llm,
         )

@@ -270,7 +270,8 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
         )
         self.assertTrue(r_att_audit.json().get("acceso_denegado"))
 
-        # 4. Owner autoriza a socio por email desde Claude
+        # 4. Owner validado autoriza a socio por email desde Claude
+        bv.marcar_cuit_validado(cuit_test)
         r_auth = client.post(
             "/api/v1/mcp/tool",
             headers={"X-User-Token": tok_owner, "X-LLM-Origin": "claude"},
@@ -604,7 +605,8 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
         })
         self.assertTrue(r1.json().get("ok"))
 
-        # Owner autoriza al contador como editor (el contador todavía no inició sesión nunca)
+        # Owner validado autoriza al contador como editor (el contador todavía no inició sesión nunca)
+        _bv_mod.marcar_cuit_validado(cuit_v)
         r_auth = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_owner}, json={
             "name": "autorizar_usuario_cuit",
             "arguments": {"cuit": cuit_v, "email_invitado": contador_em, "rol": "editor"},
@@ -676,6 +678,7 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
             "email": "emisor_p05@impuesto.test", "cuit": cuit_propio, "clave_fiscal": "Clave1",
         })
         tok = r_v.json()["token"]
+        _bv_mod.marcar_cuit_validado(cuit_propio)
         # 1. Emisión cruzada bloqueada
         r_cross = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok}, json={
             "name": "emitir_factura_wsfe",
@@ -792,6 +795,30 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
             # Usuario legítimo desde su IP sigue pudiendo pedir OTP sin DoS global
             r_legit = _bv_mod.solicitar_codigo_otp_email("usuario_real@empresa.com.ar", client_ip="200.1.2.3")
             self.assertTrue(r_legit.get("ok"), f"Usuario legítimo bloqueado por DoS global: {r_legit}")
+
+    def test_sec_n1c_timeout_no_reconocido_y_presupuesto_persistido(self):
+        """N1-c + N1-d: TimeoutError en login ARCA consume presupuesto persistido en volumen y bloquea en <= CUIT_MAX_FAILS_24H tras reinicio."""
+        from unittest.mock import patch
+        from bot import main as bot_main
+        cuit_t = "20777777772"
+        calls = {"n": 0}
+        def fake_timeout(cuit, clave):
+            calls["n"] += 1
+            raise TimeoutError("Timeout 25000ms exceeded waiting for URL **/portalcf.cloud.**")
+
+        bot_main._clear_bad_creds(cuit_t, clear_budget=True)
+        with patch.object(bot_main, "auditar_estado_integral_arca", side_effect=fake_timeout), \
+             patch.object(bot_main, "AUDIT_SYNC_WAIT_SEC", 1.0):
+            for i in range(4):
+                bot_main._ejecutar_auditoria_sin_timeout(cuit_t, f"Pass{i}", forzar_refresco=True)
+            self.assertLessEqual(calls["n"], bot_main.CUIT_MAX_FAILS_24H)
+            # Simular reinicio del proceso limpiando RAM: el presupuesto persiste en volumen
+            bot_main._CUIT_FAIL_BUDGET.clear()
+            bot_main._BAD_CREDS_CB.clear()
+            r_after = bot_main._ejecutar_auditoria_sin_timeout(cuit_t, "PassNueva", forzar_refresco=True)
+            self.assertEqual(r_after.get("estado"), "PRESUPUESTO_FALLOS_CUIT_AGOTADO")
+            self.assertLessEqual(calls["n"], bot_main.CUIT_MAX_FAILS_24H)
+        bot_main._clear_bad_creds(cuit_t, clear_budget=True)
 
 
 if __name__ == "__main__":

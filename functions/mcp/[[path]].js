@@ -1975,7 +1975,7 @@ export async function onRequest({ request, env, params }) {
         const branding = args.branding_pie || `${args.nombre_estudio} · Contadores Públicos Matriculados`;
         if (env.DB) {
           try {
-            await env.DB.prepare(`
+            const rIns = await env.DB.prepare(`
               INSERT INTO estudios_contables (id, owner_email, nombre_estudio, cuit_estudio, socio_responsable, branding_pie, creado)
               VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
               ON CONFLICT(id) DO UPDATE SET
@@ -1984,6 +1984,9 @@ export async function onRequest({ request, env, params }) {
                 branding_pie = excluded.branding_pie
               WHERE estudios_contables.owner_email = excluded.owner_email
             `).bind(estudioId, ident.email, args.nombre_estudio, cuitClean, args.socio_responsable, branding).run();
+            if ((rIns?.meta?.changes ?? 1) === 0) {
+              return denyEdgeAuth("No tenés permiso para modificar ese estudio contable.");
+            }
           } catch (dbErr) {
             return jsonRpcSuccess(id, {
               isError: true,
@@ -2401,7 +2404,8 @@ export async function onRequest({ request, env, params }) {
             "consultar_mis_retenciones_arca",
             "consultar_comprobantes_mes",
             "leer_notificaciones_dfe",
-            "verificar_proveedor_apocrifo_apoc"
+            "verificar_proveedor_apocrifo_apoc",
+            "consultar_y_renovar_certificado_mipyme"
           ]);
           if (isTimeout && ASYNC_ARCA_TOOLS.has(toolName)) {
             return jsonRpcSuccess(id, {
