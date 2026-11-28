@@ -1818,6 +1818,88 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
                     self.assertTrue(ta_ok["desde_cache"])
                     self.assertEqual(ta_ok["token"], "TO2")
 
+    def test_poc_http_fase32_fixtures_redactados(self):
+        """Fase 3.2 PoC HTTP: login OK, clave incorrecta, captcha, timeout pre/post contraseña, servicio sin autorización y flag."""
+        from unittest.mock import patch
+        import httpx
+        from bot.arca_errors import ArcaNoDisponible, ClaveIncorrecta, LoginNoConfirmado
+        from bot.poc_http import ArcaHttpClient, ServicioNoAutorizadoError, redactar_headers_y_payload
+
+        # 0. Redacción de secretos en headers/payloads
+        red = redactar_headers_y_payload({"F1:password": "Secreta", "Cookie": "JSESSIONID=abc", "token": "T", "sign": "S", "ok": True})
+        self.assertEqual(red["F1:password"], "[REDACTED]")
+        self.assertEqual(red["Cookie"], "[REDACTED]")
+        self.assertEqual(red["token"], "[REDACTED]")
+        self.assertEqual(red["sign"], "[REDACTED]")
+        self.assertTrue(red["ok"])
+
+        # 1. Flag apagado por defecto -> bloquea ejecución
+        with patch.dict(os.environ, {"ARCA_HTTP_LOGIN": "0"}):
+            with self.assertRaises(RuntimeError):
+                ArcaHttpClient(require_flag=True).autenticar_y_abrir_servicio(cuit="20304050607", clave="x")
+
+        def _make_transport(mode: str) -> httpx.MockTransport:
+            step = {"post_login": 0}
+            def handler(request: httpx.Request) -> httpx.Response:
+                url = str(request.url)
+                if "login.xhtml" in url and request.method == "GET":
+                    if mode == "timeout_pre":
+                        raise httpx.ReadTimeout("timeout en GET login.xhtml")
+                    return httpx.Response(200, text='<form><input type="hidden" name="javax.faces.ViewState" value="VS1_REDACTED"/></form>')
+                if "login.xhtml" in url and request.method == "POST":
+                    step["post_login"] += 1
+                    if step["post_login"] == 1:
+                        return httpx.Response(200, text='<form><input type="hidden" name="javax.faces.ViewState" value="VS2_REDACTED"/></form>')
+                    if mode == "timeout_post":
+                        raise httpx.ReadTimeout("timeout tras enviar F1:password")
+                    if mode == "bad_pass":
+                        return httpx.Response(200, text='<span id="F1:msg">Clave o usuario incorrecto</span>')
+                    if mode == "captcha":
+                        return httpx.Response(200, text='<div class="g-recaptcha">Verificación de seguridad</div>')
+                    return httpx.Response(200, text='<form action="https://portalcf.cloud.afip.gob.ar/portal/login"><input name="jwt" value="JWT_REDACTED"/></form>')
+                if "portal/login" in url:
+                    return httpx.Response(200, text="<html>Portal CF OK</html>")
+                if "/autorizacion" in url:
+                    if mode == "no_auth":
+                        return httpx.Response(403, json={"error": "Servicio no adherido"})
+                    return httpx.Response(200, json={"token": "TOK_REDACTED", "sign": "SIGN_REDACTED"})
+                if "ccma/index.aspx" in url:
+                    return httpx.Response(200, text="<html>Total Saldo Deudor: $ 0,00</html>")
+                return httpx.Response(404, text="Not found")
+            return httpx.MockTransport(handler)
+
+        with patch.dict(os.environ, {"ARCA_HTTP_LOGIN": "1"}):
+            # 2. Login OK -> abre CCMA
+            res_ok = ArcaHttpClient(transport=_make_transport("ok")).autenticar_y_abrir_servicio(
+                cuit="20304050607", clave="ClaveFixture", servicio="ccma",
+            )
+            self.assertTrue(res_ok["ok"])
+            self.assertTrue(res_ok["password_enviada"])
+            self.assertEqual(res_ok["fuente"], "ARCA_HTTP_POC")
+            self.assertIn("Total Saldo Deudor", res_ok["html"])
+
+            # 3. Clave incorrecta -> ClaveIncorrecta
+            with self.assertRaises(ClaveIncorrecta) as c_bad:
+                ArcaHttpClient(transport=_make_transport("bad_pass")).autenticar_y_abrir_servicio(cuit="20304050607", clave="Mala")
+            self.assertFalse(c_bad.exception.captcha)
+
+            # 4. Captcha -> ClaveIncorrecta(captcha=True)
+            with self.assertRaises(ClaveIncorrecta) as c_cap:
+                ArcaHttpClient(transport=_make_transport("captcha")).autenticar_y_abrir_servicio(cuit="20304050607", clave="Real")
+            self.assertTrue(c_cap.exception.captcha)
+
+            # 5. Timeout ANTES de enviar la contraseña -> ArcaNoDisponible
+            with self.assertRaises(ArcaNoDisponible):
+                ArcaHttpClient(transport=_make_transport("timeout_pre")).autenticar_y_abrir_servicio(cuit="20304050607", clave="Real")
+
+            # 6. Timeout DESPUÉS de enviar la contraseña -> LoginNoConfirmado
+            with self.assertRaises(LoginNoConfirmado):
+                ArcaHttpClient(transport=_make_transport("timeout_post")).autenticar_y_abrir_servicio(cuit="20304050607", clave="Real")
+
+            # 7. Servicio sin autorización -> ServicioNoAutorizadoError
+            with self.assertRaises(ServicioNoAutorizadoError):
+                ArcaHttpClient(transport=_make_transport("no_auth")).autenticar_y_abrir_servicio(cuit="20304050607", clave="Real")
+
 
 if __name__ == "__main__":
     unittest.main()
