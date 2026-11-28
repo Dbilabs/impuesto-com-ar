@@ -336,6 +336,18 @@ const MCP_TOOLS = [
     }
   },
   {
+    name: "cargar_certificado_wsaa_cuit",
+    description: "Carga y valida el certificado digital (.crt PEM) emitido por ARCA para un CUIT (exclusivo del propietario validado). Verifica correspondencia con la clave privada generada en bóveda, SERIALNUMBER=CUIT y vigencia.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cuit: { type: "string", description: "CUIT del contribuyente (11 dígitos)" },
+        cert_pem: { type: "string", description: "Contenido completo del certificado .crt en formato PEM (-----BEGIN CERTIFICATE-----...)" }
+      },
+      required: ["cuit", "cert_pem"]
+    }
+  },
+  {
     name: "consultar_padron_cuit_ws",
     description: "Consulta la constancia de inscripción (Razón Social, condición IVA/Monotributo y domicilio fiscal) de cualquier CUIT vía Web Service oficial WS_SR_PADRON_A5 en <1 segundo.",
     inputSchema: {
@@ -1085,6 +1097,7 @@ export async function onRequest({ request, env, params }) {
       const WRITE_TOOLS = new Set([
         "emitir_factura_wsfe",
         "resolver_emision_incierta",
+        "cargar_certificado_wsaa_cuit",
         "ejecutar_accion_bot",
         "consultar_y_renovar_certificado_mipyme",
         "vincular_cuenta_en_chat",

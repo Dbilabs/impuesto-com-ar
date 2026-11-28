@@ -13,6 +13,7 @@ Aplica estrictamente Human-in-the-Loop: emitir_comprobante_wsfe requiere confirm
 import os
 import json
 import base64
+import hashlib
 import ssl
 import logging
 import subprocess
@@ -206,60 +207,264 @@ def verificar_estado_servidores_wsfe(ambiente: str = "produccion") -> Dict[str, 
         }
 
 
-def generar_csr_arca(cuit: str, razon_social: str, alias: str = "impuesto_mcp") -> Dict[str, Any]:
+def _derivar_huella_pem(pem_str: str) -> str:
+    return hashlib.sha256((pem_str or "").strip().encode("utf-8")).hexdigest()[:12]
+
+
+def _firmar_tra_en_memoria(tra_xml: str, cert_pem: str, key_pem: str) -> str:
+    """Fase 3.5: firma TRA en formato CMS/PKCS#7 DER completamente en memoria usando cryptography (cero archivos temporales de clave)."""
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.serialization import pkcs7
+
+    cert = x509.load_pem_x509_certificate(cert_pem.encode("utf-8"))
+    priv_key = serialization.load_pem_private_key(key_pem.encode("utf-8"), password=None)
+    der_bytes = (
+        pkcs7.PKCS7SignatureBuilder()
+        .set_data(tra_xml.encode("utf-8"))
+        .add_signer(cert, priv_key, hashes.SHA256())
+        .sign(serialization.Encoding.DER, [])
+    )
+    return base64.b64encode(der_bytes).decode("ascii")
+
+
+def evaluar_vencimiento_cert_pem(cert_pem: str, dias_alerta: int = 30) -> Dict[str, Any]:
+    """Inspecciona vigencia de un certificado PEM y genera alerta si faltan <= 30 días (Fase 3.5)."""
+    from cryptography import x509
+    cert = x509.load_pem_x509_certificate(cert_pem.encode("utf-8"))
+    now = datetime.datetime.now(datetime.timezone.utc)
+    n_before = getattr(cert, "not_valid_before_utc", cert.not_valid_before.replace(tzinfo=datetime.timezone.utc))
+    n_after = getattr(cert, "not_valid_after_utc", cert.not_valid_after.replace(tzinfo=datetime.timezone.utc))
+    dias_restantes = int((n_after - now).total_seconds() // 86400)
+    vigente = n_before <= now <= n_after
+    alerta = None
+    if vigente and dias_restantes <= dias_alerta:
+        alerta = f"Tu certificado digital ARCA vence en {max(0, dias_restantes)} día(s) ({n_after.date().isoformat()}). Renovalo pronto."
+    return {
+        "vigente": vigente,
+        "not_before": n_before.isoformat(),
+        "not_after": n_after.isoformat(),
+        "dias_restantes": dias_restantes,
+        "alerta_vencimiento": alerta,
+    }
+
+
+def generar_csr_arca(
+    cuit: str,
+    razon_social: str,
+    alias: str = "impuesto_mcp",
+    owner_email: Optional[str] = None,
+) -> Dict[str, Any]:
     """
-    Genera una clave privada RSA 2048 y un pedido de certificado (.csr) compatible con ARCA
-    usando OpenSSL. El archivo .csr se sube en 'Administración de Certificados Digitales' de ARCA.
+    Fase 3.5: genera clave privada RSA 2048 y CSR en memoria con cryptography, guarda la clave privada
+    cifrada en la bóveda por CUIT y devuelve ÚNICAMENTE el CSR (la clave privada nunca sale en respuestas ni logs).
     """
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from . import boveda_segura as bv
+
     cuit_clean = "".join(c for c in str(cuit) if c.isdigit())
     if len(cuit_clean) != 11:
         raise ValueError("El CUIT debe tener exactamente 11 dígitos.")
 
-    certs_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "certs", cuit_clean))
-    os.makedirs(certs_dir, exist_ok=True)
-    key_path = os.path.join(certs_dir, f"{alias}.key")
-    csr_path = os.path.join(certs_dir, f"{alias}.csr")
+    priv_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    key_pem = priv_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode("utf-8")
 
-    subj = f"/C=AR/O={razon_social[:50]}/CN={alias}/serialNumber=CUIT {cuit_clean}"
+    subject = x509.Name([
+        x509.NameAttribute(NameOID.COUNTRY_NAME, "AR"),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, (razon_social or "Contribuyente")[:50]),
+        x509.NameAttribute(NameOID.COMMON_NAME, (alias or "impuesto_mcp")[:50]),
+        x509.NameAttribute(NameOID.SERIAL_NUMBER, f"CUIT {cuit_clean}"),
+    ])
+    csr = x509.CertificateSigningRequestBuilder().subject_name(subject).sign(priv_key, hashes.SHA256())
+    csr_pem = csr.public_bytes(serialization.Encoding.PEM).decode("utf-8")
 
-    subprocess.run(["openssl", "genrsa", "-out", key_path, "2048"], check=True, capture_output=True)
-    subprocess.run(
-        ["openssl", "req", "-new", "-key", key_path, "-subj", subj, "-out", csr_path],
-        check=True,
-        capture_output=True
+    guardado = bv.guardar_credenciales_cifradas(
+        cuit=cuit_clean,
+        key_pem=key_pem,
+        owner_email=owner_email,
     )
-
-    with open(csr_path, "r", encoding="utf-8") as f:
-        csr_pem = f.read()
+    if not guardado.get("ok"):
+        return guardado
 
     return {
+        "ok": True,
         "cuit": cuit_clean,
         "alias": alias,
-        "key_path": key_path,
-        "csr_path": csr_path,
         "csr_pem": csr_pem,
+        "clave_privada_resguardada": "cifrada_en_boveda",
         "siguientes_pasos": [
-            "1. Subir el archivo .csr en ARCA → 'Administración de Certificados Digitales' → Agregar alias.",
-            "2. Descargar el certificado firmado (.crt) y guardarlo junto a la clave privada.",
-            "3. En 'Administrador de Relaciones de Clave Fiscal' asociar el alias a 'wsfe' (Facturación) y 'ws_sr_padron_a5' (Padrón)."
-        ]
+            "1. Subir el CSR en ARCA → 'Administración de Certificados Digitales' → Agregar alias.",
+            "2. Descargar el certificado firmado (.crt) y subirlo con `cargar_certificado_wsaa_cuit`.",
+            "3. En 'Administrador de Relaciones de Clave Fiscal' asociar el alias a 'wsfe', 'ws_sr_padron_a5' o 'veconsumerws'.",
+        ],
+    }
+
+
+def cargar_certificado_cuit_wsaa(
+    *,
+    cuit: str,
+    cert_pem: str,
+    owner_email: str,
+) -> Dict[str, Any]:
+    """Fase 3.5: valida y guarda el .crt del contribuyente en la bóveda cifrada.
+    Exige: (a) correspondencia con la clave privada guardada, (b) SERIALNUMBER=CUIT <cuit>, (c) vigencia."""
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID
+    from cryptography.hazmat.primitives import serialization
+    from . import boveda_segura as bv
+
+    cuit_clean = bv.normalizar_cuit(cuit)
+    ok_perm, _, reason = bv.verificar_permiso_cuit(owner_email, cuit_clean, nivel="owner")
+    if not ok_perm:
+        return {"ok": False, "acceso_denegado": True, "error": reason}
+
+    rec = bv.obtener_credenciales_descifradas(cuit_clean) or {}
+    key_pem = (rec.get("key_pem") or "").strip()
+    if not key_pem:
+        return {
+            "ok": False,
+            "error": f"No hay clave privada generada en bóveda para el CUIT {cuit_clean}. Ejecutá primero `generar_certificado_csr_arca`.",
+        }
+
+    try:
+        cert = x509.load_pem_x509_certificate((cert_pem or "").strip().encode("utf-8"))
+    except Exception as exc:
+        return {"ok": False, "error": f"Certificado .crt PEM inválido: {exc}"}
+
+    # (a) Validar que el certificado corresponda a la clave privada guardada
+    try:
+        priv_key = serialization.load_pem_private_key(key_pem.encode("utf-8"), password=None)
+        if cert.public_key().public_numbers() != priv_key.public_key().public_numbers():
+            return {"ok": False, "error": "El certificado (.crt) no corresponde a la clave privada guardada en bóveda para este CUIT."}
+    except Exception as exc:
+        return {"ok": False, "error": f"No se pudo verificar la correspondencia con la clave privada: {exc}"}
+
+    # (b) Validar SERIALNUMBER == CUIT <cuit>
+    serial_attrs = cert.subject.get_attributes_for_oid(NameOID.SERIAL_NUMBER)
+    serial_vals = [str(a.value).strip() for a in serial_attrs]
+    cuit_match = any(
+        "".join(ch for ch in val if ch.isdigit()) == cuit_clean and "cuit" in val.lower()
+        for val in serial_vals
+    )
+    if not cuit_match:
+        return {
+            "ok": False,
+            "error": f"El subject del certificado (SERIALNUMBER={serial_vals or 'ausente'}) no coincide con CUIT {cuit_clean}.",
+        }
+
+    # (c) Validar vigencia
+    vig = evaluar_vencimiento_cert_pem(cert_pem)
+    if not vig["vigente"]:
+        return {
+            "ok": False,
+            "error": f"El certificado no está vigente (validez: {vig['not_before']} a {vig['not_after']}).",
+        }
+
+    res_save = bv.guardar_credenciales_cifradas(
+        cuit=cuit_clean,
+        cert_pem=cert_pem.strip(),
+        owner_email=owner_email,
+    )
+    if not res_save.get("ok"):
+        return res_save
+
+    out = {
+        "ok": True,
+        "cuit": cuit_clean,
+        "tiene_wsaa": True,
+        "huella_certificado": _derivar_huella_pem(cert_pem),
+        "valido_hasta": vig["not_after"],
+        "dias_restantes": vig["dias_restantes"],
+        "mensaje": f"Certificado WSAA propio validado y guardado cifrado para el CUIT {cuit_clean}.",
+    }
+    if vig["alerta_vencimiento"]:
+        out["alerta_vencimiento"] = vig["alerta_vencimiento"]
+    return out
+
+
+def resolver_credenciales_wsaa_para_cuit(
+    cuit: str,
+    cert_path: Optional[str] = None,
+    key_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Fase 3.5: resuelve certificado propio del CUIT desde bóveda, o fallback al certificado global delegado."""
+    from . import boveda_segura as bv
+    cuit_clean = bv.normalizar_cuit(cuit)
+    if not cert_path and not key_path and len(cuit_clean) == 11:
+        try:
+            rec = bv.obtener_credenciales_descifradas(cuit_clean) or {}
+            c_pem = (rec.get("cert_pem") or "").strip()
+            k_pem = (rec.get("key_pem") or "").strip()
+            if c_pem and k_pem:
+                vig = evaluar_vencimiento_cert_pem(c_pem)
+                if vig["vigente"]:
+                    return {
+                        "fuente_certificado": "propio",
+                        "cuit": cuit_clean,
+                        "cert_pem": c_pem,
+                        "key_pem": k_pem,
+                        "alerta_vencimiento": vig["alerta_vencimiento"],
+                    }
+        except bv.VaultKeyMismatchError:
+            raise
+        except Exception:
+            pass
+
+    c_path = cert_path or os.environ.get("ARCA_WS_CERT")
+    k_path = key_path or os.environ.get("ARCA_WS_KEY")
+    if not c_path or not k_path:
+        raise CertificadoPendienteError(
+            "Para emitir el CAE oficial por Web Service necesitás vincular tu certificado (.crt) y clave (.key) "
+            "en ARCA_WS_CERT y ARCA_WS_KEY (o generar tu certificado propio con generar_certificado_csr_arca)."
+        )
+    return {
+        "fuente_certificado": "global_delegado",
+        "cuit": cuit_clean,
+        "cert_path": c_path,
+        "key_path": k_path,
+        "alerta_vencimiento": None,
     }
 
 
 def autenticar_wsaa(
-    cert_path: str,
-    key_path: str,
+    cert_path: Optional[str] = None,
+    key_path: Optional[str] = None,
     service: str = "wsfe",
-    ambiente: str = "homologacion"
+    ambiente: str = "homologacion",
+    *,
+    cuit: str = "",
+    cert_pem: Optional[str] = None,
+    key_pem: Optional[str] = None,
 ) -> Dict[str, str]:
     """
     Obtiene Token y Sign desde WSAA firmando el TRA en formato CMS/PKCS#7.
-    W1: Cachea el Ticket de Acceso (TA) cifrado en <VAULT_DIR>/wsaa_cache (0600, volumen persistente)
-    y detecta `coe.alreadyAuthenticated` con WsaaAlreadyAuthenticatedError.
+    W1 + Fase 3.5:
+      - Soporta certificado/clave en memoria (`cert_pem` + `key_pem`) sin archivos temporales.
+      - Cachea el Ticket de Acceso (TA) cifrado en <VAULT_DIR>/wsaa_cache aislado por
+        (cuit, env, service, huella_certificado) con permisos 0600.
+      - Detecta `coe.alreadyAuthenticated` con WsaaAlreadyAuthenticatedError por clave.
     """
     from . import boveda_segura as bv
     env_key = "homologacion" if "homo" in ambiente.lower() else "produccion"
-    cache_path = _wsaa_cache_dir() / f"ta_{env_key}_{service}_{os.path.basename(cert_path)}.enc"
+    cuit_clean = bv.normalizar_cuit(cuit)
+
+    if cert_pem and key_pem:
+        cert_huella = _derivar_huella_pem(cert_pem)
+        cache_name = f"ta_{cuit_clean or 'global'}_{env_key}_{service}_{cert_huella}.enc"
+    else:
+        cert_huella = os.path.basename(cert_path or "global")
+        if cuit_clean:
+            cache_name = f"ta_{cuit_clean}_{env_key}_{service}_{cert_huella}.enc"
+        else:
+            cache_name = f"ta_{env_key}_{service}_{cert_huella}.enc"
+    cache_path = _wsaa_cache_dir() / cache_name
 
     # 1. Revisar cache cifrado vigente en volumen
     if cache_path.exists():
@@ -272,13 +477,9 @@ def autenticar_wsaa(
                 if exp > datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=5):
                     return {"token": cached["token"], "sign": cached["sign"], "desde_cache": True}
         except bv.VaultKeyMismatchError:
-            # O2: NUNCA pisar un ticket WSAA cifrado con otra clave
             raise
         except Exception:
             pass
-
-    if not os.path.exists(cert_path) or not os.path.exists(key_path):
-        raise FileNotFoundError("No se encontraron el certificado (.crt) o la clave privada (.key) de ARCA.")
 
     now = datetime.datetime.now(datetime.timezone.utc)
     gen_time = (now - datetime.timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -295,31 +496,35 @@ def autenticar_wsaa(
   <service>{service}</service>
 </loginTicketRequest>"""
 
-    with tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False) as f_tra:
-        f_tra.write(tra_xml)
-        tra_path = f_tra.name
-    cms_path = tra_path + ".cms"
-
-    try:
-        subprocess.run(
-            [
-                "openssl", "smime", "-sign",
-                "-in", tra_path,
-                "-out", cms_path,
-                "-signer", cert_path,
-                "-inkey", key_path,
-                "-outform", "DER",
-                "-nodetach"
-            ],
-            check=True,
-            capture_output=True
-        )
-        with open(cms_path, "rb") as f_cms:
-            cms_b64 = base64.b64encode(f_cms.read()).decode("ascii")
-    finally:
-        for p in (tra_path, cms_path):
-            if os.path.exists(p):
-                os.remove(p)
+    if cert_pem and key_pem:
+        cms_b64 = _firmar_tra_en_memoria(tra_xml, cert_pem, key_pem)
+    else:
+        if not cert_path or not key_path or not os.path.exists(cert_path) or not os.path.exists(key_path):
+            raise FileNotFoundError("No se encontraron el certificado (.crt) o la clave privada (.key) de ARCA.")
+        with tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False) as f_tra:
+            f_tra.write(tra_xml)
+            tra_path = f_tra.name
+        cms_path = tra_path + ".cms"
+        try:
+            subprocess.run(
+                [
+                    "openssl", "smime", "-sign",
+                    "-in", tra_path,
+                    "-out", cms_path,
+                    "-signer", cert_path,
+                    "-inkey", key_path,
+                    "-outform", "DER",
+                    "-nodetach"
+                ],
+                check=True,
+                capture_output=True
+            )
+            with open(cms_path, "rb") as f_cms:
+                cms_b64 = base64.b64encode(f_cms.read()).decode("ascii")
+        finally:
+            for p in (tra_path, cms_path):
+                if os.path.exists(p):
+                    os.remove(p)
 
     soap_wsaa = f"""<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:wsaa="http://wsaa.view.sua.dvadac.desein.afip.gov">
@@ -340,18 +545,16 @@ def autenticar_wsaa(
         except Exception:
             pass
         if "alreadyauthenticated" in body.lower():
-            logger.error(f"[WSAA ALERTA] coe.alreadyAuthenticated para service={service} env={env_key} (verificar volumen persistente en /app/data/boveda/wsaa_cache).")
+            logger.error(f"[WSAA ALERTA] coe.alreadyAuthenticated para cuit={cuit_clean or 'global'} service={service} env={env_key} cert={cert_huella}.")
             raise WsaaAlreadyAuthenticatedError(
-                f"WSAA rechazó LoginCms con coe.alreadyAuthenticated para '{service}' ({env_key}). "
-                "Ya existe un Ticket de Acceso vigente emitido recientemente; verificá la persistencia de /app/data/boveda/wsaa_cache."
+                f"WSAA rechazó LoginCms con coe.alreadyAuthenticated para '{service}' ({env_key}, cuit={cuit_clean or 'global'})."
             ) from http_err
         raise
 
     if "alreadyauthenticated" in (raw or "").lower():
-        logger.error(f"[WSAA ALERTA] coe.alreadyAuthenticated para service={service} env={env_key}.")
+        logger.error(f"[WSAA ALERTA] coe.alreadyAuthenticated para cuit={cuit_clean or 'global'} service={service} env={env_key} cert={cert_huella}.")
         raise WsaaAlreadyAuthenticatedError(
-            f"WSAA rechazó LoginCms con coe.alreadyAuthenticated para '{service}' ({env_key}). "
-            "Ya existe un Ticket de Acceso vigente emitido recientemente; verificá la persistencia de /app/data/boveda/wsaa_cache."
+            f"WSAA rechazó LoginCms con coe.alreadyAuthenticated para '{service}' ({env_key}, cuit={cuit_clean or 'global'})."
         )
 
     root = ET.fromstring(raw)
@@ -370,6 +573,30 @@ def autenticar_wsaa(
 
     bv._write_enc_json(cache_path, {"token": token, "sign": sign, "expiration": expiration})
     return {"token": token, "sign": sign, "desde_cache": False}
+
+
+def autenticar_wsaa_para_cuit(
+    cuit: str,
+    service: str = "wsfe",
+    ambiente: str = "homologacion",
+    cert_path: Optional[str] = None,
+    key_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Autentica WSAA usando el certificado propio del CUIT si existe en bóveda, o fallback global delegado."""
+    cred = resolver_credenciales_wsaa_para_cuit(cuit, cert_path=cert_path, key_path=key_path)
+    ta = autenticar_wsaa(
+        cert_path=cred.get("cert_path"),
+        key_path=cred.get("key_path"),
+        service=service,
+        ambiente=ambiente,
+        cuit=cred["cuit"] if cred["fuente_certificado"] == "propio" else "",
+        cert_pem=cred.get("cert_pem"),
+        key_pem=cred.get("key_pem"),
+    )
+    ta["fuente_certificado"] = cred["fuente_certificado"]
+    if cred.get("alerta_vencimiento"):
+        ta["alerta_vencimiento"] = cred["alerta_vencimiento"]
+    return ta
 
 
 def consultar_ultimo_comprobante_wsfe(
@@ -490,15 +717,8 @@ def obtener_ultimo_autorizado_wsfe(
     cert_path: Optional[str] = None,
     key_path: Optional[str] = None,
 ) -> Optional[int]:
-    """Helper de alto nivel: autentica WSAA y consulta FECompUltimoAutorizado. Lanza CertificadoPendienteError si faltan certs."""
-    c_path = cert_path or os.environ.get("ARCA_WS_CERT")
-    k_path = key_path or os.environ.get("ARCA_WS_KEY")
-    if not c_path or not k_path:
-        raise CertificadoPendienteError(
-            "Para emitir el CAE oficial por Web Service necesitás vincular tu certificado (.crt) y clave (.key) "
-            "en ARCA_WS_CERT y ARCA_WS_KEY (podés generar el .csr con generar_certificado_csr_arca)."
-        )
-    auth = autenticar_wsaa(c_path, k_path, service="wsfe", ambiente=ambiente)
+    """Helper de alto nivel: autentica WSAA (propio del CUIT o global delegado) y consulta FECompUltimoAutorizado."""
+    auth = autenticar_wsaa_para_cuit(cuit_emisor, service="wsfe", ambiente=ambiente, cert_path=cert_path, key_path=key_path)
     return consultar_ultimo_comprobante_wsfe(cuit_emisor, pto_vta, cbte_tipo, auth["token"], auth["sign"], ambiente)
 
 
@@ -511,12 +731,8 @@ def consultar_comprobante_por_nro_wsfe(
     cert_path: Optional[str] = None,
     key_path: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Helper de alto nivel: autentica WSAA y consulta FECompConsultar para un número específico."""
-    c_path = cert_path or os.environ.get("ARCA_WS_CERT")
-    k_path = key_path or os.environ.get("ARCA_WS_KEY")
-    if not c_path or not k_path:
-        return None
-    auth = autenticar_wsaa(c_path, k_path, service="wsfe", ambiente=ambiente)
+    """Helper de alto nivel: autentica WSAA (propio del CUIT o global delegado) y consulta FECompConsultar."""
+    auth = autenticar_wsaa_para_cuit(cuit_emisor, service="wsfe", ambiente=ambiente, cert_path=cert_path, key_path=key_path)
     return consultar_comprobante_wsfe(cuit_emisor, pto_vta, cbte_tipo, cbte_nro, auth["token"], auth["sign"], ambiente)
 
 
@@ -612,20 +828,16 @@ def emitir_comprobante_wsfe(
         )
         return borrador
 
-    # Emisión real vía WSAA + WSFEv1
-    c_path = cert_path or os.environ.get("ARCA_WS_CERT")
-    k_path = key_path or os.environ.get("ARCA_WS_KEY")
-    if not c_path or not k_path:
+    # Emisión real vía WSAA (propio del CUIT o global delegado — Fase 3.5) + WSFEv1
+    try:
+        auth = autenticar_wsaa_para_cuit(cuit_em, service="wsfe", ambiente=ambiente, cert_path=cert_path, key_path=key_path)
+    except CertificadoPendienteError as exc:
         return {
             **borrador,
+            "ok": False,
             "estado": "CERTIFICADO_PENDIENTE",
-            "mensaje": (
-                "Para emitir el CAE oficial por Web Service necesitás vincular tu certificado (.crt) y clave (.key) "
-                "en ARCA_WS_CERT y ARCA_WS_KEY (podés generar el .csr con generar_certificado_csr_arca)."
-            )
+            "mensaje": str(exc),
         }
-
-    auth = autenticar_wsaa(c_path, k_path, service="wsfe", ambiente=ambiente)
     ultimo = consultar_ultimo_comprobante_wsfe(cuit_em, pto_vta, cbte_tipo, auth["token"], auth["sign"], ambiente)
     proximo = ultimo + 1
 
@@ -741,6 +953,7 @@ def emitir_comprobante_wsfe(
     out_wsfe = {
         **borrador,
         "ok": bool(res_label == "APROBADO"),
+        "fuente_certificado": auth.get("fuente_certificado", "global_delegado"),
         "cbte_nro": proximo,
         "resultado": res_label,
         "cae": cae,
@@ -748,6 +961,8 @@ def emitir_comprobante_wsfe(
         "qr_oficial_arca": qr_url,
         "observaciones": obs
     }
+    if auth.get("alerta_vencimiento"):
+        out_wsfe["alerta_vencimiento"] = auth["alerta_vencimiento"]
     if res_label == "INCIERTO":
         out_wsfe["estado"] = "ESTADO_INCIERTO_REQUIERE_REVISION"
         out_wsfe["incierto"] = True

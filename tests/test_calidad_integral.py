@@ -1936,6 +1936,131 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
             self.assertEqual(r_par_bad["paridad_pct"], 0.0)
             self.assertFalse(r_par_bad["cumple_go"])
 
+    def test_sec_fase35_wsaa_por_cuit_certificados_y_aislamiento_cache(self):
+        """Fase 3.5 WSAA por CUIT: CSR en bóveda sin filtrar clave privada, validación .crt (clave/CUIT/vigencia/owner), firma en memoria y caché aislado A/B."""
+        import datetime as _dt
+        from unittest.mock import patch
+        from cryptography import x509
+        from cryptography.x509.oid import NameOID
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from bot import arca_ws
+        client = TestClient(app)
+
+        def _make_cert_pem(priv_key, cuit_str: str, days_valid: int = 15, expired: bool = False) -> str:
+            now = _dt.datetime.now(_dt.timezone.utc)
+            nb = now - _dt.timedelta(days=30 if expired else 1)
+            na = now - _dt.timedelta(days=1) if expired else now + _dt.timedelta(days=days_valid)
+            subj = x509.Name([
+                x509.NameAttribute(NameOID.COUNTRY_NAME, "AR"),
+                x509.NameAttribute(NameOID.COMMON_NAME, "test_wsaa"),
+                x509.NameAttribute(NameOID.SERIAL_NUMBER, f"CUIT {cuit_str}"),
+            ])
+            cert = (
+                x509.CertificateBuilder()
+                .subject_name(subj)
+                .issuer_name(subj)
+                .public_key(priv_key.public_key())
+                .serial_number(x509.random_serial_number())
+                .not_valid_before(nb)
+                .not_valid_after(na)
+                .sign(priv_key, hashes.SHA256())
+            )
+            return cert.public_bytes(serialization.Encoding.PEM).decode("utf-8")
+
+        cuit_a, cuit_b = "20666666661", "20666666662"
+        own_a, ed_a, own_b = "owner_a35@impuesto.test", "editor_a35@impuesto.test", "owner_b35@impuesto.test"
+        tok_a = _tok_verificado(own_a)
+        tok_ed = _tok_verificado(ed_a)
+        tok_b = _tok_verificado(own_b)
+
+        for c_id, em in ((cuit_a, own_a), (cuit_b, own_b)):
+            _bv_mod.guardar_credenciales_cifradas(cuit=c_id, clave_fiscal="Clave35", owner_email=em)
+            _bv_mod.marcar_cuit_validado(c_id, email_actor=em, clave_hash=_bv_mod.hash_clave_cuit(c_id, "Clave35"), clave_fiscal="Clave35")
+        _bv_mod.autorizar_usuario_cuit(own_a, cuit_a, ed_a, rol="editor")
+
+        # 1. Generar CSR para CUIT A: la clave privada NUNCA aparece en la respuesta
+        r_csr = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_a}, json={
+            "name": "generar_certificado_csr_arca",
+            "arguments": {"cuit": cuit_a, "razon_social": "Empresa A SA", "alias": "emp_a"},
+        }).json()
+        self.assertTrue(r_csr.get("ok"))
+        self.assertIn("BEGIN CERTIFICATE REQUEST", r_csr.get("csr_pem", ""))
+        self.assertNotIn("PRIVATE KEY", json.dumps(r_csr))
+        self.assertNotIn("key_path", r_csr)
+
+        priv_a = serialization.load_pem_private_key(_bv_mod.obtener_credenciales_descifradas(cuit_a)["key_pem"].encode(), password=None)
+        other_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+        # 2. Certificado con otra clave -> rechazado
+        r_wrong_k = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_a}, json={
+            "name": "cargar_certificado_wsaa_cuit",
+            "arguments": {"cuit": cuit_a, "cert_pem": _make_cert_pem(other_key, cuit_a)},
+        }).json()
+        self.assertFalse(r_wrong_k.get("ok"))
+
+        # 3. Certificado con CUIT distinto en SERIALNUMBER -> rechazado
+        r_wrong_c = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_a}, json={
+            "name": "cargar_certificado_wsaa_cuit",
+            "arguments": {"cuit": cuit_a, "cert_pem": _make_cert_pem(priv_a, cuit_b)},
+        }).json()
+        self.assertFalse(r_wrong_c.get("ok"))
+
+        # 4. Certificado vencido -> rechazado
+        r_exp = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_a}, json={
+            "name": "cargar_certificado_wsaa_cuit",
+            "arguments": {"cuit": cuit_a, "cert_pem": _make_cert_pem(priv_a, cuit_a, expired=True)},
+        }).json()
+        self.assertFalse(r_exp.get("ok"))
+
+        # 5. Editor intentando subir certificado -> acceso denegado
+        cert_a_pem = _make_cert_pem(priv_a, cuit_a, days_valid=15)
+        r_ed = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_ed}, json={
+            "name": "cargar_certificado_wsaa_cuit",
+            "arguments": {"cuit": cuit_a, "cert_pem": cert_a_pem},
+        }).json()
+        self.assertFalse(r_ed.get("ok"))
+        self.assertTrue(r_ed.get("acceso_denegado"))
+
+        # 6. Owner validado sube certificado válido (vence en 15 días -> alerta_vencimiento)
+        r_ok_a = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_a}, json={
+            "name": "cargar_certificado_wsaa_cuit",
+            "arguments": {"cuit": cuit_a, "cert_pem": cert_a_pem},
+        }).json()
+        self.assertTrue(r_ok_a.get("ok"))
+        self.assertIn("alerta_vencimiento", r_ok_a)
+        self.assertNotIn("PRIVATE KEY", json.dumps(r_ok_a))
+
+        # 7. Generar y cargar certificado propio también para CUIT B -> verificar aislamiento del caché A/B y firma PKCS#7 en memoria
+        client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_b}, json={
+            "name": "generar_certificado_csr_arca", "arguments": {"cuit": cuit_b, "razon_social": "Empresa B SRL"},
+        })
+        priv_b = serialization.load_pem_private_key(_bv_mod.obtener_credenciales_descifradas(cuit_b)["key_pem"].encode(), password=None)
+        cert_b_pem = _make_cert_pem(priv_b, cuit_b, days_valid=90)
+        self.assertTrue(client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_b}, json={
+            "name": "cargar_certificado_wsaa_cuit", "arguments": {"cuit": cuit_b, "cert_pem": cert_b_pem},
+        }).json().get("ok"))
+
+        exp_iso = (_dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(hours=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        calls = {"n": 0}
+        def fake_wsaa_soap(url, body, **kw):
+            calls["n"] += 1
+            tok_v = f"TOK_{calls['n']}"
+            ta_xml = f"<loginTicketResponse><credentials><token>{tok_v}</token><sign>SIG_{calls['n']}</sign></credentials><header><expirationTime>{exp_iso}</expirationTime></header></loginTicketResponse>"
+            import html as _html
+            return f"<soap:Envelope xmlns:soap='http://schemas.xmlsoap.org/soap/envelope/'><soap:Body><loginCmsResponse><loginCmsReturn>{_html.escape(ta_xml)}</loginCmsReturn></loginCmsResponse></soap:Body></soap:Envelope>"
+
+        with patch.object(arca_ws, "_soap_post", side_effect=fake_wsaa_soap):
+            ta_a1 = arca_ws.autenticar_wsaa_para_cuit(cuit_a, service="wsfe", ambiente="homologacion")
+            ta_b1 = arca_ws.autenticar_wsaa_para_cuit(cuit_b, service="wsfe", ambiente="homologacion")
+            ta_a2 = arca_ws.autenticar_wsaa_para_cuit(cuit_a, service="wsfe", ambiente="homologacion")
+            self.assertEqual(ta_a1["fuente_certificado"], "propio")
+            self.assertEqual(ta_b1["fuente_certificado"], "propio")
+            self.assertNotEqual(ta_a1["token"], ta_b1["token"])
+            self.assertEqual(ta_a2["token"], ta_a1["token"])
+            self.assertTrue(ta_a2["desde_cache"])
+            self.assertEqual(calls["n"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

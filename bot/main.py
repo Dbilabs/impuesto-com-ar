@@ -1897,7 +1897,34 @@ def run_mcp_tool(
 
     if tool == "generar_certificado_csr_arca":
         from .arca_ws import generar_csr_arca
-        return generar_csr_arca(cuit=args.get("cuit", cuit), razon_social=args.get("razon_social", "Contribuyente"), alias=args.get("alias", "impuesto_mcp"))
+        cuit_csr = normalizar_cuit(args.get("cuit") or cuit)
+        ok_own, _, reason_own = verificar_permiso_cuit(actor_email, cuit_csr, nivel="owner")
+        if not ok_own:
+            return {"ok": False, "acceso_denegado": True, "error": reason_own}
+        return generar_csr_arca(
+            cuit=cuit_csr,
+            razon_social=args.get("razon_social", "Contribuyente"),
+            alias=args.get("alias", "impuesto_mcp"),
+            owner_email=actor_email,
+        )
+
+    if tool == "cargar_certificado_wsaa_cuit":
+        from .arca_ws import cargar_certificado_cuit_wsaa
+        cuit_crt = normalizar_cuit(args.get("cuit") or cuit)
+        res_crt = cargar_certificado_cuit_wsaa(
+            cuit=cuit_crt,
+            cert_pem=str(args.get("cert_pem") or ""),
+            owner_email=actor_email,
+        )
+        if res_crt.get("ok"):
+            registrar_evento_historial(
+                actor_email,
+                cuit_crt,
+                origen_llm,
+                "cargar_certificado_wsaa_cuit",
+                f"Certificado WSAA propio cargado (huella={res_crt.get('huella_certificado')}, vence={res_crt.get('valido_hasta')})",
+            )
+        return res_crt
 
     return {"ok": False, "error": f"Herramienta '{tool}' no mapeada aún en el backend headless."}
 
