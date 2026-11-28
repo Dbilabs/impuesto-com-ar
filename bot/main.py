@@ -1132,17 +1132,27 @@ def api_vincular(
             budget_err = _check_cuit_fail_budget(cuit_req)
             if budget_err:
                 return budget_err
+        # C2: nunca aceptar claves privadas subidas por el usuario vía /api/v1/vincular;
+        # cert_pem debe pasar por cargar_certificado_cuit_wsaa (solo owner validado + validaciones x509).
+        if (req.key_pem or "").strip():
+            return {
+                "ok": False,
+                "error": "Por seguridad no se aceptan claves privadas subidas manualmente. Generá el CSR desde la plataforma (`generar_certificado_csr_arca`) y subí solo el .crt.",
+            }
         res = guardar_credenciales_cifradas(
             cuit=req.cuit or "",
             clave_fiscal=req.clave_fiscal,
             modo=req.modo,
-            cert_pem=req.cert_pem,
-            key_pem=req.key_pem,
             alias=req.alias,
             owner_email=email,
         )
         if not res.get("ok"):
             return res
+        if (req.cert_pem or "").strip():
+            from .arca_ws import cargar_certificado_cuit_wsaa
+            res_cert = cargar_certificado_cuit_wsaa(cuit=req.cuit or "", cert_pem=req.cert_pem, owner_email=email)
+            if not res_cert.get("ok"):
+                return res_cert
         # N1-b: invalidar caché siempre al guardar clave nueva; solo limpiar _BAD_CREDS_CB si es owner validado
         if res.get("cuit"):
             if owner_ya_validado:

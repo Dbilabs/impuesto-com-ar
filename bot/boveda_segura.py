@@ -393,11 +393,13 @@ def asignar_owner_cuit(cuit: str, owner_email: str) -> Dict[str, Any]:
 def guardar_credenciales_cifradas(
     cuit: str,
     clave_fiscal: Optional[str] = None,
-    modo: str = "solo_lectura_cifrada",
+    modo: Optional[str] = None,
     cert_pem: Optional[str] = None,
     key_pem: Optional[str] = None,
     alias: str = "",
     owner_email: Optional[str] = None,
+    key_pem_pendiente: Optional[str] = None,
+    limpiar_key_pendiente: bool = False,
 ) -> Dict[str, Any]:
     cuit_clean = normalizar_cuit(cuit)
     if len(cuit_clean) != 11:
@@ -440,14 +442,24 @@ def guardar_credenciales_cifradas(
         if existing_acl is None:
             prev_rec = {}
         clave_final = (clave_fiscal or "").strip() or prev_rec.get("clave_fiscal", "")
+        modo_final = modo or prev_rec.get("modo") or "solo_lectura_cifrada"
+        cert_final = cert_pem if cert_pem is not None else prev_rec.get("cert_pem", "")
+        key_final = key_pem if key_pem is not None else prev_rec.get("key_pem", "")
+        if limpiar_key_pendiente:
+            key_pend_final = ""
+        elif key_pem_pendiente is not None:
+            key_pend_final = key_pem_pendiente
+        else:
+            key_pend_final = prev_rec.get("key_pem_pendiente", "")
         vault[cuit_clean] = {
             "cuit": cuit_clean,
-            "modo": modo,
+            "modo": modo_final,
             "alias": alias or prev_rec.get("alias") or f"Contribuyente {cuit_clean}",
             "clave_fiscal": clave_final,
-            "tiene_wsaa": bool(cert_pem and key_pem) or prev_rec.get("tiene_wsaa", False),
-            "cert_pem": cert_pem or prev_rec.get("cert_pem", ""),
-            "key_pem": key_pem or prev_rec.get("key_pem", ""),
+            "tiene_wsaa": bool((cert_final or "").strip() and (key_final or "").strip()),
+            "cert_pem": cert_final,
+            "key_pem": key_final,
+            "key_pem_pendiente": key_pend_final,
             "solo_lectura_por_defecto": True,
             "owner_email": em or (existing_acl or {}).get("owner_email", ""),
             "vinculado_at": ahora,

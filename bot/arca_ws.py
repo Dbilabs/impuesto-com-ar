@@ -229,12 +229,20 @@ def _firmar_tra_en_memoria(tra_xml: str, cert_pem: str, key_pem: str) -> str:
 
 
 def evaluar_vencimiento_cert_pem(cert_pem: str, dias_alerta: int = 30) -> Dict[str, Any]:
-    """Inspecciona vigencia de un certificado PEM y genera alerta si faltan <= 30 días (Fase 3.5)."""
+    """Inspecciona vigencia de un certificado PEM y genera alerta si faltan <= 30 días (Fase 3.5 + C3)."""
     from cryptography import x509
     cert = x509.load_pem_x509_certificate(cert_pem.encode("utf-8"))
     now = datetime.datetime.now(datetime.timezone.utc)
-    n_before = getattr(cert, "not_valid_before_utc", cert.not_valid_before.replace(tzinfo=datetime.timezone.utc))
-    n_after = getattr(cert, "not_valid_after_utc", cert.not_valid_after.replace(tzinfo=datetime.timezone.utc))
+    n_before = (
+        cert.not_valid_before_utc
+        if hasattr(cert, "not_valid_before_utc")
+        else cert.not_valid_before.replace(tzinfo=datetime.timezone.utc)
+    )
+    n_after = (
+        cert.not_valid_after_utc
+        if hasattr(cert, "not_valid_after_utc")
+        else cert.not_valid_after.replace(tzinfo=datetime.timezone.utc)
+    )
     dias_restantes = int((n_after - now).total_seconds() // 86400)
     vigente = n_before <= now <= n_after
     alerta = None
@@ -285,11 +293,23 @@ def generar_csr_arca(
     csr = x509.CertificateSigningRequestBuilder().subject_name(subject).sign(priv_key, hashes.SHA256())
     csr_pem = csr.public_bytes(serialization.Encoding.PEM).decode("utf-8")
 
-    guardado = bv.guardar_credenciales_cifradas(
-        cuit=cuit_clean,
-        key_pem=key_pem,
-        owner_email=owner_email,
-    )
+    # C1 + C4: si ya existe un certificado propio vigente, guardar la nueva clave en `key_pem_pendiente`
+    # sin pisar `key_pem` ni `modo` para que el par vigente siga funcionando hasta cargar el nuevo .crt.
+    prev_rec = bv.obtener_credenciales_descifradas(cuit_clean) or {}
+    tiene_cert_activo = bool((prev_rec.get("cert_pem") or "").strip() and (prev_rec.get("key_pem") or "").strip())
+    if tiene_cert_activo:
+        guardado = bv.guardar_credenciales_cifradas(
+            cuit=cuit_clean,
+            key_pem_pendiente=key_pem,
+            owner_email=owner_email,
+        )
+    else:
+        guardado = bv.guardar_credenciales_cifradas(
+            cuit=cuit_clean,
+            key_pem=key_pem,
+            key_pem_pendiente=key_pem,
+            owner_email=owner_email,
+        )
     if not guardado.get("ok"):
         return guardado
 
@@ -326,8 +346,9 @@ def cargar_certificado_cuit_wsaa(
         return {"ok": False, "acceso_denegado": True, "error": reason}
 
     rec = bv.obtener_credenciales_descifradas(cuit_clean) or {}
-    key_pem = (rec.get("key_pem") or "").strip()
-    if not key_pem:
+    key_pend = (rec.get("key_pem_pendiente") or "").strip()
+    key_act = (rec.get("key_pem") or "").strip()
+    if not key_pend and not key_act:
         return {
             "ok": False,
             "error": f"No hay clave privada generada en bóveda para el CUIT {cuit_clean}. Ejecutá primero `generar_certificado_csr_arca`.",
@@ -338,13 +359,21 @@ def cargar_certificado_cuit_wsaa(
     except Exception as exc:
         return {"ok": False, "error": f"Certificado .crt PEM inválido: {exc}"}
 
-    # (a) Validar que el certificado corresponda a la clave privada guardada
-    try:
-        priv_key = serialization.load_pem_private_key(key_pem.encode("utf-8"), password=None)
-        if cert.public_key().public_numbers() != priv_key.public_key().public_numbers():
-            return {"ok": False, "error": "El certificado (.crt) no corresponde a la clave privada guardada en bóveda para este CUIT."}
-    except Exception as exc:
-        return {"ok": False, "error": f"No se pudo verificar la correspondencia con la clave privada: {exc}"}
+    # (a) C1: verificar correspondencia contra key_pem_pendiente (promueve al activar) o key_pem activa
+    matched_key_pem = None
+    cert_pub_nums = cert.public_key().public_numbers()
+    for cand_pem in (key_pend, key_act):
+        if not cand_pem:
+            continue
+        try:
+            priv_cand = serialization.load_pem_private_key(cand_pem.encode("utf-8"), password=None)
+            if cert_pub_nums == priv_cand.public_key().public_numbers():
+                matched_key_pem = cand_pem
+                break
+        except Exception:
+            continue
+    if not matched_key_pem:
+        return {"ok": False, "error": "El certificado (.crt) no corresponde a la clave privada guardada en bóveda para este CUIT."}
 
     # (b) Validar SERIALNUMBER == CUIT <cuit>
     serial_attrs = cert.subject.get_attributes_for_oid(NameOID.SERIAL_NUMBER)
@@ -370,6 +399,8 @@ def cargar_certificado_cuit_wsaa(
     res_save = bv.guardar_credenciales_cifradas(
         cuit=cuit_clean,
         cert_pem=cert_pem.strip(),
+        key_pem=matched_key_pem,
+        limpiar_key_pendiente=True,
         owner_email=owner_email,
     )
     if not res_save.get("ok"):
@@ -403,8 +434,14 @@ def resolver_credenciales_wsaa_para_cuit(
             c_pem = (rec.get("cert_pem") or "").strip()
             k_pem = (rec.get("key_pem") or "").strip()
             if c_pem and k_pem:
+                from cryptography import x509 as _x509
+                from cryptography.hazmat.primitives import serialization as _ser
                 vig = evaluar_vencimiento_cert_pem(c_pem)
-                if vig["vigente"]:
+                cert_obj = _x509.load_pem_x509_certificate(c_pem.encode("utf-8"))
+                priv_obj = _ser.load_pem_private_key(k_pem.encode("utf-8"), password=None)
+                if cert_obj.public_key().public_numbers() != priv_obj.public_key().public_numbers():
+                    logger.warning("[WSAA C1] Par cert_pem/key_pem desparejo para CUIT %s; cayendo a global_delegado.", cuit_clean)
+                elif vig["vigente"]:
                     return {
                         "fuente_certificado": "propio",
                         "cuit": cuit_clean,

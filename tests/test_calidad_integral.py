@@ -2061,6 +2061,33 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
             self.assertTrue(ta_a2["desde_cache"])
             self.assertEqual(calls["n"], 2)
 
+        # 8. C1: regenerar CSR con cert vigente NO rompe el par activo; al subir el cert nuevo, promueve la clave pendiente
+        r_csr2 = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_a}, json={
+            "name": "generar_certificado_csr_arca", "arguments": {"cuit": cuit_a, "razon_social": "Empresa A SA", "alias": "emp_a_v2"},
+        }).json()
+        self.assertTrue(r_csr2.get("ok"))
+        cred_mid = arca_ws.resolver_credenciales_wsaa_para_cuit(cuit_a)
+        self.assertEqual(cred_mid["fuente_certificado"], "propio")
+        c_mid = x509.load_pem_x509_certificate(cred_mid["cert_pem"].encode())
+        k_mid = serialization.load_pem_private_key(cred_mid["key_pem"].encode(), password=None)
+        self.assertEqual(c_mid.public_key().public_numbers(), k_mid.public_key().public_numbers())
+        # Subir cert firmado con la nueva key_pem_pendiente -> promueve al par nuevo
+        priv_a2 = serialization.load_pem_private_key(_bv_mod.obtener_credenciales_descifradas(cuit_a)["key_pem_pendiente"].encode(), password=None)
+        cert_a2_pem = _make_cert_pem(priv_a2, cuit_a, days_valid=180)
+        r_prom = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_a}, json={
+            "name": "cargar_certificado_wsaa_cuit", "arguments": {"cuit": cuit_a, "cert_pem": cert_a2_pem},
+        }).json()
+        self.assertTrue(r_prom.get("ok"))
+        cred_new = arca_ws.resolver_credenciales_wsaa_para_cuit(cuit_a)
+        k_new = serialization.load_pem_private_key(cred_new["key_pem"].encode(), password=None)
+        self.assertEqual(k_new.public_key().public_numbers(), priv_a2.public_key().public_numbers())
+
+        # 9. C2: /api/v1/vincular rechaza key_pem subida por el usuario
+        r_c2 = client.post("/api/v1/vincular", headers={"X-User-Token": tok_a}, json={
+            "email": own_a, "cuit": cuit_a, "key_pem": "-----BEGIN PRIVATE KEY-----\nFAKE\n-----END PRIVATE KEY-----",
+        }).json()
+        self.assertFalse(r_c2.get("ok"))
+
 
 if __name__ == "__main__":
     unittest.main()
