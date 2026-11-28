@@ -313,8 +313,16 @@ def consultar_ultimo_comprobante_wsfe(
     raw = _soap_post(ENDPOINTS[env_key]["wsfev1"], xml, soap_action="http://ar.gov.afip.dif.FEV1/FECompUltimoAutorizado")
     root = ET.fromstring(raw)
     ns = {"ar": "http://ar.gov.afip.dif.FEV1/"}
-    nro = root.findtext(".//ar:CbteNro", default="0", namespaces=ns)
-    return int(nro)
+    errs = [
+        f"{el.findtext('ar:Code', default='', namespaces=ns)}:{el.findtext('ar:Msg', default='', namespaces=ns)}"
+        for el in root.findall(".//ar:Errors/ar:Err", namespaces=ns)
+    ]
+    if errs:
+        raise RuntimeError(f"WSFE FECompUltimoAutorizado error: {'; '.join(errs)}")
+    nro_el = root.find(".//ar:CbteNro", namespaces=ns)
+    if nro_el is None or nro_el.text is None or not str(nro_el.text).strip().isdigit():
+        raise RuntimeError(f"WSFE FECompUltimoAutorizado sin CbteNro válido: {raw[:300]}")
+    return int(str(nro_el.text).strip())
 
 
 def consultar_comprobante_wsfe(
@@ -326,7 +334,8 @@ def consultar_comprobante_wsfe(
     sign: str,
     ambiente: str = "homologacion",
 ) -> Optional[Dict[str, Any]]:
-    """Consulta FECompConsultar en WSFEv1 para verificar/adoptar un comprobante ya autorizado (N4)."""
+    """Consulta FECompConsultar en WSFEv1 para verificar/adoptar un comprobante ya autorizado (N4).
+    N4-g: devuelve None SOLO si ARCA informa código 602 (sin resultados); lanza RuntimeError ante cualquier otro error."""
     env_key = "homologacion" if "homo" in ambiente.lower() else "produccion"
     cuit_clean = "".join(c for c in str(cuit_emisor) if c.isdigit())
     xml = f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -350,12 +359,19 @@ def consultar_comprobante_wsfe(
     raw = _soap_post(ENDPOINTS[env_key]["wsfev1"], xml, soap_action="http://ar.gov.afip.dif.FEV1/FECompConsultar")
     root = ET.fromstring(raw)
     ns = {"ar": "http://ar.gov.afip.dif.FEV1/"}
+    err_nodes = root.findall(".//ar:Errors/ar:Err", namespaces=ns)
+    if err_nodes:
+        codes = [(el.findtext("ar:Code", default="", namespaces=ns) or "").strip() for el in err_nodes]
+        if all(c == "602" for c in codes):
+            return None
+        msgs = [f"{(el.findtext('ar:Code', default='', namespaces=ns) or '').strip()}:{(el.findtext('ar:Msg', default='', namespaces=ns) or '').strip()}" for el in err_nodes]
+        raise RuntimeError(f"WSFE FECompConsultar error: {'; '.join(msgs)}")
     result_get = root.find(".//ar:ResultGet", namespaces=ns)
     if result_get is None:
-        return None
+        raise RuntimeError(f"WSFE FECompConsultar sin ResultGet ni código 602: {raw[:300]}")
     cae = (result_get.findtext("ar:CodAutorizacion", default="", namespaces=ns) or "").strip()
     if not cae:
-        return None
+        raise RuntimeError("WSFE FECompConsultar devolvió ResultGet sin CodAutorizacion (CAE).")
     imp_total_str = (result_get.findtext("ar:ImpTotal", default="0", namespaces=ns) or "0").strip()
     doc_tipo_str = (result_get.findtext("ar:DocTipo", default="0", namespaces=ns) or "0").strip()
     doc_nro_str = (result_get.findtext("ar:DocNro", default="0", namespaces=ns) or "0").strip()

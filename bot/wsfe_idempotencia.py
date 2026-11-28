@@ -148,16 +148,19 @@ def _reconciliar_registro_incierto(
 ) -> tuple[str, Optional[Dict[str, Any]]]:
     """Reconcilia un PENDIENTE/INCIERTO contra ARCA (FECompUltimoAutorizado + FECompConsultar).
 
-    Retorna una tupla (resultado, payload):
-      - ("ADOPTADO", dict_autorizado) si se encontró coincidencia exacta (ImpTotal, DocNro, CbteFch).
-      - ("NO_EMITIDO_CONFIRMADO", None) si pasaron >= 2 min y ARCA confirmó que el comprobante no existe:
-          (1) FECompUltimoAutorizado == ultimo_nro_antes,
-          (2) ultimo_nro_antes es None y los últimos <=10 comprobantes se revisaron sin coincidencia, o
-          (3) el rango completo (ultimo_antes, ultimo_ahora] se revisó sin errores ni coincidencias.
-      - ("INCIERTO", None) en cualquier otro caso (nunca re-emitir automáticamente).
+    N4-g / N4-h / N4-i:
+      - Sin `ultimo_nro_antes` -> siempre INCIERTO (resolución manual únicamente).
+      - Si `ultimo_ahora < ultimo_antes` -> respuesta anómala de WSFE -> INCIERTO (nunca NO_EMITIDO).
+      - Un número cuenta como revisado SOLO con un ResultGet válido (cae presente). Ante None o excepción -> INCIERTO.
+      - Gracia de 2 min medida desde `intento_at` fijo (no se reinicia en cada reintento).
+      - NO_EMITIDO_CONFIRMADO solo con evidencia positiva.
     """
     ultimo_antes = rec.get("ultimo_nro_antes")
-    elapsed = now_ts - float(rec.get("updated_at") or rec.get("created_at") or now_ts)
+    if ultimo_antes is None:
+        return "INCIERTO", None
+    ultimo_antes_int = int(ultimo_antes)
+    # N4-i: usar intento_at fijo para no reiniciar la ventana de 2 min en cada reintento
+    elapsed = now_ts - float(rec.get("intento_at") or rec.get("created_at") or now_ts)
     try:
         ultimo_ahora = arca_ws.obtener_ultimo_autorizado_wsfe(
             cuit_emisor=cuit_emisor,
@@ -173,29 +176,26 @@ def _reconciliar_registro_incierto(
         return "INCIERTO", None
     ultimo_ahora = int(ultimo_ahora)
 
-    # Caso 1 (N4-f): FECompUltimoAutorizado == ultimo_nro_antes
-    if ultimo_antes is not None and ultimo_ahora <= int(ultimo_antes):
+    # N4-g: los números WSFE son monotónicos crecientes; ultimo_ahora < ultimo_antes indica error de WSFE
+    if ultimo_ahora < ultimo_antes_int:
+        logger.warning(f"[WSFE N4-g] FECompUltimoAutorizado devolvió {ultimo_ahora} < ultimo_antes={ultimo_antes_int}; se mantiene INCIERTO.")
+        return "INCIERTO", None
+
+    # Caso 1 (N4-f): evidencia positiva FECompUltimoAutorizado == ultimo_nro_antes
+    if ultimo_ahora == ultimo_antes_int:
         if elapsed >= NO_EMITIDO_GRACE_SEC:
             return "NO_EMITIDO_CONFIRMADO", None
         return "INCIERTO", None
 
-    # Determinar rango a consultar en FECompConsultar
-    rango_completo = False
-    if ultimo_antes is None:
-        # Caso 2 (N4-f): revisar hasta los últimos 10 comprobantes
-        if ultimo_ahora <= 0:
-            return ("NO_EMITIDO_CONFIRMADO", None) if elapsed >= NO_EMITIDO_GRACE_SEC else ("INCIERTO", None)
-        desde = max(1, ultimo_ahora - 9)
+    total_nuevos = ultimo_ahora - ultimo_antes_int
+    if total_nuevos <= MAX_RECONCILE_SCAN:
+        desde = ultimo_antes_int + 1
         rango_completo = True
     else:
-        total_nuevos = ultimo_ahora - int(ultimo_antes)
-        if total_nuevos <= MAX_RECONCILE_SCAN:
-            desde = int(ultimo_antes) + 1
-            rango_completo = True
-        else:
-            desde = ultimo_ahora - MAX_RECONCILE_SCAN + 1
-            rango_completo = False
+        desde = ultimo_ahora - MAX_RECONCILE_SCAN + 1
+        rango_completo = False
 
+    revisados_validos = 0
     for nro in range(ultimo_ahora, desde - 1, -1):
         try:
             comp = arca_ws.consultar_comprobante_por_nro_wsfe(
@@ -208,8 +208,11 @@ def _reconciliar_registro_incierto(
         except Exception as exc:
             logger.warning(f"[WSFE N4] Error en FECompConsultar({nro}): {exc}")
             return "INCIERTO", None
+        # N4-g: un número cuenta como revisado SOLO con ResultGet válido (cae presente). Ante None -> INCIERTO.
         if not comp or not comp.get("cae"):
-            continue
+            logger.warning(f"[WSFE N4-g] FECompConsultar({nro}) devolvió None o sin CAE dentro del rango autorizado; se mantiene INCIERTO.")
+            return "INCIERTO", None
+        revisados_validos += 1
         imp_match = abs(round(float(comp.get("imp_total", -1)), 2) - round(float(imp_total), 2)) < 0.005
         doc_match = int(comp.get("doc_nro", -1)) == int(doc_nro)
         fch_match = str(comp.get("cbte_fch", "")).strip() == str(cbte_fch).strip()
@@ -237,8 +240,8 @@ def _reconciliar_registro_incierto(
                 ),
             }
 
-    # Caso 2 / 3 (N4-f): rango revisado completo sin coincidencias y pasaron >= 2 min
-    if rango_completo and elapsed >= NO_EMITIDO_GRACE_SEC:
+    # Caso 3 (N4-f + N4-g): rango completo revisado con ResultGet válidos en TODOS los números y >= 2 min
+    if rango_completo and revisados_validos == total_nuevos and elapsed >= NO_EMITIDO_GRACE_SEC:
         return "NO_EMITIDO_CONFIRMADO", None
     return "INCIERTO", None
 
@@ -250,9 +253,17 @@ def resolver_emision_incierta(
     accion: str,
     cbte_nro: Optional[int] = None,
     ambiente: Optional[str] = None,
+    confirmado: bool = False,
+    forzar: bool = False,
 ) -> Dict[str, Any]:
-    """Tool administrativa exclusiva del Owner validado para resolver manualmente un registro INCIERTO/PENDIENTE (N4-f).
-    `accion`: 'marcar_no_emitido' | 'adoptar_nro'."""
+    """Tool administrativa exclusiva del Owner validado para resolver manualmente un registro INCIERTO/PENDIENTE (N4-f / N4-j).
+    Requiere confirmado=True. `accion`: 'marcar_no_emitido' | 'adoptar_nro'."""
+    if not confirmado:
+        return {
+            "ok": False,
+            "requiere_confirmacion": True,
+            "error": "Para ejecutar `resolver_emision_incierta` debés confirmar explícitamente con `confirmado: true`.",
+        }
     cuit_em = bv.normalizar_cuit(cuit_emisor)
     h_q = (huella or "").strip().lower()
     act = (accion or "").strip().lower()
@@ -279,15 +290,43 @@ def resolver_emision_incierta(
         if rec.get("estado") not in ("PENDIENTE", "INCIERTO"):
             return {"ok": False, "error": f"El registro ya está resuelto en estado '{rec.get('estado')}'."}
 
+    env_k = ambiente or rec.get("ambiente") or "homologacion"
+
     if act == "marcar_no_emitido":
+        # N4-j: consultar ARCA antes de marcar no emitido y avisar si hay un candidato coincidente
+        if not forzar:
+            rec_st, cand = _reconciliar_registro_incierto(
+                rec=rec,
+                cuit_emisor=cuit_em,
+                pto_vta=int(rec["pto_vta"]),
+                cbte_tipo=int(rec["cbte_tipo"]),
+                doc_nro=int(rec.get("doc_nro", 0)),
+                imp_total=float(rec.get("imp_total", 0.0)),
+                cbte_fch=str(rec.get("cbte_fch", "")),
+                ambiente=env_k,
+                now_ts=time.time(),
+            )
+            if rec_st == "ADOPTADO" and cand is not None:
+                return {
+                    "ok": False,
+                    "candidato_encontrado": True,
+                    "cbte_nro_candidato": cand.get("cbte_nro"),
+                    "cae_candidato": cand.get("cae"),
+                    "error": (
+                        f"ATENCIÓN: ARCA tiene el comprobante #{cand.get('cbte_nro')} (CAE {cand.get('cae')}) "
+                        "con el mismo importe, receptor y fecha. Usá `accion='adoptar_nro'` en lugar de "
+                        "`marcar_no_emitido` (o enviá `forzar: true` si confirmás que es otro comprobante)."
+                    ),
+                }
         with _idem_io_lock:
             store = _load_store_locked()
             rec["estado"] = "NO_EMITIDO_CONFIRMADO"
             rec["resuelto_manual"] = True
+            rec["forzado"] = bool(forzar)
             rec["updated_at"] = time.time()
             store["by_huella"][match_key] = rec
             if rec.get("idempotency_key"):
-                kl = f"{rec.get('ambiente', 'homologacion')}:{cuit_em}:{rec['idempotency_key']}"
+                kl = f"{env_k}:{cuit_em}:{rec['idempotency_key']}"
                 if kl in store["by_key"]:
                     store["by_key"][kl] = rec
             _save_store_locked(store)
@@ -302,7 +341,6 @@ def resolver_emision_incierta(
     # accion == "adoptar_nro"
     if not cbte_nro or int(cbte_nro) <= 0:
         return {"ok": False, "error": "Para 'adoptar_nro' debés indicar el número de comprobante (`cbte_nro`)."}
-    env_k = ambiente or rec.get("ambiente") or "homologacion"
     comp = arca_ws.consultar_comprobante_por_nro_wsfe(
         cuit_emisor=cuit_em,
         pto_vta=int(rec["pto_vta"]),
@@ -312,6 +350,25 @@ def resolver_emision_incierta(
     )
     if not comp or not comp.get("cae"):
         return {"ok": False, "error": f"No se encontró el comprobante #{cbte_nro} autorizado en ARCA para adoptarlo."}
+
+    # N4-j: validar importe, documento y fecha contra el registro, salvo forzar=True
+    diffs = []
+    if abs(round(float(comp.get("imp_total", -1)), 2) - round(float(rec.get("imp_total", 0)), 2)) >= 0.005:
+        diffs.append(f"importe ARCA={comp.get('imp_total')} vs registro={rec.get('imp_total')}")
+    if int(comp.get("doc_nro", -1)) != int(rec.get("doc_nro", 0)):
+        diffs.append(f"doc_nro ARCA={comp.get('doc_nro')} vs registro={rec.get('doc_nro')}")
+    if str(comp.get("cbte_fch", "")).strip() != str(rec.get("cbte_fch", "")).strip():
+        diffs.append(f"fecha ARCA={comp.get('cbte_fch')} vs registro={rec.get('cbte_fch')}")
+    if diffs and not forzar:
+        return {
+            "ok": False,
+            "discrepancia_datos": True,
+            "diferencias": diffs,
+            "error": (
+                f"El comprobante #{cbte_nro} en ARCA no coincide con el registro incierto ({'; '.join(diffs)}). "
+                "Verificá el número o reenviá con `forzar: true` para adoptarlo igualmente."
+            ),
+        }
 
     adoptado = {
         "ok": True,
@@ -326,6 +383,7 @@ def resolver_emision_incierta(
         "cae_vencimiento": str(comp.get("cae_vencimiento", "")),
         "adoptado": True,
         "resuelto_manual": True,
+        "forzado": bool(forzar),
     }
     with _idem_io_lock:
         store = _load_store_locked()
@@ -479,8 +537,8 @@ def emitir_wsfe_con_idempotencia(
                         detalle="intento previo sin confirmación coincidente en ARCA",
                     )
 
-        # Paso 1: obtener ultimo_nro_antes ANTES de persistir PENDIENTE y llamar a FECAESolicitar
-        ultimo_antes: Optional[int] = None
+        # Paso 1 (N4-h): obtener ultimo_nro_antes ANTES de persistir PENDIENTE y llamar a FECAESolicitar.
+        # Sin ultimo_nro_antes no se puede reconciliar de forma segura -> responder ARCA_NO_DISPONIBLE y NO emitir.
         try:
             ultimo_antes = arca_ws.obtener_ultimo_autorizado_wsfe(
                 cuit_emisor=cuit_em,
@@ -489,7 +547,20 @@ def emitir_wsfe_con_idempotencia(
                 ambiente=env_k,
             )
         except Exception as exc:
-            logger.warning(f"[WSFE N4] No se pudo leer FECompUltimoAutorizado previo: {exc}")
+            logger.warning(f"[WSFE N4-h] Error leyendo FECompUltimoAutorizado previo: {exc}")
+            return {
+                "ok": False,
+                "estado": "ARCA_NO_DISPONIBLE",
+                "cuit": cuit_em,
+                "error": f"No se pudo consultar FECompUltimoAutorizado previo a la emisión ({str(exc)[:160]}). No se emitió ningún comprobante; reintentá en unos segundos.",
+            }
+        if ultimo_antes is None:
+            return {
+                "ok": False,
+                "estado": "ARCA_NO_DISPONIBLE",
+                "cuit": cuit_em,
+                "error": "No se pudo obtener FECompUltimoAutorizado previo (certificado o servicio WSFE no disponible). No se emitió ningún comprobante.",
+            }
 
         pend_rec = {
             "huella": huella_base,
@@ -503,8 +574,9 @@ def emitir_wsfe_con_idempotencia(
             "imp_total": imp_total,
             "cbte_fch": fecha_cbte,
             "ambiente": env_k,
-            "ultimo_nro_antes": ultimo_antes,
+            "ultimo_nro_antes": int(ultimo_antes),
             "override_duplicado": bool(reemitir_aunque_duplicado),
+            "intento_at": now,
             "created_at": now,
             "updated_at": now,
         }

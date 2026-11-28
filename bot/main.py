@@ -1793,6 +1793,8 @@ def run_mcp_tool(
             accion=str(args.get("accion") or ""),
             cbte_nro=int(args["cbte_nro"]) if args.get("cbte_nro") else None,
             ambiente=args.get("ambiente"),
+            confirmado=confirmado_strict,
+            forzar=_parse_bool_strict(args.get("forzar", False)),
         )
         if res_man.get("ok"):
             registrar_evento_historial(

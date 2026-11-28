@@ -1343,17 +1343,112 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
 
             r_ed = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_ed}, json={
                 "name": "resolver_emision_incierta",
-                "arguments": {"cuit": cuit_f, "huella": huella_short, "accion": "marcar_no_emitido"},
+                "arguments": {"cuit": cuit_f, "huella": huella_short, "accion": "marcar_no_emitido", "confirmado": True},
             }).json()
             self.assertFalse(r_ed.get("ok"))
             self.assertTrue(r_ed.get("acceso_denegado"))
 
-            r_own = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_own}, json={
+            # Sin confirmado=True -> rechazado (N4-j)
+            r_noconf = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_own}, json={
                 "name": "resolver_emision_incierta",
                 "arguments": {"cuit": cuit_f, "huella": huella_short, "accion": "marcar_no_emitido"},
             }).json()
+            self.assertFalse(r_noconf.get("ok"))
+            self.assertTrue(r_noconf.get("requiere_confirmacion"))
+
+            r_own = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_own}, json={
+                "name": "resolver_emision_incierta",
+                "arguments": {"cuit": cuit_f, "huella": huella_short, "accion": "marcar_no_emitido", "confirmado": True},
+            }).json()
             self.assertTrue(r_own.get("ok"))
             self.assertEqual(r_own.get("estado"), "NO_EMITIDO_CONFIRMADO")
+
+    def test_sec_n4g_h_i_j_wsfe_errores_y_guardas(self):
+        """Cierre N4-g, N4-h, N4-i, N4-j: errores WSFE nunca son 'no emitido', sin ultimo_antes no emite, intento_at fijo y guardas de resolver_emision_incierta."""
+        import time as _t
+        from unittest.mock import patch
+        from bot import arca_ws
+        from bot import wsfe_idempotencia as wi
+
+        # N4-g (parser): FECompUltimoAutorizado con <Errors> lanza RuntimeError (nunca 0)
+        xml_err_ult = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ar="http://ar.gov.afip.dif.FEV1/">'
+            '<soap:Body><ar:FECompUltimoAutorizadoResponse><ar:FECompUltimoAutorizadoResult>'
+            '<ar:Errors><ar:Err><ar:Code>500</ar:Code><ar:Msg>Error interno</ar:Msg></ar:Err></ar:Errors>'
+            '</ar:FECompUltimoAutorizadoResult></ar:FECompUltimoAutorizadoResponse></soap:Body></soap:Envelope>'
+        )
+        with patch.object(arca_ws, "_soap_post", return_value=xml_err_ult):
+            with self.assertRaises(RuntimeError):
+                arca_ws.consultar_ultimo_comprobante_wsfe("20304050607", 1, 11, "t", "s")
+
+        # N4-g (parser): FECompConsultar código 602 -> None; otro error -> RuntimeError
+        xml_602 = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ar="http://ar.gov.afip.dif.FEV1/">'
+            '<soap:Body><ar:FECompConsultarResponse><ar:FECompConsultarResult>'
+            '<ar:Errors><ar:Err><ar:Code>602</ar:Code><ar:Msg>Sin resultados</ar:Msg></ar:Err></ar:Errors>'
+            '</ar:FECompConsultarResult></ar:FECompConsultarResponse></soap:Body></soap:Envelope>'
+        )
+        xml_500 = xml_602.replace("602", "500")
+        with patch.object(arca_ws, "_soap_post", return_value=xml_602):
+            self.assertIsNone(arca_ws.consultar_comprobante_wsfe("20304050607", 1, 11, 99, "t", "s"))
+        with patch.object(arca_ws, "_soap_post", return_value=xml_500):
+            with self.assertRaises(RuntimeError):
+                arca_ws.consultar_comprobante_wsfe("20304050607", 1, 11, 99, "t", "s")
+
+        # N4-h: sin ultimo_nro_antes -> ARCA_NO_DISPONIBLE sin emitir
+        emits_h = {"n": 0}
+        with patch.object(wi.arca_ws, "obtener_ultimo_autorizado_wsfe", return_value=None), \
+             patch.object(wi.arca_ws, "emitir_comprobante_wsfe", side_effect=lambda **k: emits_h.__setitem__("n", emits_h["n"] + 1)):
+            r_h = wi.emitir_wsfe_con_idempotencia(
+                cuit_emisor="20304050610", pto_vta=1, cbte_tipo=11, receptor_cuit="", importe_neto=900.0, importe_iva=0.0,
+            )
+            self.assertFalse(r_h.get("ok"))
+            self.assertEqual(r_h.get("estado"), "ARCA_NO_DISPONIBLE")
+            self.assertEqual(emits_h["n"], 0)
+
+        # N4-i + N4-g + N4-j
+        class _Clk:
+            def __init__(self): self.offset = 0
+            def time(self): return _t.time() + self.offset
+        clk = _Clk()
+        hoy_ar = arca_ws.fecha_hoy_arca()
+        arca = {"ultimo": 400, "comps": {}, "emits": 0}
+        def emit_ok(**k):
+            arca["ultimo"] += 1; n = arca["ultimo"]; arca["emits"] += 1
+            arca["comps"][n] = {"cae": f"CAE{n}", "imp_total": round(k["importe_neto"], 2), "doc_nro": 0, "cbte_fch": hoy_ar, "cbte_nro": n}
+            return {"ok": True, "resultado": "APROBADO", "cae": f"CAE{n}", "cbte_nro": n}
+
+        v_i = dict(cuit_emisor="20304050611", pto_vta=1, cbte_tipo=11, receptor_cuit="", importe_neto=555.0, importe_iva=0.0)
+        with patch.object(wi.arca_ws, "obtener_ultimo_autorizado_wsfe", side_effect=lambda **k: arca["ultimo"]), \
+             patch.object(wi.arca_ws, "consultar_comprobante_por_nro_wsfe", side_effect=lambda **k: arca["comps"].get(k["cbte_nro"])), \
+             patch.object(wi, "time", clk):
+            with patch.object(wi.arca_ws, "emitir_comprobante_wsfe", side_effect=ConnectionRefusedError("refused")):
+                wi.emitir_wsfe_con_idempotencia(**v_i)
+            with patch.object(wi.arca_ws, "emitir_comprobante_wsfe", side_effect=emit_ok):
+                # Reintento al minuto 1 -> sigue INCIERTO, pero NO reinicia intento_at (N4-i)
+                clk.offset = 60
+                r_m1 = wi.emitir_wsfe_con_idempotencia(**v_i)
+                self.assertEqual(r_m1.get("estado"), "ESTADO_INCIERTO_REQUIERE_REVISION")
+                # Reintento al minuto 2m10s -> ya pasaron >120s desde intento_at -> desbloquea y emite 1
+                clk.offset = 130
+                r_m2 = wi.emitir_wsfe_con_idempotencia(**v_i)
+                self.assertTrue(r_m2.get("ok"))
+                self.assertEqual(arca["emits"], 1)
+
+            # N4-j: adoptar_nro con importe distinto rechaza sin forzar=True, acepta con forzar=True
+            v_j = dict(cuit_emisor="20304050611", pto_vta=1, cbte_tipo=11, receptor_cuit="", importe_neto=666.0, importe_iva=0.0)
+            with patch.object(wi.arca_ws, "emitir_comprobante_wsfe", side_effect=TimeoutError("drop")):
+                r_jinc = wi.emitir_wsfe_con_idempotencia(**v_j)
+            h_j = r_jinc["huella_idempotencia"]
+            # Comprobante #401 tiene importe 555.0 != 666.0
+            r_mismatch = wi.resolver_emision_incierta(cuit_emisor="20304050611", huella=h_j, accion="adoptar_nro", cbte_nro=401, confirmado=True)
+            self.assertFalse(r_mismatch.get("ok"))
+            self.assertTrue(r_mismatch.get("discrepancia_datos"))
+            r_forced = wi.resolver_emision_incierta(cuit_emisor="20304050611", huella=h_j, accion="adoptar_nro", cbte_nro=401, confirmado=True, forzar=True)
+            self.assertTrue(r_forced.get("ok"))
+            self.assertTrue(r_forced.get("forzado"))
 
 
 if __name__ == "__main__":

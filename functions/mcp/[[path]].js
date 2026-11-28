@@ -312,9 +312,27 @@ const MCP_TOOLS = [
           }
         },
         ambiente: { type: "string", enum: ["homologacion", "produccion"], default: "homologacion" },
-        confirmado: { type: "boolean", default: false }
+        confirmado: { type: "boolean", default: false },
+        reemitir_aunque_duplicado: { type: "boolean", default: false, description: "Solo para ventas idénticas legítimas (mismo cliente, importe y fecha) cuando la emisión anterior ya fue autorizada o rechazada." }
       },
       required: ["cuit_emisor", "cbte_tipo", "receptor_cuit", "importe_neto"]
+    }
+  },
+  {
+    name: "resolver_emision_incierta",
+    description: "Resuelve manualmente un registro WSFE en estado INCIERTO/PENDIENTE (exclusivo del propietario validado). Permite adoptar un número de comprobante autorizado (`adoptar_nro`) validando importe/documento/fecha, o marcarlo como no emitido (`marcar_no_emitido`) previa consulta a ARCA. Requiere confirmado=true.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cuit: { type: "string", description: "CUIT emisor (11 dígitos)" },
+        huella: { type: "string", description: "Huella del registro incierto (al menos 8 caracteres)" },
+        accion: { type: "string", enum: ["adoptar_nro", "marcar_no_emitido"], description: "Acción de resolución manual" },
+        cbte_nro: { type: "integer", description: "Número de comprobante a adoptar (requerido para adoptar_nro)" },
+        ambiente: { type: "string", enum: ["homologacion", "produccion"] },
+        forzar: { type: "boolean", default: false, description: "Forzar resolución si hay discrepancia de datos o candidato en ARCA" },
+        confirmado: { type: "boolean", default: false, description: "Debe ser true para ejecutar la resolución" }
+      },
+      required: ["cuit", "huella", "accion", "confirmado"]
     }
   },
   {
@@ -1066,6 +1084,7 @@ export async function onRequest({ request, env, params }) {
     if (method === "tools/list") {
       const WRITE_TOOLS = new Set([
         "emitir_factura_wsfe",
+        "resolver_emision_incierta",
         "ejecutar_accion_bot",
         "consultar_y_renovar_certificado_mipyme",
         "vincular_cuenta_en_chat",
@@ -1099,7 +1118,7 @@ export async function onRequest({ request, env, params }) {
           inputSchema: { ...schema, properties: props },
           annotations: {
             readOnlyHint: isReadOnly,
-            destructiveHint: t.name === "emitir_factura_wsfe" || t.name === "revocar_usuario_cuit" || t.name === "admin_accion_emergencia_plataforma",
+            destructiveHint: t.name === "emitir_factura_wsfe" || t.name === "resolver_emision_incierta" || t.name === "revocar_usuario_cuit" || t.name === "admin_accion_emergencia_plataforma",
             idempotentHint: isReadOnly,
             openWorldHint: true
           }
@@ -2376,6 +2395,7 @@ export async function onRequest({ request, env, params }) {
           const isTimeout = e && (e.name === "TimeoutError" || e.name === "AbortError" || String(e.message || "").toLowerCase().includes("timeout"));
           const isMutatingCall =
             (toolName === "emitir_factura_wsfe" && confirmadoStrict) ||
+            (toolName === "resolver_emision_incierta" && confirmadoStrict) ||
             (toolName === "consultar_y_renovar_certificado_mipyme" && confirmadoStrict) ||
             toolName === "vincular_cuenta_en_chat" ||
             toolName === "autorizar_usuario_cuit" ||
