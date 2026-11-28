@@ -1738,7 +1738,7 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
         from unittest.mock import patch
         from bot import main as bot_main
         from bot import arca_ws
-        from scripts.migrar_clave_boveda import migrar_boveda
+        from bot.migrar_clave_boveda import migrar_boveda
 
         with _tf.TemporaryDirectory(prefix="impuesto_o2_") as td:
             vdir = Path(td) / "boveda"
@@ -1784,7 +1784,7 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
                 self.assertEqual(vfile.read_bytes(), orig_v_bytes)
 
                 # 3b. O2-b: fallo a mitad en el 3er archivo (No space left) no corrompe originales y el reintento completa todo
-                import scripts.migrar_clave_boveda as _mig_mod
+                import bot.migrar_clave_boveda as _mig_mod
                 orig_fn = _mig_mod._fernet_from_env_key
                 class _BoomFernet:
                     def __init__(self, f): self.f = f; self.n = 0

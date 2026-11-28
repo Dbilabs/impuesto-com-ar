@@ -10,6 +10,9 @@ prompts-maestros
 scripts
 data/boveda
 data/auditorias
+data/wsaa_cache
+data/incidentes_calidad.json
+docs
 *.png
 *.jpg
 *.pdf

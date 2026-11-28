@@ -191,7 +191,7 @@ def _read_enc_json(path: Path, default: Any) -> Any:
         if _is_cloud_prod() and KEY_FILE.exists():
             logger.critical(
                 "O2: clave de bóveda distinta a la usada para cifrar (%s). Existe %s en volumen: "
-                "corré `python3 scripts/migrar_clave_boveda.py --aplicar` antes de operar. NO se reescribirá el archivo.",
+                "corré `python3 -m bot.migrar_clave_boveda --vault-dir /app/data/boveda --aplicar` antes de operar. NO se reescribirá el archivo.",
                 path.name,
                 KEY_FILE,
             )

@@ -35,16 +35,17 @@ Si la VM venía corriendo con `.vault_key` generada localmente y vas a pasar a `
    ```bash
    sudo tar czf boveda-backup-$(date +%F).tgz -C /var/lib/impuesto boveda
    ```
-3. **Corré primero `--dry-run` y luego `--aplicar`** sobre el volumen montado:
+3. **Corré primero `--dry-run` y luego `--aplicar`** pasando `IMPUESTO_VAULT_KEY` vía `--env-file /etc/impuesto/env` (permisos `0600`) o `-e IMPUESTO_VAULT_KEY` (heredada del entorno; **nunca** pegues la clave literal en la línea de comandos):
    ```bash
-   docker run --rm -v /var/lib/impuesto/boveda:/app/data/boveda \
-     -e IMPUESTO_VAULT_KEY="tu-clave-nueva" arca-bot \
-     python3 scripts/migrar_clave_boveda.py --vault-dir /app/data/boveda
-   docker run --rm -v /var/lib/impuesto/boveda:/app/data/boveda \
-     -e IMPUESTO_VAULT_KEY="tu-clave-nueva" arca-bot \
-     python3 scripts/migrar_clave_boveda.py --vault-dir /app/data/boveda --aplicar
+   docker run --rm --env-file /etc/impuesto/env \
+     -v /var/lib/impuesto/boveda:/app/data/boveda arca-bot \
+     python3 -m bot.migrar_clave_boveda --vault-dir /app/data/boveda
+   docker run --rm --env-file /etc/impuesto/env \
+     -v /var/lib/impuesto/boveda:/app/data/boveda arca-bot \
+     python3 -m bot.migrar_clave_boveda --vault-dir /app/data/boveda --aplicar
    ```
-4. **Levantá el contenedor nuevo** con `IMPUESTO_VAULT_KEY`, `BOT_API_SECRET` y el volumen `/app/data/boveda`.
+4. **Levantá el contenedor nuevo** con `--env-file /etc/impuesto/env` (`IMPUESTO_VAULT_KEY`, `BOT_API_SECRET`) y el volumen `/app/data/boveda`.
+5. **Retención (limpieza tras verificar operación):** después de 7 días de operación verificada en producción, eliminá `/var/lib/impuesto/boveda/_backups_o2/` y `/var/lib/impuesto/boveda/.vault_key.migrada` (mientras existan, la clave vieja sigue descifrando esas copias).
 
 ## Configuración en Cloudflare Pages
 En las variables de entorno de Cloudflare Pages:
