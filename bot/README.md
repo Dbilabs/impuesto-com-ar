@@ -15,6 +15,7 @@ Reemplaza servicios pagos de terceros como Afip SDK con un formato de API 100% c
 cd bot
 pip install -r requirements.txt
 playwright install chromium
+export IMPUESTO_ENV=development
 uvicorn bot.main:app --host 0.0.0.0 --port 8000
 ```
 

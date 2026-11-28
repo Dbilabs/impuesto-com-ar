@@ -73,9 +73,8 @@ npx wrangler pages deploy dist --project-name=impuesto
 ```bash
 pip install -r bot/requirements.txt
 playwright install chromium
-export ORACLE_CLOUD=1
-export IMPUESTO_VAULT_KEY="tu-clave-maestra-segura"
-export BOT_API_SECRET="tu-secreto-compartido-con-cloudflare"
+# Para correr en desarrollo local (relaja secretos obligatorios de producción):
+export IMPUESTO_ENV=development
 export PUBLIC_BOT_URL="https://impuesto.com.ar"
 uvicorn bot.main:app --host 0.0.0.0 --port 8000
 ```

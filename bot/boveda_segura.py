@@ -136,12 +136,15 @@ def _now_iso() -> str:
 
 
 def _is_cloud_prod() -> bool:
-    return bool(
+    """O1 (fail-closed): producción por defecto; solo IMPUESTO_ENV=development|test relaja requisitos."""
+    if (
         os.environ.get("OCI_REGION", "").strip()
         or os.environ.get("ORACLE_CLOUD", "").strip()
         or os.environ.get("FLY_APP_NAME", "").strip()
         or os.environ.get("REQUIRE_VAULT_KEY", "").strip() == "1"
-    )
+    ):
+        return True
+    return os.environ.get("IMPUESTO_ENV", "").strip().lower() not in ("development", "test")
 
 
 def _get_fernet() -> "Fernet":

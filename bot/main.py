@@ -83,6 +83,64 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("arca_api")
 
 app = FastAPI(title="impuesto.com.ar — ARCA Headless Multi-Tenant Engine", version="3.3.0")
+
+
+def _is_prod_env() -> bool:
+    """O1 (fail-closed): producción por defecto; solo IMPUESTO_ENV=development|test relaja requisitos."""
+    if (
+        os.environ.get("OCI_REGION", "").strip()
+        or os.environ.get("ORACLE_CLOUD", "").strip()
+        or os.environ.get("FLY_APP_NAME", "").strip()
+        or os.environ.get("REQUIRE_BOT_SECRET", "").strip() == "1"
+        or os.environ.get("REQUIRE_VAULT_KEY", "").strip() == "1"
+    ):
+        return True
+    return os.environ.get("IMPUESTO_ENV", "").strip().lower() not in ("development", "test")
+
+
+def _missing_prod_secrets() -> list:
+    missing = []
+    if not os.environ.get("BOT_API_SECRET", "").strip():
+        missing.append("BOT_API_SECRET")
+    if not os.environ.get("IMPUESTO_VAULT_KEY", "").strip():
+        missing.append("IMPUESTO_VAULT_KEY")
+    return missing
+
+
+@app.middleware("http")
+async def _prod_fail_closed_middleware(request: Request, call_next):
+    if request.url.path != "/health" and _is_prod_env():
+        missing = _missing_prod_secrets()
+        if missing:
+            from fastapi.responses import JSONResponse
+            logger.critical(f"[O1 FAIL-CLOSED] Faltan secretos obligatorios en producción: {', '.join(missing)}")
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "ok": False,
+                    "error": f"Servidor en producción sin secretos obligatorios configurados ({', '.join(missing)}). Definilos o usá IMPUESTO_ENV=development en local.",
+                },
+            )
+    return await call_next(request)
+
+
+@app.on_event("startup")
+def _startup_checks_y_migraciones():
+    if _is_prod_env():
+        missing = _missing_prod_secrets()
+        if missing:
+            logger.critical(
+                f"[O1 FAIL-CLOSED] Faltan secretos obligatorios en producción: {', '.join(missing)}. "
+                "Todos los endpoints (salvo /health) responderán 503 hasta configurarlos."
+            )
+    if os.environ.get("IMPUESTO_ENV", "").strip().lower() != "test":
+        try:
+            from .arca_ws import migrar_tickets_wsaa_legados
+            mig = migrar_tickets_wsaa_legados()
+            if mig:
+                logger.info(f"[W1] Migrados {mig} ticket(s) WSAA legados al volumen cifrado.")
+        except Exception as exc:
+            logger.warning(f"[W1] Error migrando tickets WSAA legados en startup: {exc}")
 executor = ThreadPoolExecutor(max_workers=8)
 PLAYWRIGHT_SEM = threading.Semaphore(int(os.environ.get("MAX_CONCURRENT_BROWSERS", "1")))
 jobs: Dict[str, Dict[str, Any]] = {}
@@ -351,12 +409,7 @@ class McpToolRequest(BaseModel):
 
 def _check_secret(x_bot_secret: Optional[str]):
     expected = os.environ.get("BOT_API_SECRET", "").strip()
-    is_prod = bool(
-        os.environ.get("OCI_REGION", "").strip()
-        or os.environ.get("ORACLE_CLOUD", "").strip()
-        or os.environ.get("FLY_APP_NAME", "").strip()
-        or os.environ.get("REQUIRE_BOT_SECRET", "").strip() == "1"
-    )
+    is_prod = _is_prod_env()
     if not expected:
         if is_prod:
             raise HTTPException(status_code=503, detail="BOT_API_SECRET not configured in production")

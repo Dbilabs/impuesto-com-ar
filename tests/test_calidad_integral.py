@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT))
 
 # Aislar SIEMPRE la bóveda y el backoffice en un tempdir para no tocar data/boveda real (P1-17)
 _TEST_TMPDIR = tempfile.TemporaryDirectory(prefix="impuesto_test_vault_")
+os.environ["IMPUESTO_ENV"] = "test"
 os.environ["DISABLE_AUDIT_PREWARM"] = "1"
 os.environ["PLATFORM_ADMIN_EMAILS"] = "admin_fixture@impuesto.test"
 
@@ -1697,6 +1698,38 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
             # Usuario ya verificado -> ENTRA igual (cierre N3-b)
             r_known = _bv_mod.solicitar_codigo_otp_email(email_conocido, client_ip="198.51.100.51")
             self.assertTrue(r_known.get("ok"), f"Usuario conocido bloqueado por ataque 4b: {r_known}")
+
+    def test_sec_o1_produccion_fail_closed_por_defecto(self):
+        """O1: sin variables de entorno, producción es fail-closed (_is_cloud_prod=True, _check_secret lanza 503, middleware 503 salvo /health)."""
+        from unittest.mock import patch
+        from fastapi import HTTPException
+        from bot import main as bot_main
+        client = TestClient(app)
+
+        clean_env = {
+            "IMPUESTO_ENV": "",
+            "OCI_REGION": "",
+            "ORACLE_CLOUD": "",
+            "FLY_APP_NAME": "",
+            "REQUIRE_BOT_SECRET": "",
+            "REQUIRE_VAULT_KEY": "",
+            "BOT_API_SECRET": "",
+            "IMPUESTO_VAULT_KEY": "",
+        }
+        with patch.dict(os.environ, clean_env):
+            self.assertTrue(_bv_mod._is_cloud_prod())
+            self.assertTrue(bot_main._is_prod_env())
+            with self.assertRaises(HTTPException) as ctx:
+                bot_main._check_secret(None)
+            self.assertEqual(ctx.exception.status_code, 503)
+            self.assertEqual(client.get("/health").status_code, 200)
+            self.assertEqual(client.post("/api/v1/mcp/tool", json={"name": "listar_empresas", "arguments": {}}).status_code, 503)
+
+        # Con IMPUESTO_ENV=test relaja los requisitos como en la suite
+        with patch.dict(os.environ, {**clean_env, "IMPUESTO_ENV": "test"}):
+            self.assertFalse(_bv_mod._is_cloud_prod())
+            self.assertFalse(bot_main._is_prod_env())
+            bot_main._check_secret(None)
 
 
 if __name__ == "__main__":
