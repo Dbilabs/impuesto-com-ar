@@ -453,6 +453,7 @@ def _resolve_creds_authorized(
     args: Dict[str, Any],
     public_base_url: str,
     nivel: str = "lectura",
+    requiere_validado: bool = False,
 ):
     """Resuelve CUIT + Clave Fiscal verificando SIEMPRE que `actor_email` sea Owner o invitado autorizado."""
     cuit = normalizar_cuit(
@@ -483,9 +484,9 @@ def _resolve_creds_authorized(
                 "url_vinculacion_segura": f"{public_base_url}/vincular",
             }
 
-    ok_perm, role, reason = verificar_permiso_cuit(actor_email, cuit, nivel=nivel)
+    ok_perm, role, reason = verificar_permiso_cuit(actor_email, cuit, nivel=nivel, requiere_validado=requiere_validado)
     if not ok_perm:
-        return cuit, None, {
+        out_den = {
             "ok": False,
             "acceso_denegado": True,
             "cuit": cuit,
@@ -493,6 +494,9 @@ def _resolve_creds_authorized(
             "mensaje": reason,
             "url_vinculacion_segura": f"{public_base_url}/vincular?cuit={cuit}",
         }
+        if "PENDIENTE_VALIDACION" in (reason or ""):
+            out_den["estado"] = "PENDIENTE_VALIDACION"
+        return cuit, None, out_den
 
     rec = obtener_credenciales_descifradas(cuit)
     if rec and rec.get("clave_fiscal"):
@@ -1660,12 +1664,34 @@ def run_mcp_tool(
         )
         return {"ok": True, "evento": ev, "mensaje": "Nota guardada en tu historial compartido multi-LLM (visible desde Claude, ChatGPT, Gemini, Copilot y Cursor)."}
 
-    # Determinar nivel de permiso requerido (escritura solo si confirmado===True estricto en acciones mutantes — P0-5)
+    # Determinar nivel de permiso requerido:
+    # - P0-5: escritura solo si confirmado===True estricto en acciones mutantes.
+    # - E2: abrir_comunicacion_dfe exige nivel "owner" (puede perfeccionar notificación legal en DFE).
+    # - E1 (regla de seguridad): sin clave fiscal (tools de Web Service con certificado) => exigir CUIT validado.
     confirmado_strict = _parse_bool_strict(args.get("confirmado", False))
     es_escritura = (tool in ("emitir_factura_wsfe", "consultar_y_renovar_certificado_mipyme") and confirmado_strict)
-    nivel_req = "escritura" if es_escritura else "lectura"
+    if tool == "abrir_comunicacion_dfe":
+        nivel_req = "owner"
+    elif es_escritura:
+        nivel_req = "escritura"
+    else:
+        nivel_req = "lectura"
 
-    cuit, clave, err = _resolve_creds_authorized(actor_email, args, public_base, nivel=nivel_req)
+    WS_CERT_TOOLS = {
+        "leer_notificaciones_dfe",
+        "abrir_comunicacion_dfe",
+        "emitir_factura_wsfe",
+        "resolver_emision_incierta",
+        "cargar_certificado_wsaa_cuit",
+        "generar_certificado_csr_arca",
+    }
+    cuit, clave, err = _resolve_creds_authorized(
+        actor_email,
+        args,
+        public_base,
+        nivel=nivel_req,
+        requiere_validado=(tool in WS_CERT_TOOLS),
+    )
     if err:
         return err
 

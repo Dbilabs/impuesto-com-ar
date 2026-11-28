@@ -644,12 +644,20 @@ def obtener_credenciales_descifradas(cuit: str) -> Optional[Dict[str, Any]]:
         return vault.get(cuit_clean)
 
 
-def verificar_permiso_cuit(email: Optional[str], cuit: str, nivel: str = "lectura") -> Tuple[bool, Optional[str], str]:
+def verificar_permiso_cuit(
+    email: Optional[str],
+    cuit: str,
+    nivel: str = "lectura",
+    *,
+    requiere_validado: bool = False,
+) -> Tuple[bool, Optional[str], str]:
     """
     Verifica si `email` tiene permiso sobre `cuit` para el `nivel` solicitado:
       - 'lectura': owner, editor o solo_lectura
       - 'escritura': owner o editor
       - 'owner': solo owner
+    Regla E1: toda tool de Web Service que opera con certificado (sin Clave Fiscal)
+    DEBE pasar `requiere_validado=True` (sin clave fiscal => exigir CUIT validado).
     """
     em = normalizar_email(email or "")
     cuit_clean = normalizar_cuit(cuit)
@@ -676,9 +684,12 @@ def verificar_permiso_cuit(email: Optional[str], cuit: str, nivel: str = "lectur
         if not role:
             return False, None, f"Acceso denegado: tu cuenta ({em}) no está autorizada para operar el CUIT {cuit_clean}."
 
-        # N1-b: un owner pendiente de validación NO puede invitar terceros ni emitir comprobantes
-        if nivel in ("owner", "escritura") and not entry.get("validado", False):
-            return False, role, f"El CUIT {cuit_clean} está pendiente de validación en ARCA. Completá primero una consulta exitosa antes de invitar terceros o emitir."
+        # N1-b + E1: un CUIT pendiente de validación NO puede invitar terceros, emitir ni usar tools con certificado (sin clave fiscal)
+        if (nivel in ("owner", "escritura") or requiere_validado) and not entry.get("validado", False):
+            return False, role, (
+                f"PENDIENTE_VALIDACION: El CUIT {cuit_clean} está pendiente de validación en ARCA. "
+                "Completá primero un login/auditoría exitosa con Clave Fiscal antes de operar este servicio."
+            )
 
         if nivel == "owner" and role != "owner":
             return False, role, f"Acción restringida al propietario (Owner) del CUIT {cuit_clean}. Tu rol actual es '{role}'."

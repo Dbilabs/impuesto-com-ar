@@ -2250,6 +2250,40 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
             self.assertFalse(r_bad_md5.get("ok"))
             self.assertIn("md5", r_bad_md5.get("error", "").lower())
 
+        # 7. E1 (P1): owner PENDIENTE no puede leer ni abrir DFE por Web Service -> estado=PENDIENTE_VALIDACION
+        cuit_pend = "20777777782"
+        em_pend = "pend_ve34@impuesto.test"
+        tok_pend = _tok_verificado(em_pend)
+        _bv_mod.guardar_credenciales_cifradas(cuit=cuit_pend, clave_fiscal="FalsaPend", owner_email=em_pend)
+        r_p1 = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_pend}, json={
+            "name": "leer_notificaciones_dfe", "arguments": {"cuit": cuit_pend},
+        }).json()
+        r_p2 = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_pend}, json={
+            "name": "abrir_comunicacion_dfe", "arguments": {"cuit": cuit_pend, "id_comunicacion": 1, "confirmado": True},
+        }).json()
+        self.assertFalse(r_p1.get("ok"))
+        self.assertEqual(r_p1.get("estado"), "PENDIENTE_VALIDACION")
+        self.assertFalse(r_p2.get("ok"))
+        self.assertEqual(r_p2.get("estado"), "PENDIENTE_VALIDACION")
+
+        # 8. E2 (P2): invitado solo_lectura de un owner validado NO puede abrir comunicación DFE (requiere owner)
+        em_lec = "lector_ve34@impuesto.test"
+        tok_lec = _tok_verificado(em_lec)
+        _bv_mod.autorizar_usuario_cuit(em_ve, cuit_ve, em_lec, rol="solo_lectura")
+        r_lec_ab = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_lec}, json={
+            "name": "abrir_comunicacion_dfe", "arguments": {"cuit": cuit_ve, "id_comunicacion": 101, "confirmado": True},
+        }).json()
+        self.assertFalse(r_lec_ab.get("ok"))
+        self.assertTrue(r_lec_ab.get("acceso_denegado"))
+
+        # 9. P3: truncado=True cuando totalPaginas > max_paginas y zip-bomb acotado por max_length
+        xml_pag_trunc = xml_pag1.replace("<totalPaginas>2</totalPaginas>", "<totalPaginas>15</totalPaginas>")
+        with patch.object(arca_ws, "autenticar_wsaa_para_cuit", return_value={"token": "t", "sign": "s", "fuente_certificado": "propio"}), \
+             patch.object(arca_ws, "_soap_post", return_value=xml_pag_trunc):
+            r_tr = ve.consultar_comunicaciones_ve(cuit_ve, ambiente="homologacion", max_paginas=1)
+            self.assertTrue(r_tr.get("ok"))
+            self.assertTrue(r_tr.get("truncado"))
+
 
 if __name__ == "__main__":
     unittest.main()

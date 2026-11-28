@@ -254,6 +254,7 @@ def consultar_comunicaciones_ve(
         "notificaciones": all_items,
         "total": total_items,
         "paginas_leidas": min(pagina_actual, max_paginas),
+        "truncado": bool(total_paginas > max_paginas),
         "fuente": "VECONSUMERWS",
         "fuente_certificado": ta.get("fuente_certificado", "global_delegado"),
         "nota_legal": "Solo metadatos (consultarComunicaciones). Para abrir el contenido usá `abrir_comunicacion_dfe` con confirmado=true.",
@@ -323,15 +324,20 @@ def parsear_consumir_comunicacion(raw_xml: str, incluir_adjuntos: bool = False) 
 
                 final_bytes = raw_bytes
                 if compressed:
+                    # P3: descompresión acotada en memoria (zlib.decompressobj con max_length = 10 MB + 1) contra zip bombs
                     try:
-                        try:
-                            final_bytes = gzip.decompress(raw_bytes)
-                        except OSError:
-                            final_bytes = zlib.decompress(raw_bytes)
+                        decomp = zlib.decompressobj(zlib.MAX_WBITS | 32)  # soporta gzip y zlib
+                        final_bytes = decomp.decompress(raw_bytes, MAX_ADJUNTO_BYTES + 1)
+                        if len(final_bytes) > MAX_ADJUNTO_BYTES or decomp.unconsumed_tail:
+                            raise VeConsumerResponseError(f"Adjunto '{fname}' descomprimido excede el tope de 10 MB.")
+                        rem = decomp.flush(MAX_ADJUNTO_BYTES + 1 - len(final_bytes))
+                        final_bytes += rem
+                        if len(final_bytes) > MAX_ADJUNTO_BYTES:
+                            raise VeConsumerResponseError(f"Adjunto '{fname}' descomprimido excede el tope de 10 MB.")
+                    except VeConsumerResponseError:
+                        raise
                     except Exception as exc:
                         raise VeConsumerResponseError(f"No se pudo descomprimir adjunto '{fname}': {exc}") from exc
-                    if len(final_bytes) > MAX_ADJUNTO_BYTES:
-                        raise VeConsumerResponseError(f"Adjunto '{fname}' descomprimido excede el tope de 10 MB.")
 
                 adj_meta["content_base64"] = base64.b64encode(final_bytes).decode("ascii")
                 adj_meta["bytes_finales"] = len(final_bytes)
