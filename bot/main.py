@@ -1740,6 +1740,8 @@ def run_mcp_tool(
                 suf = " [OVERRIDE reemitir_aunque_duplicado=true]" if fue_override else ""
                 if res_ok.get("adoptado"):
                     suf += " [CAE ADOPTADO]"
+                if res_ok.get("reemitido_tras_no_emitido_confirmado"):
+                    suf += " [REEMITIDO TRAS NO_EMITIDO_CONFIRMADO]"
                 registrar_evento_historial(
                     actor_email,
                     cuit,
@@ -1778,6 +1780,29 @@ def run_mcp_tool(
             cbte_asoc=args.get("cbte_asoc"),
             condicion_iva_receptor_id=args.get("condicion_iva_receptor_id"),
         )
+
+    if tool == "resolver_emision_incierta":
+        from .wsfe_idempotencia import resolver_emision_incierta
+        cuit_req = normalizar_cuit(args.get("cuit") or args.get("cuit_emisor") or cuit)
+        ok_own, _, reason_own = verificar_permiso_cuit(actor_email, cuit_req, nivel="owner")
+        if not ok_own:
+            return {"ok": False, "acceso_denegado": True, "error": reason_own}
+        res_man = resolver_emision_incierta(
+            cuit_emisor=cuit_req,
+            huella=str(args.get("huella") or ""),
+            accion=str(args.get("accion") or ""),
+            cbte_nro=int(args["cbte_nro"]) if args.get("cbte_nro") else None,
+            ambiente=args.get("ambiente"),
+        )
+        if res_man.get("ok"):
+            registrar_evento_historial(
+                actor_email,
+                cuit_req,
+                origen_llm,
+                "resolver_emision_incierta",
+                f"Resolución manual ({args.get('accion')}) huella={str(args.get('huella',''))[:16]} -> {res_man.get('estado') or res_man.get('cae')}",
+            )
+        return res_man
 
     if tool == "generar_certificado_csr_arca":
         from .arca_ws import generar_csr_arca

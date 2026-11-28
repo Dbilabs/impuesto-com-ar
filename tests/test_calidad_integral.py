@@ -1278,6 +1278,83 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
             self.assertEqual(r_e.get("estado"), "ESTADO_INCIERTO_REQUIERE_REVISION")
             self.assertEqual(r_e.get("fecha"), "20261127")
 
+    def test_sec_n4f_no_emitido_y_resolucion_manual(self):
+        """N4-f: INCIERTO que nunca llegó a ARCA se desbloquea tras >=2 min (1 factura) y tool resolver_emision_incierta es solo para Owner validado."""
+        import time as _t
+        from unittest.mock import patch
+        from bot import arca_ws
+        from bot import wsfe_idempotencia as wi
+        client = TestClient(app)
+
+        cuit_f = "20555555561"
+        owner_em = "owner_n4f@impuesto.test"
+        editor_em = "editor_n4f@impuesto.test"
+        tok_own = _tok_verificado(owner_em)
+        tok_ed = _tok_verificado(editor_em)
+        _bv_mod.guardar_credenciales_cifradas(cuit=cuit_f, clave_fiscal="ClaveF", owner_email=owner_em)
+        _bv_mod.marcar_cuit_validado(cuit_f, email_actor=owner_em, clave_hash=_bv_mod.hash_clave_cuit(cuit_f, "ClaveF"), clave_fiscal="ClaveF")
+        _bv_mod.autorizar_usuario_cuit(owner_em, cuit_f, editor_em, rol="editor")
+
+        arca = {"ultimo": 300, "comps": {}, "emitidas": 0}
+        hoy_ar = arca_ws.fecha_hoy_arca()
+
+        def fake_emit_ok(**k):
+            arca["ultimo"] += 1
+            n = arca["ultimo"]
+            arca["emitidas"] += 1
+            imp = round(k["importe_neto"] + k["importe_iva"], 2)
+            arca["comps"][n] = {"cae": f"CAE{n}", "imp_total": imp, "doc_nro": 0, "cbte_fch": k.get("cbte_fch") or hoy_ar, "cbte_nro": n}
+            return {"ok": True, "resultado": "APROBADO", "cae": f"CAE{n}", "cbte_nro": n}
+
+        class _Clock:
+            def __init__(self):
+                self.offset = 0
+            def time(self):
+                return _t.time() + self.offset
+
+        clk = _Clock()
+        venta_f = dict(cuit_emisor=cuit_f, pto_vta=1, cbte_tipo=11, receptor_cuit="", importe_neto=1234.0, importe_iva=0.0)
+        with patch.object(wi.arca_ws, "obtener_ultimo_autorizado_wsfe", side_effect=lambda **k: arca["ultimo"]), \
+             patch.object(wi.arca_ws, "consultar_comprobante_por_nro_wsfe", side_effect=lambda **k: arca["comps"].get(k["cbte_nro"])), \
+             patch.object(wi, "time", clk):
+            # 1) Conexión rechazada (nunca llegó a ARCA) -> queda INCIERTO
+            with patch.object(wi.arca_ws, "emitir_comprobante_wsfe", side_effect=ConnectionRefusedError("Connection refused")):
+                r1 = wi.emitir_wsfe_con_idempotencia(**venta_f)
+            self.assertEqual(r1.get("estado"), "ESTADO_INCIERTO_REQUIERE_REVISION")
+
+            # 2) Antes de 2 min -> sigue INCIERTO (fail-closed)
+            with patch.object(wi.arca_ws, "emitir_comprobante_wsfe", side_effect=fake_emit_ok):
+                r_early = wi.emitir_wsfe_con_idempotencia(**venta_f)
+                self.assertEqual(r_early.get("estado"), "ESTADO_INCIERTO_REQUIERE_REVISION")
+                self.assertEqual(arca["emitidas"], 0)
+
+                # 3) Después de >= 2 min con FECompUltimoAutorizado == ultimo_nro_antes -> NO_EMITIDO_CONFIRMADO y emite 1 factura
+                clk.offset = 180
+                r_ok = wi.emitir_wsfe_con_idempotencia(**venta_f)
+                self.assertTrue(r_ok.get("ok"))
+                self.assertTrue(r_ok.get("reemitido_tras_no_emitido_confirmado"))
+                self.assertEqual(arca["emitidas"], 1)
+
+            # 4) Tool resolver_emision_incierta: editor rechazado, owner validado puede marcar_no_emitido
+            venta_man = dict(cuit_emisor=cuit_f, pto_vta=1, cbte_tipo=11, receptor_cuit="", importe_neto=8888.0, importe_iva=0.0)
+            with patch.object(wi.arca_ws, "emitir_comprobante_wsfe", side_effect=ConnectionRefusedError("refused")):
+                r_inc = wi.emitir_wsfe_con_idempotencia(**venta_man)
+            huella_short = r_inc["huella_idempotencia"]
+
+            r_ed = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_ed}, json={
+                "name": "resolver_emision_incierta",
+                "arguments": {"cuit": cuit_f, "huella": huella_short, "accion": "marcar_no_emitido"},
+            }).json()
+            self.assertFalse(r_ed.get("ok"))
+            self.assertTrue(r_ed.get("acceso_denegado"))
+
+            r_own = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_own}, json={
+                "name": "resolver_emision_incierta",
+                "arguments": {"cuit": cuit_f, "huella": huella_short, "accion": "marcar_no_emitido"},
+            }).json()
+            self.assertTrue(r_own.get("ok"))
+            self.assertEqual(r_own.get("estado"), "NO_EMITIDO_CONFIRMADO")
+
 
 if __name__ == "__main__":
     unittest.main()
