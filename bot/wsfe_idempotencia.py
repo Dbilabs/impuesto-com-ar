@@ -54,12 +54,23 @@ def _load_store_locked() -> Dict[str, Any]:
 
 def _save_store_locked(data: Dict[str, Any]) -> None:
     now = time.time()
-    # Podar entradas >24h para evitar crecimiento ilimitado en volumen
+    # Podar entradas >24h SOLO si están resueltas (AUTORIZADO/RECHAZADO).
+    # N4-b: NUNCA borrar PENDIENTE o INCIERTO sin resolver; retener y alertar en log.
     for bucket in ("by_huella", "by_key"):
-        stale = [
-            k for k, v in (data.get(bucket) or {}).items()
-            if isinstance(v, dict) and (now - float(v.get("updated_at") or v.get("created_at") or 0)) > WSFE_IDEM_RETENTION_SEC
-        ]
+        stale = []
+        for k, v in (data.get(bucket) or {}).items():
+            if not isinstance(v, dict):
+                continue
+            age = now - float(v.get("updated_at") or v.get("created_at") or 0)
+            if age <= WSFE_IDEM_RETENTION_SEC:
+                continue
+            if v.get("estado") in ("PENDIENTE", "INCIERTO"):
+                logger.warning(
+                    f"[WSFE N4] Registro {v.get('estado')} sin resolver >24h retenido "
+                    f"(cuit={v.get('cuit_emisor')}, pto_vta={v.get('pto_vta')}, huella={str(v.get('huella',''))[:12]})"
+                )
+                continue
+            stale.append(k)
         for k in stale:
             data[bucket].pop(k, None)
     bv._write_enc_json(_idem_store_path(), data)
@@ -219,7 +230,7 @@ def emitir_wsfe_con_idempotencia(
     env_k = "homologacion" if "homo" in (ambiente or "homologacion").lower() else "produccion"
     doc_tipo, doc_nro = _normalizar_receptor(receptor_cuit)
     imp_total = round(float(importe_neto) + float(importe_iva), 2)
-    fecha_cbte = (cbte_fch or datetime.datetime.now().strftime("%Y%m%d")).strip()
+    fecha_cbte = (cbte_fch or arca_ws.fecha_hoy_arca()).strip()
     idem_k = (idempotency_key or "").strip()
 
     huella_base = calcular_huella_wsfe(
@@ -241,14 +252,21 @@ def emitir_wsfe_con_idempotencia(
         with _idem_io_lock:
             store = _load_store_locked()
             existing = None
-            if not reemitir_aunque_duplicado:
-                cand_h = store["by_huella"].get(huella_base)
-                if cand_h and (now - float(cand_h.get("created_at") or 0)) <= WSFE_IDEM_WINDOW_SEC:
+            cand_h = store["by_huella"].get(huella_base)
+            cand_k = store["by_key"].get(key_lookup) if key_lookup else None
+
+            # N4-b + N4-c: PENDIENTE o INCIERTO bloquean por ESTADO sin ventana de tiempo
+            # e incluso si reemitir_aunque_duplicado=True (se debe reconciliar primero).
+            if isinstance(cand_h, dict) and cand_h.get("estado") in ("PENDIENTE", "INCIERTO"):
+                existing = cand_h
+            elif isinstance(cand_k, dict) and cand_k.get("estado") in ("PENDIENTE", "INCIERTO"):
+                existing = cand_k
+            elif not reemitir_aunque_duplicado:
+                # La ventana de 10 min aplica solo a AUTORIZADO (replay)
+                if isinstance(cand_h, dict) and cand_h.get("estado") == "AUTORIZADO" and (now - float(cand_h.get("created_at") or 0)) <= WSFE_IDEM_WINDOW_SEC:
                     existing = cand_h
-                elif key_lookup:
-                    cand_k = store["by_key"].get(key_lookup)
-                    if cand_k and (now - float(cand_k.get("created_at") or 0)) <= WSFE_IDEM_RETENTION_SEC:
-                        existing = cand_k
+                elif isinstance(cand_k, dict) and cand_k.get("estado") == "AUTORIZADO" and (now - float(cand_k.get("created_at") or 0)) <= WSFE_IDEM_RETENTION_SEC:
+                    existing = cand_k
 
         if existing is not None:
             estado_prev = existing.get("estado")
@@ -342,7 +360,7 @@ def emitir_wsfe_con_idempotencia(
                 store["by_key"][key_lookup] = pend_rec
             _save_store_locked(store)
 
-        # Paso 2: invocar emisión real WSFEv1
+        # Paso 2: invocar emisión real WSFEv1 pasando la misma cbte_fch de la huella (N4-e)
         try:
             res = arca_ws.emitir_comprobante_wsfe(
                 cuit_emisor=cuit_em,
@@ -356,6 +374,7 @@ def emitir_wsfe_con_idempotencia(
                 confirmado=True,
                 cbte_asoc=cbte_asoc,
                 condicion_iva_receptor_id=condicion_iva_receptor_id,
+                cbte_fch=fecha_cbte,
             )
         except Exception as exc:
             logger.exception(f"[WSFE N4] Error/timeout tras persistir PENDIENTE para {cuit_em}")
@@ -381,7 +400,10 @@ def emitir_wsfe_con_idempotencia(
         is_aprobado = isinstance(res, dict) and (
             bool(res.get("cae")) and (res.get("ok") is True or res.get("resultado") == "APROBADO")
         )
-        is_rechazado = isinstance(res, dict) and (
+        is_incierto = isinstance(res, dict) and (
+            res.get("resultado") == "INCIERTO" or res.get("incierto") is True
+        )
+        is_rechazado = (not is_incierto) and isinstance(res, dict) and (
             res.get("resultado") == "RECHAZADO" or res.get("estado") == "CERTIFICADO_PENDIENTE" or res.get("ok") is False
         )
 

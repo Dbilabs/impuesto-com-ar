@@ -1200,6 +1200,84 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
             self.assertEqual(rd2.get("estado"), "ESTADO_INCIERTO_REQUIERE_REVISION")
             self.assertEqual(state_d["emits"], 1)
 
+    def test_sec_n4_bcde_ventana_override_tz_y_respuesta_sin_resultado(self):
+        """Cierre N4-b, N4-c, N4-d, N4-e: INCIERTO bloquea sin ventana y sin override, fecha AR 23:30 ART, y XML sin <Resultado> -> INCIERTO."""
+        import datetime as _dt
+        import time as _t
+        from unittest.mock import patch
+        from bot import arca_ws
+        from bot import wsfe_idempotencia as wi
+
+        # N4-d: 23:30 ART del 27/11/2026 = 02:30 UTC del 28/11/2026 -> CbteFch debe ser 20261127
+        dt_2330_art = _dt.datetime(2026, 11, 28, 2, 30, 0, tzinfo=_dt.timezone.utc)
+        self.assertEqual(arca_ws.fecha_hoy_arca(dt_2330_art), "20261127")
+
+        # N4-b y N4-c: INCIERTO tras >10 min y con reemitir_aunque_duplicado=True -> reconcilia (1 sola factura)
+        arca = {"ultimo": 200, "comps": {}, "modo": "ok", "emitidas": 0}
+        hoy_ar = arca_ws.fecha_hoy_arca()
+
+        def fake_emit(**k):
+            arca["ultimo"] += 1
+            n = arca["ultimo"]
+            arca["emitidas"] += 1
+            imp = round(k["importe_neto"] + k["importe_iva"], 2)
+            arca["comps"][n] = {"cae": f"CAE{n}", "imp_total": imp, "doc_nro": 0, "cbte_fch": k.get("cbte_fch") or hoy_ar, "cbte_nro": n}
+            if arca["modo"] == "drop":
+                raise TimeoutError("timed out")
+            return {"ok": True, "resultado": "APROBADO", "cae": f"CAE{n}", "cbte_nro": n}
+
+        class _Clock:
+            def __init__(self):
+                self.offset = 0
+            def time(self):
+                return _t.time() + self.offset
+
+        clk = _Clock()
+        base_v = dict(cuit_emisor="20304050609", pto_vta=1, cbte_tipo=11, receptor_cuit="", importe_iva=0.0)
+        with patch.object(wi.arca_ws, "obtener_ultimo_autorizado_wsfe", side_effect=lambda **k: arca["ultimo"]), \
+             patch.object(wi.arca_ws, "consultar_comprobante_por_nro_wsfe", side_effect=lambda **k: arca["comps"].get(k["cbte_nro"])), \
+             patch.object(wi.arca_ws, "emitir_comprobante_wsfe", side_effect=fake_emit), \
+             patch.object(wi, "time", clk):
+            # N4-b: 11 minutos después de INCIERTO -> adopta, NO emite duplicado
+            arca["modo"] = "drop"
+            wi.emitir_wsfe_con_idempotencia(**base_v, importe_neto=2500.0, idempotency_key="x1")
+            arca["modo"] = "ok"
+            clk.offset = 660
+            r_b = wi.emitir_wsfe_con_idempotencia(**base_v, importe_neto=2500.0, idempotency_key="x2")
+            self.assertTrue(r_b.get("ok"))
+            self.assertTrue(r_b.get("adoptado"))
+            self.assertEqual(sum(1 for c in arca["comps"].values() if c["imp_total"] == 2500.0), 1)
+            clk.offset = 0
+
+            # N4-c: override reemitir_aunque_duplicado=True con INCIERTO previo -> reconcilia primero, 1 sola factura
+            arca["modo"] = "drop"
+            wi.emitir_wsfe_con_idempotencia(**base_v, importe_neto=777.0)
+            arca["modo"] = "ok"
+            r_c = wi.emitir_wsfe_con_idempotencia(**base_v, importe_neto=777.0, reemitir_aunque_duplicado=True)
+            self.assertTrue(r_c.get("ok"))
+            self.assertTrue(r_c.get("adoptado"))
+            self.assertEqual(sum(1 for c in arca["comps"].values() if c["imp_total"] == 777.0), 1)
+
+        # N4-e: respuesta SOAP sin <Resultado> -> INCIERTO, nunca RECHAZADO
+        xml_sin_res = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ar="http://ar.gov.afip.dif.FEV1/">'
+            '<soap:Body><ar:FECAESolicitarResponse><ar:FECAESolicitarResult/></ar:FECAESolicitarResponse></soap:Body>'
+            '</soap:Envelope>'
+        )
+        with patch.object(arca_ws, "autenticar_wsaa", return_value={"token": "t", "sign": "s"}), \
+             patch.object(arca_ws, "consultar_ultimo_comprobante_wsfe", return_value=50), \
+             patch.object(arca_ws, "_soap_post", return_value=xml_sin_res):
+            r_e = arca_ws.emitir_comprobante_wsfe(
+                cuit_emisor="20304050609", pto_vta=1, cbte_tipo=11, receptor_cuit="",
+                importe_neto=100.0, importe_iva=0.0, confirmado=True,
+                cert_path="/tmp/fake.crt", key_path="/tmp/fake.key", cbte_fch="20261127",
+            )
+            self.assertFalse(r_e.get("ok"))
+            self.assertEqual(r_e.get("resultado"), "INCIERTO")
+            self.assertEqual(r_e.get("estado"), "ESTADO_INCIERTO_REQUIERE_REVISION")
+            self.assertEqual(r_e.get("fecha"), "20261127")
+
 
 if __name__ == "__main__":
     unittest.main()

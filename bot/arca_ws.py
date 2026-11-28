@@ -21,6 +21,23 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from typing import Dict, Any, Optional
 
+try:
+    from zoneinfo import ZoneInfo
+    AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
+except Exception:
+    AR_TZ = datetime.timezone(datetime.timedelta(hours=-3))
+
+
+def fecha_hoy_arca(now: Optional[datetime.datetime] = None) -> str:
+    """Devuelve YYYYMMDD en hora oficial de Argentina (America/Argentina/Buenos_Aires) para CbteFch (N4-d)."""
+    if now is None:
+        dt_ar = datetime.datetime.now(AR_TZ)
+    elif now.tzinfo is None:
+        dt_ar = now.replace(tzinfo=datetime.timezone.utc).astimezone(AR_TZ)
+    else:
+        dt_ar = now.astimezone(AR_TZ)
+    return dt_ar.strftime("%Y%m%d")
+
 ENDPOINTS = {
     "homologacion": {
         "wsaa": "https://wsaahomo.afip.gov.ar/ws/services/LoginCms",
@@ -409,6 +426,7 @@ def emitir_comprobante_wsfe(
     confirmado: bool = False,
     cbte_asoc: Optional[Dict[str, Any]] = None,
     condicion_iva_receptor_id: Optional[int] = None,
+    cbte_fch: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Prepara o emite comprobantes electrónicos oficiales (Facturas A/B/C/E/M/FCE, Notas de Crédito y Notas de Débito)
@@ -444,7 +462,7 @@ def emitir_comprobante_wsfe(
     doc_tipo = 80 if len(cuit_rec) == 11 else 99
     doc_nro = int(cuit_rec) if cuit_rec else 0
     imp_total = round(importe_neto + importe_iva, 2)
-    hoy = datetime.datetime.now().strftime("%Y%m%d")
+    hoy = (cbte_fch or "").strip() or fecha_hoy_arca()
 
     cond_iva_id = condicion_iva_receptor_id if condicion_iva_receptor_id is not None else (5 if doc_tipo == 99 else None)
 
@@ -577,9 +595,9 @@ def emitir_comprobante_wsfe(
     raw = _soap_post(ENDPOINTS[env_key]["wsfev1"], soap, soap_action="http://ar.gov.afip.dif.FEV1/FECAESolicitar")
     root = ET.fromstring(raw)
     ns = {"ar": "http://ar.gov.afip.dif.FEV1/"}
-    resultado = root.findtext(".//ar:Resultado", default="R", namespaces=ns)
-    cae = root.findtext(".//ar:CAE", default="", namespaces=ns)
-    cae_vto = root.findtext(".//ar:CAEFchVto", default="", namespaces=ns)
+    resultado = (root.findtext(".//ar:Resultado", default="", namespaces=ns) or "").strip()
+    cae = (root.findtext(".//ar:CAE", default="", namespaces=ns) or "").strip()
+    cae_vto = (root.findtext(".//ar:CAEFchVto", default="", namespaces=ns) or "").strip()
     obs = [el.text for el in root.findall(".//ar:Msg", namespaces=ns) if el.text]
 
     # URL oficial de Código QR ARCA (RG 4892)
@@ -603,16 +621,28 @@ def emitir_comprobante_wsfe(
         b64_qr = base64.b64encode(json.dumps(qr_payload).encode("utf-8")).decode("ascii")
         qr_url = f"https://www.afip.gob.ar/fe/qr/?p={b64_qr}"
 
-    return {
+    if resultado == "A" and cae:
+        res_label = "APROBADO"
+    elif resultado == "R":
+        res_label = "RECHAZADO"
+    else:
+        # N4-e: respuesta sin <Resultado> o ambigua se trata como INCIERTO, nunca RECHAZADO
+        res_label = "INCIERTO"
+
+    out_wsfe = {
         **borrador,
-        "ok": bool(resultado == "A" and cae),
+        "ok": bool(res_label == "APROBADO"),
         "cbte_nro": proximo,
-        "resultado": "APROBADO" if resultado == "A" else "RECHAZADO",
+        "resultado": res_label,
         "cae": cae,
         "cae_vencimiento": cae_vto,
         "qr_oficial_arca": qr_url,
         "observaciones": obs
     }
+    if res_label == "INCIERTO":
+        out_wsfe["estado"] = "ESTADO_INCIERTO_REQUIERE_REVISION"
+        out_wsfe["incierto"] = True
+    return out_wsfe
 
 
 def consultar_padron_a5(
