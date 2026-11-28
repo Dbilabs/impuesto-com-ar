@@ -1185,13 +1185,23 @@ def run_mcp_tool(
         return verificar_estado_servidores_wsfe(ambiente=args.get("ambiente", "produccion"))
 
     if tool == "verificar_proveedor_apocrifo_apoc":
+        from .arca_ws import consultar_apocrifo_wsapoc, CertificadoPendienteError, WsapocUnavailableError, WsapocResponseError
         from .scraper_extras_arca import verificar_proveedor_apocrifo_apoc
         cuit_prov = normalizar_cuit(args.get("cuit_proveedor", ""))
-        return _run_tool_sin_timeout(
-            f"eapoc:{cuit_prov}", "Base e-APOC ARCA",
-            lambda: verificar_proveedor_apocrifo_apoc(cuit_prov),
-            cuit=cuit_prov or "publico", actor_email=actor_email or "", origen_llm=origen_llm,
-        )
+        amb_apoc = (args.get("ambiente") or "produccion").strip().lower()
+        # Fase 3.3: WSAPOC directo fuera de PLAYWRIGHT_SEM; fallback a Playwright solo si WS está caído o sin certificado
+        try:
+            return consultar_apocrifo_wsapoc(cuit_prov, ambiente=amb_apoc)
+        except WsapocResponseError as ws_err:
+            # Error explícito o XML malformado -> NUNCA devolver "no apócrifo"
+            return {"ok": False, "cuit": cuit_prov, "fuente": "WSAPOC", "error": str(ws_err)}
+        except (CertificadoPendienteError, WsapocUnavailableError) as fb_err:
+            logger.info(f"[WSAPOC] Fallback a Playwright para {cuit_prov}: {fb_err}")
+            return _run_tool_sin_timeout(
+                f"eapoc:{cuit_prov}", "Base e-APOC ARCA",
+                lambda: verificar_proveedor_apocrifo_apoc(cuit_prov),
+                cuit=cuit_prov or "publico", actor_email=actor_email or "", origen_llm=origen_llm,
+            )
 
     # =========================================================================
     # AUTENTICACIÓN Y VINCULACIÓN 100% DENTRO DEL CHAT (CERO SALIR DEL LLM)

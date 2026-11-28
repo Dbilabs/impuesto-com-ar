@@ -293,7 +293,8 @@ def resolver_emision_incierta(
     env_k = ambiente or rec.get("ambiente") or "homologacion"
 
     if act == "marcar_no_emitido":
-        # N4-j: consultar ARCA antes de marcar no emitido y avisar si hay un candidato coincidente
+        # N4-j + residual P3: consultar ARCA antes de marcar no emitido.
+        # Si hay candidato -> avisar; si ARCA devuelve INCIERTO (error/sin confirmación) -> exigir forzar=True.
         if not forzar:
             rec_st, cand = _reconciliar_registro_incierto(
                 rec=rec,
@@ -316,6 +317,16 @@ def resolver_emision_incierta(
                         f"ATENCIÓN: ARCA tiene el comprobante #{cand.get('cbte_nro')} (CAE {cand.get('cae')}) "
                         "con el mismo importe, receptor y fecha. Usá `accion='adoptar_nro'` en lugar de "
                         "`marcar_no_emitido` (o enviá `forzar: true` si confirmás que es otro comprobante)."
+                    ),
+                }
+            if rec_st != "NO_EMITIDO_CONFIRMADO":
+                return {
+                    "ok": False,
+                    "requiere_forzar": True,
+                    "estado_reconciliacion": rec_st,
+                    "error": (
+                        "No se pudo confirmar en ARCA que el comprobante no fue emitido (reconciliación devolvió INCIERTO). "
+                        "Reintentá cuando ARCA responda o enviá `forzar: true` si ya verificaste manualmente en Comprobantes en Línea."
                     ),
                 }
         with _idem_io_lock:
@@ -537,8 +548,8 @@ def emitir_wsfe_con_idempotencia(
                         detalle="intento previo sin confirmación coincidente en ARCA",
                     )
 
-        # Paso 1 (N4-h): obtener ultimo_nro_antes ANTES de persistir PENDIENTE y llamar a FECAESolicitar.
-        # Sin ultimo_nro_antes no se puede reconciliar de forma segura -> responder ARCA_NO_DISPONIBLE y NO emitir.
+        # Paso 1 (N4-h + residual P3): obtener ultimo_nro_antes ANTES de persistir PENDIENTE y llamar a FECAESolicitar.
+        # Sin certificado -> CERTIFICADO_PENDIENTE con guía CSR; sin servicio -> ARCA_NO_DISPONIBLE y NO emitir.
         try:
             ultimo_antes = arca_ws.obtener_ultimo_autorizado_wsfe(
                 cuit_emisor=cuit_em,
@@ -546,6 +557,13 @@ def emitir_wsfe_con_idempotencia(
                 cbte_tipo=cbte_tipo,
                 ambiente=env_k,
             )
+        except arca_ws.CertificadoPendienteError as exc:
+            return {
+                "ok": False,
+                "estado": "CERTIFICADO_PENDIENTE",
+                "cuit": cuit_em,
+                "mensaje": str(exc),
+            }
         except Exception as exc:
             logger.warning(f"[WSFE N4-h] Error leyendo FECompUltimoAutorizado previo: {exc}")
             return {

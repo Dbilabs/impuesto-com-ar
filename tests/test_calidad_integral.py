@@ -1356,12 +1356,30 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
             self.assertFalse(r_noconf.get("ok"))
             self.assertTrue(r_noconf.get("requiere_confirmacion"))
 
-            r_own = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_own}, json={
+            # Sin forzar cuando la reconciliación da INCIERTO (<2 min) -> exige forzar:true (residual P3 N4-j)
+            r_reqf = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_own}, json={
                 "name": "resolver_emision_incierta",
                 "arguments": {"cuit": cuit_f, "huella": huella_short, "accion": "marcar_no_emitido", "confirmado": True},
             }).json()
+            self.assertFalse(r_reqf.get("ok"))
+            self.assertTrue(r_reqf.get("requiere_forzar"))
+
+            # Con forzar=True -> marca NO_EMITIDO_CONFIRMADO
+            r_own = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_own}, json={
+                "name": "resolver_emision_incierta",
+                "arguments": {"cuit": cuit_f, "huella": huella_short, "accion": "marcar_no_emitido", "confirmado": True, "forzar": True},
+            }).json()
             self.assertTrue(r_own.get("ok"))
             self.assertEqual(r_own.get("estado"), "NO_EMITIDO_CONFIRMADO")
+
+        # Residual P3: sin ARCA_WS_CERT ni ARCA_WS_KEY -> devuelve CERTIFICADO_PENDIENTE con guía CSR
+        with patch.dict(os.environ, {"ARCA_WS_CERT": "", "ARCA_WS_KEY": ""}):
+            r_nocert = wi.emitir_wsfe_con_idempotencia(
+                cuit_emisor=cuit_f, pto_vta=1, cbte_tipo=11, receptor_cuit="", importe_neto=300.0, importe_iva=0.0,
+            )
+            self.assertFalse(r_nocert.get("ok"))
+            self.assertEqual(r_nocert.get("estado"), "CERTIFICADO_PENDIENTE")
+            self.assertIn("generar_certificado_csr_arca", r_nocert.get("mensaje", ""))
 
     def test_sec_n4g_h_i_j_wsfe_errores_y_guardas(self):
         """Cierre N4-g, N4-h, N4-i, N4-j: errores WSFE nunca son 'no emitido', sin ultimo_antes no emite, intento_at fijo y guardas de resolver_emision_incierta."""
@@ -1449,6 +1467,111 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
             r_forced = wi.resolver_emision_incierta(cuit_emisor="20304050611", huella=h_j, accion="adoptar_nro", cbte_nro=401, confirmado=True, forzar=True)
             self.assertTrue(r_forced.get("ok"))
             self.assertTrue(r_forced.get("forzado"))
+
+    def test_sec_wsapoc_fase33_apocrifo_limpio_fallback_xml_y_errors(self):
+        """Fase 3.3 WSAPOC: apócrifo, limpio, caché 24h sin PLAYWRIGHT_SEM, fallback si WS caído, XML malformado y <Errors>."""
+        from unittest.mock import patch
+        from bot import arca_ws
+        client = TestClient(app)
+        arca_ws._WSAPOC_CACHE.clear()
+
+        xml_apoc = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:t="http://tempuri.org/">'
+            '<soap:Body><t:GetPublicacionAPOCResponse><t:GetPublicacionAPOCResult>'
+            '<t:codigo>0</t:codigo><t:descripcion>OK</t:descripcion>'
+            '<t:resultados><t:PublicacionAPOC>'
+            '<t:Cuit>30999999995</t:Cuit><t:Descripcion>Apócrifo</t:Descripcion>'
+            '<t:FechaCondicion>2025-04-10</t:FechaCondicion><t:FechaPublicacion>2025-04-15</t:FechaPublicacion>'
+            '</t:PublicacionAPOC></t:resultados>'
+            '</t:GetPublicacionAPOCResult></t:GetPublicacionAPOCResponse></soap:Body></soap:Envelope>'
+        )
+        xml_limpio = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:t="http://tempuri.org/">'
+            '<soap:Body><t:GetPublicacionAPOCResponse><t:GetPublicacionAPOCResult>'
+            '<t:codigo>0</t:codigo><t:descripcion>Sin registros</t:descripcion><t:resultados/>'
+            '</t:GetPublicacionAPOCResult></t:GetPublicacionAPOCResponse></soap:Body></soap:Envelope>'
+        )
+        xml_errors = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:t="http://tempuri.org/">'
+            '<soap:Body><t:GetPublicacionAPOCResponse><t:GetPublicacionAPOCResult>'
+            '<t:Errors><t:Error>Token expirado</t:Error></t:Errors>'
+            '</t:GetPublicacionAPOCResult></t:GetPublicacionAPOCResponse></soap:Body></soap:Envelope>'
+        )
+
+        # 1. Apócrifo + caché 24h (2da llamada no invoca _soap_post)
+        soap_calls = {"n": 0}
+        def fake_soap_apoc(*a, **k):
+            soap_calls["n"] += 1
+            return xml_apoc
+
+        with patch.dict(os.environ, {"ARCA_WS_CERT": "/tmp/c.crt", "ARCA_WS_KEY": "/tmp/k.key"}), \
+             patch.object(arca_ws, "autenticar_wsaa", return_value={"token": "t", "sign": "s"}), \
+             patch.object(arca_ws, "_soap_post", side_effect=fake_soap_apoc):
+            r1 = client.post("/api/v1/mcp/tool", json={
+                "name": "verificar_proveedor_apocrifo_apoc",
+                "arguments": {"cuit_proveedor": "30999999995", "ambiente": "homologacion"},
+            }).json()
+            r2 = client.post("/api/v1/mcp/tool", json={
+                "name": "verificar_proveedor_apocrifo_apoc",
+                "arguments": {"cuit_proveedor": "30999999995", "ambiente": "homologacion"},
+            }).json()
+            self.assertTrue(r1.get("ok"))
+            self.assertTrue(r1.get("es_apocrifo"))
+            self.assertEqual(r1.get("fecha_condicion"), "2025-04-10")
+            self.assertEqual(r1.get("fuente"), "WSAPOC")
+            self.assertTrue(r2.get("desde_cache"))
+            self.assertEqual(soap_calls["n"], 1)
+
+        # 2. Limpio
+        with patch.dict(os.environ, {"ARCA_WS_CERT": "/tmp/c.crt", "ARCA_WS_KEY": "/tmp/k.key"}), \
+             patch.object(arca_ws, "autenticar_wsaa", return_value={"token": "t", "sign": "s"}), \
+             patch.object(arca_ws, "_soap_post", return_value=xml_limpio):
+            r_clean = client.post("/api/v1/mcp/tool", json={
+                "name": "verificar_proveedor_apocrifo_apoc",
+                "arguments": {"cuit_proveedor": "30715875086", "ambiente": "homologacion"},
+            }).json()
+            self.assertTrue(r_clean.get("ok"))
+            self.assertFalse(r_clean.get("es_apocrifo"))
+            self.assertIsNone(r_clean.get("fecha_condicion"))
+            self.assertEqual(r_clean.get("fuente"), "WSAPOC")
+
+        # 3. Web Service caído -> fallback a Playwright
+        with patch.dict(os.environ, {"ARCA_WS_CERT": "/tmp/c.crt", "ARCA_WS_KEY": "/tmp/k.key"}), \
+             patch.object(arca_ws, "autenticar_wsaa", return_value={"token": "t", "sign": "s"}), \
+             patch.object(arca_ws, "_soap_post", side_effect=TimeoutError("WSAPOC down")), \
+             patch("bot.scraper_extras_arca.verificar_proveedor_apocrifo_apoc", return_value={"ok": True, "cuit": "30888888881", "es_apocrifo": False, "fuente": "PLAYWRIGHT_FALLBACK"}):
+            r_fb = client.post("/api/v1/mcp/tool", json={
+                "name": "verificar_proveedor_apocrifo_apoc",
+                "arguments": {"cuit_proveedor": "30888888881", "ambiente": "homologacion"},
+            }).json()
+            self.assertTrue(r_fb.get("ok"))
+            self.assertEqual(r_fb.get("fuente"), "PLAYWRIGHT_FALLBACK")
+
+        # 4. XML malformado -> error explícito, NUNCA es_apocrifo=False
+        with patch.dict(os.environ, {"ARCA_WS_CERT": "/tmp/c.crt", "ARCA_WS_KEY": "/tmp/k.key"}), \
+             patch.object(arca_ws, "autenticar_wsaa", return_value={"token": "t", "sign": "s"}), \
+             patch.object(arca_ws, "_soap_post", return_value="<soap:Broken><unclosed"):
+            r_mal = client.post("/api/v1/mcp/tool", json={
+                "name": "verificar_proveedor_apocrifo_apoc",
+                "arguments": {"cuit_proveedor": "30888888882", "ambiente": "homologacion"},
+            }).json()
+            self.assertFalse(r_mal.get("ok"))
+            self.assertNotIn("es_apocrifo", r_mal)
+
+        # 5. Respuesta con <Errors> -> error explícito, NUNCA es_apocrifo=False
+        with patch.dict(os.environ, {"ARCA_WS_CERT": "/tmp/c.crt", "ARCA_WS_KEY": "/tmp/k.key"}), \
+             patch.object(arca_ws, "autenticar_wsaa", return_value={"token": "t", "sign": "s"}), \
+             patch.object(arca_ws, "_soap_post", return_value=xml_errors):
+            r_err = client.post("/api/v1/mcp/tool", json={
+                "name": "verificar_proveedor_apocrifo_apoc",
+                "arguments": {"cuit_proveedor": "30888888883", "ambiente": "homologacion"},
+            }).json()
+            self.assertFalse(r_err.get("ok"))
+            self.assertNotIn("es_apocrifo", r_err)
+        arca_ws._WSAPOC_CACHE.clear()
 
 
 if __name__ == "__main__":

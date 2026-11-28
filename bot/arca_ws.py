@@ -38,6 +38,21 @@ def fecha_hoy_arca(now: Optional[datetime.datetime] = None) -> str:
         dt_ar = now.astimezone(AR_TZ)
     return dt_ar.strftime("%Y%m%d")
 
+class CertificadoPendienteError(RuntimeError):
+    """Faltan ARCA_WS_CERT / ARCA_WS_KEY para operar Web Services oficiales."""
+
+
+class WsapocResponseError(RuntimeError):
+    """Error explícito o XML malformado en respuesta de WSAPOC (nunca interpretar como 'no apócrifo')."""
+
+
+class WsapocUnavailableError(RuntimeError):
+    """WSAPOC temporalmente no disponible (red/timeout/HTTP 5xx); habilita fallback a Playwright."""
+
+
+_WSAPOC_CACHE: Dict[str, tuple[float, Dict[str, Any]]] = {}
+WSAPOC_CACHE_TTL_SEC = 86400.0  # 24 horas por CUIT consultado
+
 ENDPOINTS = {
     "homologacion": {
         "wsaa": "https://wsaahomo.afip.gov.ar/ws/services/LoginCms",
@@ -46,7 +61,8 @@ ENDPOINTS = {
         "wsfecred": "https://fwshomo.afip.gov.ar/wsfecred/FECredService",
         "padron_a5": "https://awshomo.afip.gov.ar/sr-padron/webservices/personaServiceA5",
         "veconsumerws": "https://infraestructura.afip.gob.ar/ve-ws/services/veconsumer",
-        "wsapoc": "https://wswhomo.afip.gov.ar/wsapoc/service.asmx",
+        # Confirmado contra WSDL vivo (200 OK): https://eapoc-ws-qaext.afip.gob.ar/service.asmx?WSDL (op: GetPublicacionAPOC)
+        "wsapoc": "https://eapoc-ws-qaext.afip.gob.ar/service.asmx",
         "wscdc": "https://wswhomo.afip.gov.ar/WSCDC/service.asmx",
         "createvep": "https://setipagob2b-homo.afip.gob.ar/ws/services/createvep"
     },
@@ -57,7 +73,8 @@ ENDPOINTS = {
         "wsfecred": "https://serviciosjava.afip.gob.ar/wsfecred/FECredService",
         "padron_a5": "https://aws.afip.gov.ar/sr-padron/webservices/personaServiceA5",
         "veconsumerws": "https://infraestructura.afip.gob.ar/ve-ws/services/veconsumer",
-        "wsapoc": "https://servicios1.afip.gov.ar/wsapoc/service.asmx",
+        # Confirmado contra WSDL vivo (200 OK): https://eapoc-ws.afip.gob.ar/service.asmx?WSDL (op: GetPublicacionAPOC)
+        "wsapoc": "https://eapoc-ws.afip.gob.ar/service.asmx",
         "wscdc": "https://servicios1.afip.gov.ar/WSCDC/service.asmx",
         "createvep": "https://setipagob2b.afip.gob.ar/ws/services/createvep"
     }
@@ -400,11 +417,14 @@ def obtener_ultimo_autorizado_wsfe(
     cert_path: Optional[str] = None,
     key_path: Optional[str] = None,
 ) -> Optional[int]:
-    """Helper de alto nivel: autentica WSAA y consulta FECompUltimoAutorizado. Devuelve None si no hay certificado."""
+    """Helper de alto nivel: autentica WSAA y consulta FECompUltimoAutorizado. Lanza CertificadoPendienteError si faltan certs."""
     c_path = cert_path or os.environ.get("ARCA_WS_CERT")
     k_path = key_path or os.environ.get("ARCA_WS_KEY")
     if not c_path or not k_path:
-        return None
+        raise CertificadoPendienteError(
+            "Para emitir el CAE oficial por Web Service necesitás vincular tu certificado (.crt) y clave (.key) "
+            "en ARCA_WS_CERT y ARCA_WS_KEY (podés generar el .csr con generar_certificado_csr_arca)."
+        )
     auth = autenticar_wsaa(c_path, k_path, service="wsfe", ambiente=ambiente)
     return consultar_ultimo_comprobante_wsfe(cuit_emisor, pto_vta, cbte_tipo, auth["token"], auth["sign"], ambiente)
 
@@ -722,6 +742,145 @@ def consultar_padron_a5(
         "categoria_monotributo": _find_any("descripcionCategoria"),
         "actividad_principal": _find_any("descripcionActividad")
     }
+
+
+def parsear_respuesta_wsapoc(raw_xml: str, cuit_clean: str) -> Dict[str, Any]:
+    """Parser estricto de GetPublicacionAPOCResponse (WSDL eapoc-ws / http://tempuri.org/).
+    Ante XML malformado, Fault, <Errors> o código de error -> lanza WsapocResponseError (NUNCA 'no apócrifo')."""
+    if not raw_xml or not raw_xml.strip():
+        raise WsapocResponseError("Respuesta vacía de WSAPOC.")
+    try:
+        root = ET.fromstring(raw_xml)
+    except ET.ParseError as exc:
+        raise WsapocResponseError(f"XML malformado en respuesta WSAPOC: {exc}") from exc
+
+    # Detectar SOAP Fault o nodos <Errors>/<Err>
+    for el in root.iter():
+        tag_local = el.tag.split("}")[-1]
+        if tag_local == "Fault":
+            msg = "".join(el.itertext()).strip()[:240]
+            raise WsapocResponseError(f"SOAP Fault en WSAPOC: {msg}")
+        if tag_local in ("Errors", "ArrayOfError"):
+            txt = " ".join(t.strip() for t in el.itertext() if t and t.strip())
+            if txt:
+                raise WsapocResponseError(f"WSAPOC informó errores: {txt[:240]}")
+
+    result_el = None
+    for el in root.iter():
+        if el.tag.split("}")[-1] == "GetPublicacionAPOCResult":
+            result_el = el
+            break
+    if result_el is None:
+        raise WsapocResponseError("Respuesta WSAPOC sin nodo GetPublicacionAPOCResult.")
+
+    codigo = None
+    descripcion = ""
+    publicaciones = []
+    for ch in result_el:
+        t = ch.tag.split("}")[-1]
+        if t == "codigo":
+            codigo = (ch.text or "").strip()
+        elif t == "descripcion":
+            descripcion = (ch.text or "").strip()
+        elif t == "resultados":
+            for pub in ch:
+                if pub.tag.split("}")[-1] == "PublicacionAPOC":
+                    item: Dict[str, str] = {}
+                    for f in pub:
+                        item[f.tag.split("}")[-1]] = (f.text or "").strip()
+                    publicaciones.append(item)
+
+    if codigo is not None and codigo.upper() not in ("", "0", "00", "200", "OK"):
+        raise WsapocResponseError(f"WSAPOC devolvió código de error {codigo}: {descripcion or 'sin detalle'}")
+
+    if publicaciones:
+        first = publicaciones[0]
+        return {
+            "ok": True,
+            "cuit": cuit_clean,
+            "es_apocrifo": True,
+            "fecha_condicion": first.get("FechaCondicion") or None,
+            "fecha_publicacion": first.get("FechaPublicacion") or None,
+            "descripcion": first.get("Descripcion") or descripcion or "Incluido en Base e-APOC",
+            "publicaciones": publicaciones,
+            "fuente": "WSAPOC",
+        }
+
+    return {
+        "ok": True,
+        "cuit": cuit_clean,
+        "es_apocrifo": False,
+        "fecha_condicion": None,
+        "fuente": "WSAPOC",
+    }
+
+
+def consultar_apocrifo_wsapoc(
+    cuit_consulta: str,
+    ambiente: str = "produccion",
+    cert_path: Optional[str] = None,
+    key_path: Optional[str] = None,
+    cuit_delegado: Optional[str] = None,
+    usar_cache: bool = True,
+) -> Dict[str, Any]:
+    """Consulta Base e-APOC vía Web Service oficial WSAPOC (GetPublicacionAPOC) con caché de 24 h (Fase 3.3).
+    - Sin certificado -> CertificadoPendienteError (el caller puede hacer fallback a Playwright).
+    - Error de red/timeout/HTTP -> WsapocUnavailableError (fallback a Playwright).
+    - XML malformado o <Errors> -> WsapocResponseError (error explícito, NUNCA 'no apócrifo')."""
+    import time as _time
+    cuit_clean = "".join(c for c in str(cuit_consulta or "") if c.isdigit())
+    if len(cuit_clean) != 11:
+        return {"ok": False, "cuit": cuit_clean, "error": "El CUIT del proveedor debe tener 11 dígitos.", "fuente": "WSAPOC"}
+
+    env_key = "homologacion" if "homo" in (ambiente or "produccion").lower() else "produccion"
+    cache_k = f"{env_key}:{cuit_clean}"
+    if usar_cache:
+        hit = _WSAPOC_CACHE.get(cache_k)
+        if hit and (_time.time() - hit[0]) < WSAPOC_CACHE_TTL_SEC:
+            out_c = dict(hit[1])
+            out_c["desde_cache"] = True
+            return out_c
+
+    c_path = cert_path or os.environ.get("ARCA_WS_CERT")
+    k_path = key_path or os.environ.get("ARCA_WS_KEY")
+    if not c_path or not k_path:
+        raise CertificadoPendienteError("Falta ARCA_WS_CERT / ARCA_WS_KEY para consultar WSAPOC.")
+
+    try:
+        auth = autenticar_wsaa(c_path, k_path, service="wsapoc", ambiente=env_key)
+    except Exception as exc:
+        raise WsapocUnavailableError(f"Error autenticando WSAA para wsapoc: {exc}") from exc
+
+    cuit_del = "".join(c for c in str(cuit_delegado or os.environ.get("ARCA_WS_CUIT_DELEGADO") or "") if c.isdigit())
+    del_block = f"<tem:CUITDelegado>{cuit_del}</tem:CUITDelegado>" if cuit_del else ""
+    soap = f"""<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <tem:GetPublicacionAPOC>
+         <tem:Credencial>
+            <tem:Token>{auth['token']}</tem:Token>
+            <tem:Sign>{auth['sign']}</tem:Sign>
+            {del_block}
+         </tem:Credencial>
+         <tem:cuit>{cuit_clean}</tem:cuit>
+      </tem:GetPublicacionAPOC>
+   </soapenv:Body>
+</soapenv:Envelope>"""
+
+    try:
+        raw = _soap_post(
+            ENDPOINTS[env_key]["wsapoc"],
+            soap,
+            soap_action="http://tempuri.org/Service/GetPublicacionAPOC",
+            timeout=15,
+        )
+    except Exception as exc:
+        raise WsapocUnavailableError(f"WSAPOC no disponible ({env_key}): {exc}") from exc
+
+    res = parsear_respuesta_wsapoc(raw, cuit_clean)
+    _WSAPOC_CACHE[cache_k] = (_time.time(), dict(res))
+    return res
 
 
 if __name__ == "__main__":
