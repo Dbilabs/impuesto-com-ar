@@ -271,6 +271,9 @@ def autenticar_wsaa(
                     exp = exp.replace(tzinfo=datetime.timezone.utc)
                 if exp > datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=5):
                     return {"token": cached["token"], "sign": cached["sign"], "desde_cache": True}
+        except bv.VaultKeyMismatchError:
+            # O2: NUNCA pisar un ticket WSAA cifrado con otra clave
+            raise
         except Exception:
             pass
 

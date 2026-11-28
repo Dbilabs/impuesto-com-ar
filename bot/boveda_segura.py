@@ -25,11 +25,19 @@ from typing import Dict, Any, Optional, List, Tuple
 
 logger = logging.getLogger("boveda_segura")
 
+import logging
 try:
-    from cryptography.fernet import Fernet
+    from cryptography.fernet import Fernet, InvalidToken
     HAS_CRYPTO = True
 except ImportError:
     HAS_CRYPTO = False
+    InvalidToken = Exception
+
+logger_boveda = logging.getLogger("impuesto.boveda")
+
+
+class VaultKeyMismatchError(RuntimeError):
+    """O2: la clave de bóveda configurada no coincide con la usada para cifrar el archivo .enc."""
 
 ROOT = Path(__file__).resolve().parent.parent
 VAULT_DIR = ROOT / "data" / "boveda"
@@ -180,7 +188,24 @@ def _read_enc_json(path: Path, default: Any) -> Any:
     if not HAS_CRYPTO:
         raise RuntimeError("Falta librería 'cryptography' para operar la bóveda cifrada.")
     f = _get_fernet()
-    data = f.decrypt(path.read_bytes())
+    try:
+        data = f.decrypt(path.read_bytes())
+    except InvalidToken as exc:
+        if _is_cloud_prod() and KEY_FILE.exists():
+            logger_boveda.critical(
+                "O2: clave de bóveda distinta a la usada para cifrar (%s). Existe %s en volumen: "
+                "corré `python3 scripts/migrar_clave_boveda.py --aplicar` antes de operar. NO se reescribirá el archivo.",
+                path.name,
+                KEY_FILE,
+            )
+        else:
+            logger_boveda.critical(
+                "O2: clave de bóveda distinta a la usada para cifrar (%s). NO se reescribirá el archivo.",
+                path.name,
+            )
+        raise VaultKeyMismatchError(
+            f"Clave de bóveda distinta a la usada para cifrar '{path.name}' (huella actual={obtener_huella_vault_key()})."
+        ) from exc
     return json.loads(data.decode("utf-8"))
 
 

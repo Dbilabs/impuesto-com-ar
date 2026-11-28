@@ -221,6 +221,7 @@ def _load_budget_locked(cuit: str, now: float) -> list:
 
 
 def _save_budget_locked(cuit: str, fails: list) -> None:
+    from .boveda_segura import VaultKeyMismatchError
     try:
         disk = cargar_presupuesto_cuit() or {}
         if fails:
@@ -228,6 +229,9 @@ def _save_budget_locked(cuit: str, fails: list) -> None:
         else:
             disk.pop(cuit, None)
         guardar_presupuesto_cuit(disk)
+    except VaultKeyMismatchError as exc:
+        logger.critical("O2: abortando escritura de cuit_budget.enc para no pisar datos cifrados con otra clave: %s", exc)
+        return
     except Exception as exc:
         logger.error("Error persistiendo presupuesto de fallos CUIT %s en bóveda: %s", cuit, exc, exc_info=True)
 

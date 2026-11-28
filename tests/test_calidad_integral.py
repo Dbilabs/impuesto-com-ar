@@ -1731,6 +1731,73 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
             self.assertFalse(bot_main._is_prod_env())
             bot_main._check_secret(None)
 
+    def test_sec_o2_migracion_clave_boveda_y_guarda_runtime(self):
+        """O2: bóveda cifrada con .vault_key -> migración dry-run y --aplicar -> se lee con IMPUESTO_VAULT_KEY; clave equivocada no pisa nada."""
+        import tempfile as _tf
+        import datetime as _dt
+        from unittest.mock import patch
+        from bot import main as bot_main
+        from bot import arca_ws
+        from scripts.migrar_clave_boveda import migrar_boveda
+
+        with _tf.TemporaryDirectory(prefix="impuesto_o2_") as td:
+            vdir = Path(td) / "boveda"
+            vdir.mkdir(parents=True, exist_ok=True)
+            vfile = vdir / "credenciales.enc"
+            bfile = vdir / "cuit_budget.enc"
+            kfile = vdir / ".vault_key"
+            wsaa_dir = vdir / "wsaa_cache"
+            wsaa_dir.mkdir(parents=True, exist_ok=True)
+            ta_file = wsaa_dir / "ta_homologacion_wsfe_o2.crt.enc"
+
+            with patch.object(_bv_mod, "VAULT_DIR", vdir), \
+                 patch.object(_bv_mod, "VAULT_FILE", vfile), \
+                 patch.object(_bv_mod, "KEY_FILE", kfile), \
+                 patch.dict(os.environ, {"IMPUESTO_ENV": "test", "IMPUESTO_VAULT_KEY": ""}):
+                # 1. Crear bóveda + presupuesto + ticket WSAA cifrados con .vault_key
+                _bv_mod._write_enc_json(vfile, {"20999999991": {"clave_fiscal": "SecretaO2"}})
+                _bv_mod.guardar_presupuesto_cuit({"20999999991": [1700000000.0]})
+                exp_fut = (_dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(hours=6)).isoformat()
+                _bv_mod._write_enc_json(ta_file, {"token": "TO2", "sign": "SO2", "expiration": exp_fut})
+                self.assertTrue(kfile.exists())
+
+                orig_v_bytes = vfile.read_bytes()
+                orig_b_bytes = bfile.read_bytes()
+                orig_t_bytes = ta_file.read_bytes()
+
+                # 2. Clave nueva equivocada en prod: VaultKeyMismatchError y NO reescribe ningún archivo
+                with patch.dict(os.environ, {"IMPUESTO_ENV": "production", "IMPUESTO_VAULT_KEY": "NuevaClaveMaestraO2-2026"}):
+                    with self.assertRaises(_bv_mod.VaultKeyMismatchError):
+                        _bv_mod._read_enc_json(vfile, {})
+                    bot_main._save_budget_locked("20999999991", [1700000999.0])
+                    with self.assertRaises(_bv_mod.VaultKeyMismatchError):
+                        arca_ws.autenticar_wsaa("/tmp/o2.crt", "/tmp/o2.key", service="wsfe", ambiente="homologacion")
+                    self.assertEqual(vfile.read_bytes(), orig_v_bytes)
+                    self.assertEqual(bfile.read_bytes(), orig_b_bytes)
+                    self.assertEqual(ta_file.read_bytes(), orig_t_bytes)
+
+                # 3. Dry-run no modifica nada ni renombra .vault_key
+                r_dry = migrar_boveda(vdir, "NuevaClaveMaestraO2-2026", aplicar=False)
+                self.assertTrue(r_dry["ok"] and r_dry["dry_run"])
+                self.assertEqual(r_dry["archivos_encontrados"], 3)
+                self.assertTrue(kfile.exists())
+                self.assertEqual(vfile.read_bytes(), orig_v_bytes)
+
+                # 4. --aplicar migra los 3 *.enc, crea backup y renombra .vault_key -> .vault_key.migrada
+                r_ap = migrar_boveda(vdir, "NuevaClaveMaestraO2-2026", aplicar=True)
+                self.assertTrue(r_ap["ok"] and not r_ap["dry_run"])
+                self.assertTrue(Path(r_ap["backup_dir"]).exists())
+                self.assertFalse(kfile.exists())
+                self.assertTrue((vdir / ".vault_key.migrada").exists())
+
+                # 5. Todo se lee perfecto con IMPUESTO_VAULT_KEY
+                with patch.dict(os.environ, {"IMPUESTO_ENV": "production", "IMPUESTO_VAULT_KEY": "NuevaClaveMaestraO2-2026"}):
+                    self.assertEqual(_bv_mod._read_enc_json(vfile, {})["20999999991"]["clave_fiscal"], "SecretaO2")
+                    self.assertEqual(_bv_mod.cargar_presupuesto_cuit()["20999999991"], [1700000000.0])
+                    ta_ok = arca_ws.autenticar_wsaa("/tmp/o2.crt", "/tmp/o2.key", service="wsfe", ambiente="homologacion")
+                    self.assertTrue(ta_ok["desde_cache"])
+                    self.assertEqual(ta_ok["token"], "TO2")
+
 
 if __name__ == "__main__":
     unittest.main()
