@@ -19,8 +19,11 @@ import hashlib
 import secrets
 import datetime
 import threading
+import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
+
+logger = logging.getLogger("boveda_segura")
 
 try:
     from cryptography.fernet import Fernet
@@ -38,140 +41,7 @@ KEY_FILE = VAULT_DIR / ".vault_key"
 _vault_io_lock = threading.Lock()
 ROLES_VALIDOS = {"solo_lectura", "editor", "owner"}
 MAX_HISTORY_EVENTS = 1000
-PENDING_CUIT_TTL_SEC = int(os.environ.get("PENDING_CUIT_TTL_SEC", "1800"))  # 30 minutos (N1-b)
-
-
-def _fail_budget_file() -> Path:
-    """Ruta dinámica en VAULT_DIR (/app/data/boveda en prod; tempdir en tests) para persistir presupuesto N1-d."""
-    return VAULT_DIR / "fail_budget.enc"
-
-
-def _es_pendiente_vencido(entry: Dict[str, Any], now_ts: Optional[float] = None) -> bool:
-    """True si la entrada ACL está pendiente de validación hace >= PENDING_CUIT_TTL_SEC (30 min)."""
-    if not isinstance(entry, dict) or entry.get("validado", False):
-        return False
-    ts_raw = entry.get("created_at") or entry.get("updated_at")
-    if not ts_raw:
-        return False
-    try:
-        dt = datetime.datetime.fromisoformat(str(ts_raw))
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=datetime.timezone.utc)
-        created_ts = dt.timestamp()
-    except Exception:
-        return False
-    ref_now = now_ts if now_ts is not None else time.time()
-    return (ref_now - created_ts) >= PENDING_CUIT_TTL_SEC
-
-
-def _purgar_pendientes_vencidos_locked(acl: Dict[str, Any], vault: Optional[Dict[str, Any]] = None) -> bool:
-    """Chequeo perezoso (N1-b): libera entradas pendiente_validacion vencidas (>30 min) en ACL y bóveda."""
-    cuit_acl = acl.get("cuit_acl") or {}
-    expirados = [c for c, entry in list(cuit_acl.items()) if _es_pendiente_vencido(entry)]
-    if not expirados:
-        return False
-    for c in expirados:
-        cuit_acl.pop(c, None)
-    _save_acl(acl)
-    v = vault if vault is not None else _load_vault()
-    v_changed = False
-    for c in expirados:
-        if c in v:
-            v.pop(c, None)
-            v_changed = True
-    if v_changed:
-        _save_vault(v)
-    return True
-
-
-def _load_fail_budget_locked() -> Dict[str, Any]:
-    data = _read_enc_json(_fail_budget_file(), {"cuit_fails": {}, "unvalidated_refresh": {}})
-    if not isinstance(data, dict):
-        data = {"cuit_fails": {}, "unvalidated_refresh": {}}
-    data.setdefault("cuit_fails", {})
-    data.setdefault("unvalidated_refresh", {})
-    return data
-
-
-def _save_fail_budget_locked(data: Dict[str, Any]) -> None:
-    _write_enc_json(_fail_budget_file(), data)
-
-
-def obtener_fallos_login_cuit(cuit: str, ventana_seg: float = 86400.0, now_ts: Optional[float] = None) -> List[float]:
-    """Lee (y poda >24h) los fallos de login persistidos en volumen para `cuit` (N1-d)."""
-    c = normalizar_cuit(cuit)
-    if len(c) != 11:
-        return []
-    now = now_ts if now_ts is not None else time.time()
-    with _vault_io_lock:
-        data = _load_fail_budget_locked()
-        raw_fails = data["cuit_fails"].get(c, [])
-        fails = [float(t) for t in raw_fails if now - float(t) < ventana_seg]
-        if len(fails) != len(raw_fails):
-            if fails:
-                data["cuit_fails"][c] = fails
-            else:
-                data["cuit_fails"].pop(c, None)
-            _save_fail_budget_locked(data)
-        return list(fails)
-
-
-def registrar_fallo_login_cuit(cuit: str, ventana_seg: float = 86400.0, now_ts: Optional[float] = None) -> List[float]:
-    """Persiste un fallo de login en volumen (/app/data/boveda/fail_budget.enc) y devuelve los timestamps vigentes."""
-    c = normalizar_cuit(cuit)
-    if len(c) != 11:
-        return []
-    now = now_ts if now_ts is not None else time.time()
-    with _vault_io_lock:
-        data = _load_fail_budget_locked()
-        fails = [float(t) for t in data["cuit_fails"].get(c, []) if now - float(t) < ventana_seg]
-        fails.append(float(now))
-        data["cuit_fails"][c] = fails
-        _save_fail_budget_locked(data)
-        return list(fails)
-
-
-def limpiar_fallos_login_cuit(cuit: str) -> None:
-    """Limpia el presupuesto persistido de fallos y cooldown de refresco para `cuit` tras validación exitosa."""
-    c = normalizar_cuit(cuit)
-    if len(c) != 11:
-        return
-    with _vault_io_lock:
-        if not _fail_budget_file().exists():
-            return
-        data = _load_fail_budget_locked()
-        changed = False
-        if c in data["cuit_fails"]:
-            data["cuit_fails"].pop(c, None)
-            changed = True
-        if c in data["unvalidated_refresh"]:
-            data["unvalidated_refresh"].pop(c, None)
-            changed = True
-        if changed:
-            _save_fail_budget_locked(data)
-
-
-def verificar_y_marcar_refresco_no_validado(
-    cuit: str,
-    cooldown_seg: float = 600.0,
-    now_ts: Optional[float] = None,
-) -> Tuple[bool, int]:
-    """Limita `forzar_refresco` en CUITs no validados (N1-c: máx. 1 cada 10 min, persistido en volumen)."""
-    c = normalizar_cuit(cuit)
-    if len(c) != 11:
-        return True, 0
-    now = now_ts if now_ts is not None else time.time()
-    with _vault_io_lock:
-        data = _load_fail_budget_locked()
-        last_ts = data["unvalidated_refresh"].get(c)
-        if last_ts is not None:
-            elapsed = now - float(last_ts)
-            if elapsed < cooldown_seg:
-                return False, max(1, int(cooldown_seg - elapsed))
-        data["unvalidated_refresh"][c] = float(now)
-        _save_fail_budget_locked(data)
-        return True, 0
-PENDING_TTL_SEC = 1800  # 30 minutos: CUITs pendientes sin login exitoso expiran (N1-b)
+PENDING_TTL_SEC = int(os.environ.get("PENDING_CUIT_TTL_SEC", "1800"))  # 30 minutos: CUITs pendientes sin login exitoso expiran (N1-b)
 
 
 def _es_pendiente_vencido(entry: Dict[str, Any]) -> bool:
@@ -188,12 +58,22 @@ def _es_pendiente_vencido(entry: Dict[str, Any]) -> bool:
         return False
 
 
-def _purgar_pendientes_vencidos(acl: Dict[str, Any]) -> bool:
-    changed = False
-    for c in [k for k, v in (acl.get("cuit_acl") or {}).items() if _es_pendiente_vencido(v)]:
+def _purgar_pendientes_vencidos(acl: Dict[str, Any], vault: Optional[Dict[str, Any]] = None) -> bool:
+    """Purga CUITs pendientes vencidos (>30m) tanto de ACL como de credenciales.enc (cierre N1-i)."""
+    expired = [k for k, v in (acl.get("cuit_acl") or {}).items() if _es_pendiente_vencido(v)]
+    if not expired:
+        return False
+    for c in expired:
         acl["cuit_acl"].pop(c, None)
-        changed = True
-    return changed
+    v = vault if vault is not None else _load_vault()
+    vault_changed = False
+    for c in expired:
+        if c in v:
+            v.pop(c, None)
+            vault_changed = True
+    if vault_changed and vault is None:
+        _save_vault(v)
+    return True
 
 
 def _now_iso() -> str:
@@ -448,7 +328,7 @@ def guardar_credenciales_cifradas(
     with _vault_io_lock:
         vault = _load_vault()
         acl = _load_acl()
-        _purgar_pendientes_vencidos(acl)
+        _purgar_pendientes_vencidos(acl, vault=vault)
 
         # N1-b: Solo las entradas VALIDADAS bloquean a otro email (o email vacío).
         # Una entrada pendiente_validacion (validado=False) NO bloquea a otro email verificado: se reemplaza.
@@ -516,18 +396,34 @@ def guardar_credenciales_cifradas(
     }
 
 
-def marcar_cuit_validado(cuit: str) -> None:
-    """Confirma la propiedad del CUIT tras el primer login exitoso en ARCA (cierre N1)."""
+def marcar_cuit_validado(
+    cuit: str,
+    expected_email: Optional[str] = None,
+    expected_clave: Optional[str] = None,
+) -> bool:
+    """Confirma la propiedad del CUIT tras el primer login exitoso en ARCA (cierre N1-g).
+    Verifica que el email y la clave que tuvieron éxito coincidan con la entrada guardada para impedir race conditions."""
     cuit_clean = normalizar_cuit(cuit)
     if len(cuit_clean) != 11:
-        return
+        return False
+    em_exp = normalizar_email(expected_email or "")
     with _vault_io_lock:
         acl = _load_acl()
+        vault = _load_vault()
         entry = acl["cuit_acl"].get(cuit_clean)
-        if entry and not entry.get("validado"):
-            entry["validado"] = True
-            entry["validado_at"] = _now_iso()
-            _save_acl(acl)
+        rec = vault.get(cuit_clean) or {}
+        if not entry:
+            return False
+        if entry.get("validado", False):
+            return True
+        if em_exp and entry.get("owner_email") != em_exp:
+            return False
+        if expected_clave is not None and rec.get("clave_fiscal") != expected_clave:
+            return False
+        entry["validado"] = True
+        entry["validado_at"] = _now_iso()
+        _save_acl(acl)
+        return True
 
 
 def liberar_cuit_pendiente(cuit: str, clave_fallida: Optional[str] = None) -> bool:
@@ -724,8 +620,9 @@ def listar_cuits_autorizados(actor_email: str) -> List[Dict[str, Any]]:
     with _vault_io_lock:
         vault = _load_vault()
         acl = _load_acl()
-        if _purgar_pendientes_vencidos(acl):
+        if _purgar_pendientes_vencidos(acl, vault=vault):
             _save_acl(acl)
+            _save_vault(vault)
         out = []
         for cuit_clean, entry in acl["cuit_acl"].items():
             role = None

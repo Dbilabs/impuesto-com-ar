@@ -820,6 +820,105 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
             self.assertLessEqual(calls["n"], bot_main.CUIT_MAX_FAILS_24H)
         bot_main._clear_bad_creds(cuit_t, clear_budget=True)
 
+    def test_sec_n1g_n1h_n1i_paso0(self):
+        """Paso 0 (N1-g, N1-h, N1-i): bloquea carrera en login pendiente, no penaliza owner validado por ARCA lenta, y purga clave huérfana al vencer."""
+        import threading
+        import datetime
+        from unittest.mock import patch
+        from bot import main as bot_main
+        client = TestClient(app)
+
+        # --- N1-g: carrera durante login pendiente ---
+        cuit_a = "20777777773"
+        tok_real = _tok_verificado("real_n1g@impuesto.test")
+        tok_att = _tok_verificado("att_n1g@impuesto.test")
+
+        class _DeferredExec:
+            def __init__(self):
+                self.q = []
+            def submit(self, fn, *a, **k):
+                self.q.append((fn, a, k))
+            def run_all(self):
+                while self.q:
+                    fn, a, k = self.q.pop(0)
+                    fn(*a, **k)
+
+        def fake_arca_race(cuit, clave):
+            return {"ok": True, "cuit": cuit, "ccma": {"ok": True}, "dfe": {"ok": True}, "mis_facilidades": {"ok": True}}
+
+        bot_main._clear_bad_creds(cuit_a, clear_budget=True)
+        dex = _DeferredExec()
+        with patch.dict(os.environ, {"DISABLE_AUDIT_PREWARM": "0"}), \
+             patch.object(bot_main, "executor", dex), \
+             patch.object(bot_main, "auditar_estado_integral_arca", side_effect=fake_arca_race):
+            r_real = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_real}, json={
+                "name": "vincular_cuenta_en_chat",
+                "arguments": {"email": "real_n1g@impuesto.test", "cuit": cuit_a, "clave_fiscal": "RealPass1"},
+            })
+            self.assertTrue(r_real.json().get("ok"))
+            self.assertIn(cuit_a, bot_main.AUDIT_INFLIGHT)
+            # Atacante intenta reemplazar mientras login del dueño real está en curso -> BLOQUEADO
+            r_att = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_att}, json={
+                "name": "vincular_cuenta_en_chat",
+                "arguments": {"email": "att_n1g@impuesto.test", "cuit": cuit_a, "clave_fiscal": "FalsaAtacante"},
+            })
+            self.assertFalse(r_att.json().get("ok"))
+            dex.run_all()
+        self.assertTrue(_bv_mod.es_owner_validado("real_n1g@impuesto.test", cuit_a))
+        self.assertFalse(_bv_mod.es_owner_validado("att_n1g@impuesto.test", cuit_a))
+        self.assertEqual(_bv_mod.obtener_credenciales_descifradas(cuit_a)["clave_fiscal"], "RealPass1")
+        # Defensa en profundidad: marcar_cuit_validado rechaza email/clave que no coincidan
+        cuit_a2 = "20777777776"
+        _bv_mod.guardar_credenciales_cifradas(cuit=cuit_a2, clave_fiscal="ClaveX", owner_email="dueno_a2@impuesto.test")
+        self.assertFalse(_bv_mod.marcar_cuit_validado(cuit_a2, expected_email="otro@impuesto.test", expected_clave="ClaveX"))
+        self.assertFalse(_bv_mod.marcar_cuit_validado(cuit_a2, expected_email="dueno_a2@impuesto.test", expected_clave="OtraClave"))
+        self.assertTrue(_bv_mod.marcar_cuit_validado(cuit_a2, expected_email="dueno_a2@impuesto.test", expected_clave="ClaveX"))
+
+        # --- N1-h: ARCA lenta (Playwright TimeoutError en page.goto) no bloquea owner validado ---
+        cuit_b = "20777777774"
+        tok_val = _tok_verificado("valido_n1h@impuesto.test")
+        class FakePWTimeoutError(Exception):
+            pass
+        FakePWTimeoutError.__name__ = "TimeoutError"
+
+        modo = {"lento": False}
+        def fake_arca_slow(cuit, clave):
+            if modo["lento"]:
+                raise FakePWTimeoutError('page.goto: Timeout 30000ms exceeded.\nnavigating to "https://auth.afip.gob.ar/contribuyente_/login.xhtml"')
+            return {"ok": True, "cuit": cuit, "ccma": {"ok": True}, "dfe": {"ok": True}, "mis_facilidades": {"ok": True}}
+
+        bot_main._clear_bad_creds(cuit_b, clear_budget=True)
+        with patch.dict(os.environ, {"DISABLE_AUDIT_PREWARM": "0"}), \
+             patch.object(bot_main, "auditar_estado_integral_arca", side_effect=fake_arca_slow), \
+             patch.object(bot_main, "AUDIT_SYNC_WAIT_SEC", 2.0):
+            client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_val}, json={
+                "name": "vincular_cuenta_en_chat",
+                "arguments": {"email": "valido_n1h@impuesto.test", "cuit": cuit_b, "clave_fiscal": "RealPassB"},
+            })
+            # Esperar a que termine la validación inicial
+            r_init = bot_main._ejecutar_auditoria_sin_timeout(cuit_b, "RealPassB", forzar_refresco=False, actor_email="valido_n1h@impuesto.test")
+            self.assertTrue(r_init.get("ok"))
+            self.assertTrue(_bv_mod.es_owner_validado("valido_n1h@impuesto.test", cuit_b))
+            modo["lento"] = True
+            for _ in range(2):
+                bot_main._ejecutar_auditoria_sin_timeout(cuit_b, "RealPassB", forzar_refresco=True, actor_email="valido_n1h@impuesto.test")
+            self.assertEqual(len(bot_main._CUIT_FAIL_BUDGET.get(cuit_b, [])), 0)
+            modo["lento"] = False
+            r_ok = bot_main._ejecutar_auditoria_sin_timeout(cuit_b, "RealPassB", forzar_refresco=True, actor_email="valido_n1h@impuesto.test")
+            self.assertTrue(r_ok.get("ok"))
+
+        # --- N1-i: pendiente vencido purga también credenciales.enc ---
+        cuit_c = "20777777775"
+        _bv_mod.guardar_credenciales_cifradas(cuit=cuit_c, clave_fiscal="ClaveHuerfana", owner_email="pend_n1i@impuesto.test")
+        acl = _bv_mod._load_acl()
+        old_ts = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=45)).isoformat()
+        acl["cuit_acl"][cuit_c]["created_at"] = old_ts
+        acl["cuit_acl"][cuit_c]["updated_at"] = old_ts
+        _bv_mod._save_acl(acl)
+        self.assertFalse(_bv_mod.es_owner_validado("pend_n1i@impuesto.test", cuit_c))
+        self.assertNotIn(cuit_c, _bv_mod._load_acl()["cuit_acl"])
+        self.assertIsNone(_bv_mod.obtener_credenciales_descifradas(cuit_c))
+
 
 if __name__ == "__main__":
     unittest.main()

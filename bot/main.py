@@ -406,13 +406,18 @@ def _is_bad_cred_error(err_str: str) -> bool:
 
 
 def _es_fallo_login_fail_closed(exc: Exception, err_str: str, cuit: str, actor_email: str) -> bool:
-    """N1-c: fail-closed ante errores/timeouts durante el login a ARCA (o cualquier fallo en CUIT aún no validado)."""
+    """N1-c + N1-h: fail-closed ante errores post-envío de contraseña; NO penaliza timeouts de red/page.goto previos al envío."""
     if _is_bad_cred_error(err_str):
         return True
     low = (err_str or "").lower()
-    if any(k in low for k in ("portalcf.cloud", "auth.afip", "auth.arca", "login.xhtml", "f1:password", "f1:btningresar")):
+    is_timeout = isinstance(exc, TimeoutError) or type(exc).__name__ == "TimeoutError" or "timeout" in low
+    # N1-h: page.goto / navigating to login.xhtml falló ANTES de enviar la contraseña -> ARCA lenta, NO clave incorrecta
+    if is_timeout and any(k in low for k in ("page.goto", "navigating to", "login.xhtml", "f1:username", "net::err_")):
+        return False
+    # Timeout esperando redirect a portalcf.cloud DESPUÉS de enviar contraseña -> fail-closed
+    if any(k in low for k in ("portalcf.cloud", "f1:btningresar", "f1:password")):
         return True
-    if isinstance(exc, TimeoutError) and not es_owner_validado(actor_email, cuit):
+    if is_timeout and not es_owner_validado(actor_email, cuit):
         return True
     return False
 
@@ -440,10 +445,10 @@ def _run_auditoria_background(cuit: str, clave: str, entry: Dict[str, Any], acto
             raise TimeoutError("Timeout esperando disponibilidad del motor headless ARCA.")
         res = auditar_estado_integral_arca(cuit=cuit, clave=clave)
         now = time.time()
-        # N1: confirmar propiedad del CUIT y limpiar presupuesto solo tras un login exitoso en ARCA
+        # N1-g: confirmar propiedad del CUIT verificando que email y clave coincidan con los que tuvieron éxito
         if isinstance(res, dict) and (res.get("ok") is True or res.get("doublecheck", {}).get("fuentes_verificadas")):
-            marcar_cuit_validado(cuit)
-            _clear_bad_creds(cuit, clear_budget=True)
+            if marcar_cuit_validado(cuit, expected_email=actor_email, expected_clave=clave):
+                _clear_bad_creds(cuit, clear_budget=True)
         with _audit_lock:
             entry["result"] = res
             entry["finished_at"] = now
@@ -923,6 +928,13 @@ def api_vincular(
         cuit_req = normalizar_cuit(req.cuit or "")
         owner_ya_validado = es_owner_validado(email, cuit_req)
         if not owner_ya_validado:
+            with _audit_lock:
+                if cuit_req in AUDIT_INFLIGHT:
+                    return {
+                        "ok": False,
+                        "en_validacion": True,
+                        "error": f"Ya hay una validación de acceso en curso para el CUIT {cuit_req}. Esperá unos segundos y reintentá.",
+                    }
             budget_err = _check_cuit_fail_budget(cuit_req)
             if budget_err:
                 return budget_err
@@ -1074,6 +1086,13 @@ def run_mcp_tool(
 
         owner_ya_validado_chat = es_owner_validado(em, cuit_in)
         if not owner_ya_validado_chat:
+            with _audit_lock:
+                if cuit_in in AUDIT_INFLIGHT:
+                    return {
+                        "ok": False,
+                        "en_validacion": True,
+                        "error": f"Ya hay una validación de acceso en curso para el CUIT {cuit_in}. Esperá unos segundos y reintentá.",
+                    }
             budget_err = _check_cuit_fail_budget(cuit_in)
             if budget_err:
                 return budget_err
