@@ -137,8 +137,9 @@ def _now_iso() -> str:
 
 def _is_cloud_prod() -> bool:
     return bool(
-        os.environ.get("FLY_APP_NAME", "").strip()
-        or os.environ.get("RAILWAY_ENVIRONMENT", "").strip()
+        os.environ.get("OCI_REGION", "").strip()
+        or os.environ.get("ORACLE_CLOUD", "").strip()
+        or os.environ.get("FLY_APP_NAME", "").strip()
         or os.environ.get("REQUIRE_VAULT_KEY", "").strip() == "1"
     )
 
@@ -1212,15 +1213,29 @@ def _enviar_email_otp(destinatario: str, codigo: str) -> Tuple[bool, str]:
     return False, "SIN_PROVEEDOR_EMAIL"
 
 
+def es_email_verificado_conocido(email: str) -> bool:
+    """True si `email` ya fue verificado previamente (tiene cuenta con token en ACL o es super-admin). Usado en N3-b."""
+    em = normalizar_email(email)
+    if not em:
+        return False
+    if es_admin_plataforma(em):
+        return True
+    with _vault_io_lock:
+        acl = _load_acl()
+        u = (acl.get("users") or {}).get(em)
+        return bool(u and u.get("tokens"))
+
+
 def solicitar_codigo_otp_email(email: str, client_ip: str = "unknown") -> Dict[str, Any]:
-    """Genera un código OTP de 6 dígitos (SHA-256 en memoria, TTL 10 min) con límite en 3 niveles (IP+user, user, global)."""
+    """Genera un código OTP de 6 dígitos (SHA-256 en memoria, TTL 10 min) con límite en 3 niveles + protección N3-b."""
     from .limite_login import LIMITE_OTP_ENVIO
 
     em = normalizar_email(email)
     if "@" not in em or "." not in em.split("@")[-1]:
         return {"ok": False, "error": "Email inválido."}
 
-    ok_lim, msg_lim = LIMITE_OTP_ENVIO.chequear(client_ip, em)
+    conocido = es_email_verificado_conocido(em)
+    ok_lim, msg_lim = LIMITE_OTP_ENVIO.chequear(client_ip, em, es_usuario_conocido=conocido)
     if not ok_lim:
         return {"ok": False, "rate_limited": True, "error": msg_lim}
     LIMITE_OTP_ENVIO.registrar_fallo(client_ip, em)

@@ -50,7 +50,7 @@ IMPUESTO.COM.AR/
 │   ├── arca_ws.py                    # Web Services oficiales ARCA (WSAA, WSFEv1, Padrón A5, CSR)
 │   ├── scraper*.py                   # Scrapers verificados (CCMA, BBPP F.762, Comprobantes, DFE, MiPyME)
 │   ├── estudio_contable.py           # Modo Estudio Contable B2B (cartera, alertas >30%, Marca Blanca)
-│   └── Dockerfile                    # Listo para Railway / Fly.io / Cloud Run
+│   └── Dockerfile                    # Listo para Oracle Cloud (OCI) / Docker / Fly.io
 ├── mcp/server.py                     # Servidor FastMCP Python local equivalente
 ├── scripts/sync_skills.py            # Compila skills-pack/ -> skills_bundle.js + dist/skills/
 └── src/ & dist/                      # Sitio estático Cloudflare Pages (landing + /estudios/ + /skills/)
@@ -69,17 +69,25 @@ python3 scripts/sync_skills.py
 npx wrangler pages deploy dist --project-name=impuesto
 ```
 
-### 2. Correr el Backend Headless ARCA en local o en la nube (Railway / Fly.io / Cloud Run)
+### 2. Correr el Backend Headless ARCA en local o en la nube (Oracle Cloud OCI / Docker)
 ```bash
 pip install -r bot/requirements.txt
 playwright install chromium
+export ORACLE_CLOUD=1
 export IMPUESTO_VAULT_KEY="tu-clave-maestra-segura"
 export BOT_API_SECRET="tu-secreto-compartido-con-cloudflare"
 export PUBLIC_BOT_URL="https://impuesto.com.ar"
 uvicorn bot.main:app --host 0.0.0.0 --port 8000
 ```
+En Docker sobre Oracle Cloud (OCI), montar siempre volumen persistente para `/app/data/boveda` (bóveda, presupuesto de logins, idempotencia WSFE y tickets WSAA):
+```bash
+docker run -d --restart unless-stopped -p 8000:8000 \
+  -v /var/lib/impuesto/boveda:/app/data/boveda \
+  -e ORACLE_CLOUD=1 -e IMPUESTO_VAULT_KEY=... -e BOT_API_SECRET=... \
+  --name impuesto-arca-engine impuesto-arca-engine
+```
 Luego en Cloudflare Pages (`impuesto` → Settings → Environment variables):
-- `BOT_API_URL = https://tu-backend.up.railway.app`
+- `BOT_API_URL = https://bot.impuesto.com.ar` (tu VM Oracle Cloud detrás de Cloudflare Tunnel / HTTPS)
 - `BOT_API_SECRET = <el-mismo-secreto>`
 
 ### 3. Reglas de Seguridad y Diseño Obligatorias

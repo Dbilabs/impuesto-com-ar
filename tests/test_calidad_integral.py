@@ -1641,6 +1641,63 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
             self.assertEqual(r_w4.get("fuente"), "PW_DEFAULT")
         bot_main._APOC_IP_HITS.clear()
 
+        # Residual P3 W1: migración de tickets WSAA legados (.json -> .enc)
+        import json as _json
+        leg_dir = _bv_mod.VAULT_DIR / "legacy_wsaa_test"
+        leg_dir.mkdir(parents=True, exist_ok=True)
+        leg_file = leg_dir / "ta_homologacion_wsfe_migr.crt.json"
+        leg_file.write_text(_json.dumps({"token": "T_MIG", "sign": "S_MIG", "expiration": exp_fut}), encoding="utf-8")
+        cnt = arca_ws.migrar_tickets_wsaa_legados(legacy_dir=leg_dir)
+        self.assertEqual(cnt, 1)
+        self.assertFalse(leg_file.exists())
+        ta_mig = arca_ws.autenticar_wsaa("/tmp/migr.crt", "/tmp/migr.key", service="wsfe", ambiente="homologacion")
+        self.assertTrue(ta_mig["desde_cache"])
+        self.assertEqual(ta_mig["token"], "T_MIG")
+
+    def test_sec_n3b_ipv6_slash64_y_ataque4b_usuario_conocido(self):
+        """N3-b: 10 IPs de la misma /64 cuentan como 1 sola; tras ataque 4b (tope global), un usuario ya verificado sigue entrando."""
+        from unittest.mock import patch
+        from bot import limite_login as ll
+
+        # 1. Agrupamiento IPv6 por /64
+        self.assertEqual(
+            ll.normalizar_clave_ip("2001:db8:abcd:0012::1"),
+            ll.normalizar_clave_ip("2001:db8:abcd:0012:ffff:ffff:ffff:fffe"),
+        )
+        self.assertEqual(ll.normalizar_clave_ip("203.0.113.42"), "203.0.113.42")
+
+        lim_v6 = ll.LimiteLogin(por_ip_usuario=50, por_usuario=50, por_ip=5, global_por_min=500)
+        bloqueado_v6 = False
+        for i in range(10):
+            ip6 = f"2001:db8:cafe:1234::{i + 1:x}"
+            ok, _ = lim_v6.chequear(ip6, f"u{i}@test.com")
+            if not ok:
+                bloqueado_v6 = True
+                break
+            lim_v6.registrar_fallo(ip6, f"u{i}@test.com")
+        self.assertTrue(bloqueado_v6, "10 IPs distintas del mismo /64 deberían chocar contra el límite por_ip=5")
+
+        # 2. Ataque 4b (muchas IPs saturan tope global): desconocidos bloqueados, usuario ya verificado entra
+        email_conocido = "conocido_n3b@empresa.com.ar"
+        _tok_verificado(email_conocido)
+        lim_4b = ll.LimiteLogin(
+            por_ip_usuario=3, por_usuario=5, por_ip=5,
+            global_por_min=50, global_por_hora=100, global_por_dia=500,
+            solo_bloquear_desconocidos_en_global=True,
+            nombre="TEST_N3B",
+        )
+        with patch.object(ll, "LIMITE_OTP_ENVIO", lim_4b), \
+             patch.object(_bv_mod, "_enviar_email_otp", return_value=(True, "resend")):
+            for i in range(70):
+                _bv_mod.solicitar_codigo_otp_email(f"bot{i}@evil.test", client_ip=f"10.1.{i // 250}.{i % 250 + 1}")
+            # Email nunca verificado -> bloqueado por tope global
+            r_new = _bv_mod.solicitar_codigo_otp_email("nuevo_desconocido@test.com", client_ip="198.51.100.50")
+            self.assertFalse(r_new.get("ok"))
+            self.assertTrue(r_new.get("rate_limited"))
+            # Usuario ya verificado -> ENTRA igual (cierre N3-b)
+            r_known = _bv_mod.solicitar_codigo_otp_email(email_conocido, client_ip="198.51.100.51")
+            self.assertTrue(r_known.get("ok"), f"Usuario conocido bloqueado por ataque 4b: {r_known}")
+
 
 if __name__ == "__main__":
     unittest.main()

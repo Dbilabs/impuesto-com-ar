@@ -352,8 +352,9 @@ class McpToolRequest(BaseModel):
 def _check_secret(x_bot_secret: Optional[str]):
     expected = os.environ.get("BOT_API_SECRET", "").strip()
     is_prod = bool(
-        os.environ.get("FLY_APP_NAME", "").strip()
-        or os.environ.get("RAILWAY_ENVIRONMENT", "").strip()
+        os.environ.get("OCI_REGION", "").strip()
+        or os.environ.get("ORACLE_CLOUD", "").strip()
+        or os.environ.get("FLY_APP_NAME", "").strip()
         or os.environ.get("REQUIRE_BOT_SECRET", "").strip() == "1"
     )
     if not expected:
@@ -1189,10 +1190,15 @@ def run_mcp_tool(
     if tool == "verificar_proveedor_apocrifo_apoc":
         from .arca_ws import consultar_apocrifo_wsapoc, CertificadoPendienteError, WsapocUnavailableError, WsapocResponseError
         from .scraper_extras_arca import verificar_proveedor_apocrifo_apoc
-        # W2: rate limit por IP (30/min) para herramienta pública
-        client_ip_apoc = _extract_client_ip(request)
+        # W2 + N3-b: rate limit por IP (IPv6 /64, 30/min) con poda periódica de claves inactivas
+        from .limite_login import normalizar_clave_ip
+        client_ip_apoc = normalizar_clave_ip(_extract_client_ip(request))
         now_apoc = time.time()
         with _audit_lock:
+            if len(_APOC_IP_HITS) > 1000:
+                stale_ips = [k for k, ts_list in _APOC_IP_HITS.items() if not ts_list or (now_apoc - ts_list[-1]) >= 60.0]
+                for k in stale_ips:
+                    _APOC_IP_HITS.pop(k, None)
             hist_ip = [t for t in _APOC_IP_HITS.get(client_ip_apoc, []) if now_apoc - t < 60.0]
             if len(hist_ip) >= APOC_RATE_LIMIT_PER_MIN:
                 return {

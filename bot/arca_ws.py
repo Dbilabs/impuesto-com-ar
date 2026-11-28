@@ -72,6 +72,33 @@ def _wsaa_cache_dir() -> Path:
     d.mkdir(parents=True, exist_ok=True)
     return d
 
+
+def migrar_tickets_wsaa_legados(legacy_dir: Optional[Path] = None) -> int:
+    """Residual P3 de W1: migra tickets WSAA legados (<repo>/data/wsaa_cache/ta_*.json) vigentes a <VAULT_DIR>/wsaa_cache/*.enc."""
+    from . import boveda_segura as bv
+    src_dir = legacy_dir or (Path(__file__).resolve().parent.parent / "data" / "wsaa_cache")
+    if not src_dir.exists() or not src_dir.is_dir():
+        return 0
+    migrated = 0
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    dst_dir = _wsaa_cache_dir()
+    for p in list(src_dir.glob("ta_*.json")):
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            exp_raw = str(data.get("expiration") or "")
+            exp = datetime.datetime.fromisoformat(exp_raw.replace("Z", "+00:00"))
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=datetime.timezone.utc)
+            if exp > now_utc + datetime.timedelta(minutes=5) and data.get("token") and data.get("sign"):
+                dst = dst_dir / (p.stem + ".enc")
+                if not dst.exists():
+                    bv._write_enc_json(dst, {"token": data["token"], "sign": data["sign"], "expiration": exp_raw})
+                    migrated += 1
+            p.unlink(missing_ok=True)
+        except Exception as exc:
+            logger.warning(f"[WSAA migración] No se pudo migrar {p.name}: {exc}")
+    return migrated
+
 ENDPOINTS = {
     "homologacion": {
         "wsaa": "https://wsaahomo.afip.gov.ar/ws/services/LoginCms",

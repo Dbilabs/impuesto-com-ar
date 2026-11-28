@@ -18,10 +18,13 @@ playwright install chromium
 uvicorn bot.main:app --host 0.0.0.0 --port 8000
 ```
 
-## Despliegue con Docker (VPS, Railway, Fly.io, Render)
+## Despliegue con Docker (Oracle Cloud OCI / VPS)
 ```bash
-docker build -t arca-bot -f bot/Dockerfile bot/
-docker run -d -p 8000:8000 --name arca-bot arca-bot
+docker build -t arca-bot -f bot/Dockerfile .
+docker run -d --restart unless-stopped -p 8000:8000 \
+  -v /var/lib/impuesto/boveda:/app/data/boveda \
+  -e ORACLE_CLOUD=1 -e IMPUESTO_VAULT_KEY=... -e BOT_API_SECRET=... \
+  --name arca-bot arca-bot
 ```
 
 ## Configuración en Cloudflare Pages
