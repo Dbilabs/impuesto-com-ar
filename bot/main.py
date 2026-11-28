@@ -57,7 +57,16 @@ from .boveda_segura import (
     es_owner_validado,
     cargar_presupuesto_cuit,
     guardar_presupuesto_cuit,
+    hash_clave_cuit,
+    verificar_y_marcar_refresco_no_validado,
+    limpiar_refresco_no_validado,
 )
+from .arca_errors import ArcaNoDisponible, LoginNoConfirmado, ClaveIncorrecta
+try:
+    from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+except Exception:
+    PlaywrightTimeoutError = TimeoutError
+_TIMEOUT_TYPES = (TimeoutError, PlaywrightTimeoutError)
 from .backoffice_growth import (
     esta_en_mantenimiento,
     obtener_anuncio_global_activo,
@@ -91,7 +100,6 @@ TOOL_CACHE: Dict[str, Dict[str, Any]] = {}
 TOOL_INFLIGHT: Dict[str, Dict[str, Any]] = {}
 _BAD_CREDS_CB: Dict[str, Dict[str, Any]] = {}
 _CUIT_FAIL_BUDGET: Dict[str, list] = {}
-_PENDING_REFRESH_TS: Dict[str, float] = {}
 CUIT_MAX_FAILS_24H = int(os.environ.get("CUIT_MAX_FAILS_24H", "2"))
 _wsfe_locks: Dict[str, threading.Lock] = {}
 _WSFE_IDEM_CACHE: Dict[str, Dict[str, Any]] = {}
@@ -131,7 +139,7 @@ def _parse_bool_strict(val: Any) -> bool:
 
 
 def _hash_clave(cuit: str, clave: str) -> str:
-    return hashlib.sha256(f"{cuit}:{clave}".encode("utf-8")).hexdigest()
+    return hash_clave_cuit(cuit, clave)
 
 
 def _load_budget_locked(cuit: str, now: float) -> list:
@@ -139,7 +147,8 @@ def _load_budget_locked(cuit: str, now: float) -> list:
     disk = {}
     try:
         disk = cargar_presupuesto_cuit() or {}
-    except Exception:
+    except Exception as exc:
+        logger.error("Error leyendo presupuesto persistido de fallos CUIT %s: %s", cuit, exc, exc_info=True)
         disk = {}
     mem_fails = _CUIT_FAIL_BUDGET.get(cuit, [])
     disk_fails = disk.get(cuit, [])
@@ -159,8 +168,8 @@ def _save_budget_locked(cuit: str, fails: list) -> None:
         else:
             disk.pop(cuit, None)
         guardar_presupuesto_cuit(disk)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.error("Error persistiendo presupuesto de fallos CUIT %s en bóveda: %s", cuit, exc, exc_info=True)
 
 
 def _check_cuit_fail_budget(cuit: str) -> Optional[Dict[str, Any]]:
@@ -207,7 +216,18 @@ def _check_bad_creds(cuit: str, clave: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _mark_bad_creds(cuit: str, clave: str, err_msg: str) -> None:
+def _registrar_fallo_presupuesto_cuit(cuit: str) -> list:
+    c = normalizar_cuit(cuit)
+    now = time.time()
+    with _audit_lock:
+        fails = _load_budget_locked(c, now)
+        fails.append(now)
+        _CUIT_FAIL_BUDGET[c] = fails
+        _save_budget_locked(c, fails)
+        return list(fails)
+
+
+def _mark_bad_creds(cuit: str, clave: str, err_msg: str, *, cambio_clave: bool = False) -> None:
     c = normalizar_cuit(cuit)
     now = time.time()
     u = (err_msg or "").upper()
@@ -224,7 +244,15 @@ def _mark_bad_creds(cuit: str, clave: str, err_msg: str) -> None:
         _CUIT_FAIL_BUDGET[c] = fails
         _save_budget_locked(c, fails)
     # N1-b / N1-f: liberar CUIT pendiente solo si la clave fallida coincide y nunca ante CAMBIO DE CLAVE
-    if "CAMBIO DE CLAVE" not in u:
+    if not cambio_clave and "CAMBIO DE CLAVE" not in u:
+        liberar_cuit_pendiente(c, clave_fallida=clave)
+
+
+def _mark_login_no_confirmado(cuit: str, clave: str, err_msg: str, actor_email: str = "") -> None:
+    """N1-h: post-contraseña sin llegar a portalcf. Descuenta presupuesto pero NO crea circuit breaker de 'incorrecta' para un owner validado."""
+    c = normalizar_cuit(cuit)
+    _registrar_fallo_presupuesto_cuit(c)
+    if not es_owner_validado(actor_email, c):
         liberar_cuit_pendiente(c, clave_fallida=clave)
 
 
@@ -235,9 +263,36 @@ def _clear_bad_creds(cuit: str, *, clear_budget: bool = False) -> None:
         if clear_budget:
             _CUIT_FAIL_BUDGET.pop(c, None)
             _save_budget_locked(c, [])
+            try:
+                limpiar_refresco_no_validado(c)
+            except Exception as exc:
+                logger.error("Error limpiando cooldown de refresco CUIT %s: %s", c, exc, exc_info=True)
         AUDIT_CACHE.pop(c, None)
         for k in [k for k in TOOL_CACHE if c in k]:
             TOOL_CACHE.pop(k, None)
+
+
+def _hay_login_en_curso(cuit: str) -> bool:
+    """N1-g: True si existe una auditoría o tool autenticada ARCA en curso (no vencida) para `cuit`."""
+    c = normalizar_cuit(cuit)
+    if not c:
+        return False
+    now = time.time()
+    with _audit_lock:
+        inf = AUDIT_INFLIGHT.get(c)
+        if inf is not None:
+            if (now - inf.get("started_at", now)) <= INFLIGHT_MAX_AGE_SEC:
+                return True
+            AUDIT_INFLIGHT.pop(c, None)
+        for k, tinf in list(TOOL_INFLIGHT.items()):
+            if not tinf.get("usa_login", True):
+                continue
+            t_cuit = normalizar_cuit(tinf.get("cuit") or "")
+            if t_cuit == c or (f":{c}" in k and (k.endswith(f":{c}") or f":{c}:" in k)):
+                if (now - tinf.get("started_at", now)) <= INFLIGHT_MAX_AGE_SEC:
+                    return True
+                TOOL_INFLIGHT.pop(k, None)
+    return False
 
 
 def _invalidar_cache_cuit(cuit: str) -> None:
@@ -405,30 +460,53 @@ def _is_bad_cred_error(err_str: str) -> bool:
     )
 
 
-def _es_fallo_login_fail_closed(exc: Exception, err_str: str, cuit: str, actor_email: str) -> bool:
-    """N1-c + N1-h: fail-closed ante errores post-envío de contraseña; NO penaliza timeouts de red/page.goto previos al envío."""
+def _clasificar_error_arca(exc: Exception, err_str: str, cuit: str, actor_email: str) -> str:
+    """N1-h: clasifica fallos de login en ARCA por etapa y tipo de excepción.
+
+    Retorna:
+      - 'clave_incorrecta': presupuesto + circuit breaker.
+      - 'login_no_confirmado': presupuesto, sin circuit breaker de 'incorrecta' para owner validado.
+      - 'arca_no_disponible': sin presupuesto ni circuit breaker.
+    """
+    if isinstance(exc, ClaveIncorrecta):
+        return "clave_incorrecta"
+    if isinstance(exc, ArcaNoDisponible):
+        return "arca_no_disponible"
+    if isinstance(exc, LoginNoConfirmado):
+        return "login_no_confirmado"
     if _is_bad_cred_error(err_str):
-        return True
+        return "clave_incorrecta"
+
     low = (err_str or "").lower()
-    is_timeout = isinstance(exc, TimeoutError) or type(exc).__name__ == "TimeoutError" or "timeout" in low
-    # N1-h: page.goto / navigating to login.xhtml falló ANTES de enviar la contraseña -> ARCA lenta, NO clave incorrecta
-    if is_timeout and any(k in low for k in ("page.goto", "navigating to", "login.xhtml", "f1:username", "net::err_")):
-        return False
-    # Timeout esperando redirect a portalcf.cloud DESPUÉS de enviar contraseña -> fail-closed
-    if any(k in low for k in ("portalcf.cloud", "f1:btningresar", "f1:password")):
-        return True
+    is_timeout = isinstance(exc, _TIMEOUT_TYPES) or type(exc).__name__ == "TimeoutError"
+
+    post_pw_markers = ("portalcf.cloud", "f1:btningresar", "f1:password")
+    pre_pw_markers = ("page.goto", "navigating to", "f1:username", "f1:btnsiguiente", "net::err_")
+
+    if any(k in low for k in post_pw_markers):
+        return "login_no_confirmado"
+    if is_timeout and any(k in low for k in pre_pw_markers):
+        return "arca_no_disponible"
     if is_timeout and not es_owner_validado(actor_email, cuit):
-        return True
-    return False
+        return "login_no_confirmado"
+    return "arca_no_disponible"
 
 
-def _run_auditoria_background(cuit: str, clave: str, entry: Dict[str, Any], actor_email: str = "", origen_llm: str = "mcp") -> None:
+def _run_auditoria_background(
+    cuit: str,
+    clave: str,
+    entry: Dict[str, Any],
+    actor_email: str = "",
+    origen_llm: str = "mcp",
+    clave_hash: str = "",
+) -> None:
+    effective_clave_hash = clave_hash or _hash_clave(cuit, clave)
     cuit_lk = _get_cuit_lock(cuit)
     got_cuit = cuit_lk.acquire(timeout=LOCK_ACQUIRE_TIMEOUT_SEC)
     got_sem = False
     try:
         if not got_cuit:
-            raise TimeoutError(f"Timeout esperando lock del CUIT {cuit} (otra consulta en curso).")
+            raise ArcaNoDisponible(f"Timeout esperando lock del CUIT {cuit} (otra consulta en curso).")
         # P0-7 cierre total: re-chequear circuit breaker DESPUÉS de adquirir el lock del CUIT
         cb_err = _check_bad_creds(cuit, clave)
         if cb_err:
@@ -442,12 +520,17 @@ def _run_auditoria_background(cuit: str, clave: str, entry: Dict[str, Any], acto
             return
         got_sem = PLAYWRIGHT_SEM.acquire(timeout=LOCK_ACQUIRE_TIMEOUT_SEC)
         if not got_sem:
-            raise TimeoutError("Timeout esperando disponibilidad del motor headless ARCA.")
+            raise ArcaNoDisponible("Timeout esperando disponibilidad del motor headless ARCA.")
         res = auditar_estado_integral_arca(cuit=cuit, clave=clave)
         now = time.time()
-        # N1-g: confirmar propiedad del CUIT verificando que email y clave coincidan con los que tuvieron éxito
+        # N1-g: confirmar propiedad del CUIT vinculada a (actor_email, clave_hash); si fue pisada, restaura al actor exitoso
         if isinstance(res, dict) and (res.get("ok") is True or res.get("doublecheck", {}).get("fuentes_verificadas")):
-            if marcar_cuit_validado(cuit, expected_email=actor_email, expected_clave=clave):
+            if marcar_cuit_validado(
+                cuit,
+                email_actor=actor_email,
+                clave_hash=effective_clave_hash,
+                clave_fiscal=clave,
+            ):
                 _clear_bad_creds(cuit, clear_budget=True)
         with _audit_lock:
             entry["result"] = res
@@ -470,17 +553,32 @@ def _run_auditoria_background(cuit: str, clave: str, entry: Dict[str, Any], acto
         logger.exception(f"Error en auditoria_unificada background para {cuit}")
         now = time.time()
         err_str = str(e)
-        if _es_fallo_login_fail_closed(e, err_str, cuit, actor_email):
-            _mark_bad_creds(cuit, clave, err_str)
+        cat = _clasificar_error_arca(e, err_str, cuit, actor_email)
+        if cat == "clave_incorrecta":
+            cambio_clave = isinstance(e, ClaveIncorrecta) and bool(e.cambio_clave)
+            bloqueada = (isinstance(e, ClaveIncorrecta) and bool(e.bloqueada)) or ("BLOQUEADA" in err_str.upper())
+            _mark_bad_creds(cuit, clave, err_str, cambio_clave=cambio_clave)
             err_obj = {
                 "ok": False,
-                "estado": "CLAVE_FISCAL_BLOQUEADA" if "BLOQUEADA" in err_str.upper() else "CLAVE_FISCAL_INCORRECTA",
+                "estado": "CLAVE_FISCAL_BLOQUEADA" if bloqueada else "CLAVE_FISCAL_INCORRECTA",
                 "cuit": cuit,
                 "error": err_str[:300],
                 "mensaje": (
-                    f"ARCA rechazó el login o no completó la autenticación para el CUIT {cuit}. "
+                    f"ARCA rechazó la Clave Fiscal para el CUIT {cuit}. "
                     "Frenamos nuevos reintentos automáticos para evitar bloqueos. "
                     "Actualizá tu Clave Fiscal correcta en el chat (`vincular_cuenta_en_chat`) o en https://impuesto.com.ar/vincular."
+                ),
+            }
+        elif cat == "login_no_confirmado":
+            _mark_login_no_confirmado(cuit, clave, err_str, actor_email=actor_email)
+            err_obj = {
+                "ok": False,
+                "estado": "LOGIN_NO_CONFIRMADO",
+                "cuit": cuit,
+                "error": err_str[:300],
+                "mensaje": (
+                    f"ARCA recibió el login del CUIT {cuit} pero no confirmó el ingreso al portal a tiempo "
+                    "(lentitud o pantalla intermedia). Reintentá en unos minutos."
                 ),
             }
         else:
@@ -517,15 +615,16 @@ def _precalentar_auditoria_en_background(cuit: str, clave: str, actor_email: str
     if _check_bad_creds(cuit, clave):
         return
     now = time.time()
+    clave_hash = _hash_clave(cuit, clave)
     with _audit_lock:
         if cuit in AUDIT_INFLIGHT:
             return
         cached = AUDIT_CACHE.get(cuit)
         if cached and (now - cached["ts"]) < AUDIT_TTL_SEC:
             return
-        inflight = {"started_at": now, "event": threading.Event(), "result": None}
+        inflight = {"started_at": now, "event": threading.Event(), "result": None, "actor_email": actor_email, "clave_hash": clave_hash}
         AUDIT_INFLIGHT[cuit] = inflight
-        executor.submit(_run_auditoria_background, cuit, clave, inflight, actor_email, origen_llm)
+        executor.submit(_run_auditoria_background, cuit, clave, inflight, actor_email, origen_llm, clave_hash)
 
 
 def _ejecutar_auditoria_sin_timeout(
@@ -540,6 +639,7 @@ def _ejecutar_auditoria_sin_timeout(
     if cb_err:
         return cb_err
     now = time.time()
+    clave_hash = _hash_clave(cuit, clave)
     with _audit_lock:
         cached = AUDIT_CACHE.get(cuit)
         ttl_eff = ERROR_TTL_SEC if (cached and cached.get("is_error")) else AUDIT_TTL_SEC
@@ -559,9 +659,11 @@ def _ejecutar_auditoria_sin_timeout(
                 "started_at": now,
                 "event": threading.Event(),
                 "result": None,
+                "actor_email": actor_email,
+                "clave_hash": clave_hash,
             }
             AUDIT_INFLIGHT[cuit] = inflight
-            executor.submit(_run_auditoria_background, cuit, clave, inflight, actor_email, origen_llm)
+            executor.submit(_run_auditoria_background, cuit, clave, inflight, actor_email, origen_llm, clave_hash)
 
     finished = inflight["event"].wait(timeout=AUDIT_SYNC_WAIT_SEC)
     if finished and inflight.get("result") is not None:
@@ -597,8 +699,10 @@ def _run_tool_sin_timeout(
     origen_llm: str = "mcp",
     accion_hist: str = "",
     clave: str = "",
+    clave_hash: str = "",
 ) -> Dict[str, Any]:
     """Ejecuta cualquier scraper ARCA en segundo plano con caché de 15 min y espera máx. 5s para evitar cuelgues en Gemini Online."""
+    effective_clave_hash = clave_hash or (_hash_clave(cuit, clave) if clave else "")
     if clave:
         cb_err = _check_bad_creds(cuit, clave)
         if cb_err:
@@ -621,7 +725,15 @@ def _run_tool_sin_timeout(
             TOOL_INFLIGHT.pop(cache_key, None)
             inflight = None
         if inflight is None:
-            inflight = {"started_at": now, "event": threading.Event(), "result": None}
+            inflight = {
+                "started_at": now,
+                "event": threading.Event(),
+                "result": None,
+                "cuit": normalizar_cuit(cuit),
+                "usa_login": bool(clave),
+                "actor_email": actor_email,
+                "clave_hash": effective_clave_hash,
+            }
             TOOL_INFLIGHT[cache_key] = inflight
 
             def _worker():
@@ -630,7 +742,7 @@ def _run_tool_sin_timeout(
                 got_sem = False
                 try:
                     if not got_cuit:
-                        raise TimeoutError(f"Timeout esperando lock del CUIT {cuit}.")
+                        raise ArcaNoDisponible(f"Timeout esperando lock del CUIT {cuit}.")
                     # P0-7 cierre total: re-chequear circuit breaker DESPUÉS de adquirir el lock
                     if clave:
                         cb_inner = _check_bad_creds(cuit, clave)
@@ -644,10 +756,18 @@ def _run_tool_sin_timeout(
                             return
                     got_sem = PLAYWRIGHT_SEM.acquire(timeout=LOCK_ACQUIRE_TIMEOUT_SEC)
                     if not got_sem:
-                        raise TimeoutError("Timeout esperando disponibilidad del motor headless ARCA.")
+                        raise ArcaNoDisponible("Timeout esperando disponibilidad del motor headless ARCA.")
                     res = fn()
                     ts_done = time.time()
                     is_err_res = isinstance(res, dict) and res.get("ok") is False
+                    if clave and not is_err_res:
+                        if marcar_cuit_validado(
+                            cuit,
+                            email_actor=actor_email,
+                            clave_hash=effective_clave_hash,
+                            clave_fiscal=clave,
+                        ):
+                            _clear_bad_creds(cuit, clear_budget=True)
                     with _audit_lock:
                         inflight["result"] = res
                         TOOL_CACHE[cache_key] = {"ts": ts_done, "is_error": is_err_res, "data": res}
@@ -659,15 +779,28 @@ def _run_tool_sin_timeout(
                     logger.exception(f"Error en {cache_key}")
                     ts_err = time.time()
                     err_str = str(e)
-                    if _is_bad_cred_error(err_str) and clave:
-                        _mark_bad_creds(cuit, clave, err_str)
+                    cat = _clasificar_error_arca(e, err_str, cuit, actor_email) if clave else "arca_no_disponible"
+                    if cat == "clave_incorrecta" and clave:
+                        cambio_clave = isinstance(e, ClaveIncorrecta) and bool(e.cambio_clave)
+                        bloqueada = (isinstance(e, ClaveIncorrecta) and bool(e.bloqueada)) or ("BLOQUEADA" in err_str.upper())
+                        _mark_bad_creds(cuit, clave, err_str, cambio_clave=cambio_clave)
                         err_obj = {
                             "ok": False,
-                            "estado": "CLAVE_FISCAL_BLOQUEADA" if "BLOQUEADA" in err_str.upper() else "CLAVE_FISCAL_INCORRECTA",
+                            "estado": "CLAVE_FISCAL_BLOQUEADA" if bloqueada else "CLAVE_FISCAL_INCORRECTA",
                             "cuit": cuit,
                             "modulo": label,
                             "error": err_str[:300],
                             "mensaje": f"ARCA rechazó la Clave Fiscal del CUIT {cuit}. Actualizala antes de reintentar para evitar bloqueos.",
+                        }
+                    elif cat == "login_no_confirmado" and clave:
+                        _mark_login_no_confirmado(cuit, clave, err_str, actor_email=actor_email)
+                        err_obj = {
+                            "ok": False,
+                            "estado": "LOGIN_NO_CONFIRMADO",
+                            "cuit": cuit,
+                            "modulo": label,
+                            "error": err_str[:300],
+                            "mensaje": f"ARCA recibió el login en {label} pero no confirmó el ingreso al portal a tiempo. Reintentá en unos minutos.",
                         }
                     else:
                         err_obj = {
@@ -928,13 +1061,14 @@ def api_vincular(
         cuit_req = normalizar_cuit(req.cuit or "")
         owner_ya_validado = es_owner_validado(email, cuit_req)
         if not owner_ya_validado:
-            with _audit_lock:
-                if cuit_req in AUDIT_INFLIGHT:
-                    return {
-                        "ok": False,
-                        "en_validacion": True,
-                        "error": f"Ya hay una validación de acceso en curso para el CUIT {cuit_req}. Esperá unos segundos y reintentá.",
-                    }
+            if _hay_login_en_curso(cuit_req):
+                return {
+                    "ok": False,
+                    "estado": "VALIDACION_EN_CURSO",
+                    "en_validacion": True,
+                    "cuit": cuit_req,
+                    "error": f"VALIDACION_EN_CURSO: Ya hay un login en curso en ARCA para el CUIT {cuit_req}. Reintentá en 2 minutos.",
+                }
             budget_err = _check_cuit_fail_budget(cuit_req)
             if budget_err:
                 return budget_err
@@ -1086,13 +1220,14 @@ def run_mcp_tool(
 
         owner_ya_validado_chat = es_owner_validado(em, cuit_in)
         if not owner_ya_validado_chat:
-            with _audit_lock:
-                if cuit_in in AUDIT_INFLIGHT:
-                    return {
-                        "ok": False,
-                        "en_validacion": True,
-                        "error": f"Ya hay una validación de acceso en curso para el CUIT {cuit_in}. Esperá unos segundos y reintentá.",
-                    }
+            if _hay_login_en_curso(cuit_in):
+                return {
+                    "ok": False,
+                    "estado": "VALIDACION_EN_CURSO",
+                    "en_validacion": True,
+                    "cuit": cuit_in,
+                    "error": f"VALIDACION_EN_CURSO: Ya hay un login en curso en ARCA para el CUIT {cuit_in}. Reintentá en 2 minutos.",
+                }
             budget_err = _check_cuit_fail_budget(cuit_in)
             if budget_err:
                 return budget_err
@@ -1438,17 +1573,15 @@ def run_mcp_tool(
     if tool == "auditar_estado_integral_arca":
         forzar_req = _parse_bool_strict(args.get("forzar_refresco", False))
         if forzar_req and not es_owner_validado(actor_email, cuit):
-            now_r = time.time()
-            with _audit_lock:
-                last_r = _PENDING_REFRESH_TS.get(cuit, 0.0)
-                if now_r - last_r < 600.0:
-                    return {
-                        "ok": False,
-                        "rate_limited": True,
-                        "cuit": cuit,
-                        "error": "Límite de reintentos con forzar_refresco en CUIT pendiente de validación (máx. 1 cada 10 min).",
-                    }
-                _PENDING_REFRESH_TS[cuit] = now_r
+            ok_ref, retry_sec = verificar_y_marcar_refresco_no_validado(cuit, cooldown_seg=600.0)
+            if not ok_ref:
+                return {
+                    "ok": False,
+                    "rate_limited": True,
+                    "cuit": cuit,
+                    "reintentar_en_seg": retry_sec,
+                    "error": "Límite de reintentos con forzar_refresco en CUIT pendiente de validación (máx. 1 cada 10 min).",
+                }
         return _ejecutar_auditoria_sin_timeout(
             cuit=cuit,
             clave=clave,
@@ -1586,6 +1719,7 @@ def run_mcp_tool(
 
     if tool == "emitir_factura_wsfe":
         from .arca_ws import emitir_comprobante_wsfe
+        from .wsfe_idempotencia import emitir_wsfe_con_idempotencia
         cuit_emisor_req = normalizar_cuit(args.get("cuit_emisor", "") or cuit)
         if cuit_emisor_req != cuit:
             return {
@@ -1597,46 +1731,39 @@ def run_mcp_tool(
         cbte_tipo_in = int(args.get("cbte_tipo", 11))
         ambiente_in = (args.get("ambiente") or "homologacion").strip().lower()
         idem_key = str(args.get("idempotency_key") or "").strip()
+        reemitir_dup = _parse_bool_strict(args.get("reemitir_aunque_duplicado"))
 
         if confirmado_strict:
-            if not idem_key:
-                return {
-                    "ok": False,
-                    "error": "Para emitir con confirmado=true debés enviar `idempotency_key` única por venta (evita emitir dos CAE duplicados ante un reintento).",
-                }
-            cache_idem_k = f"{cuit}:{ambiente_in}:{idem_key}"
-            with _audit_lock:
-                prev_em = _WSFE_IDEM_CACHE.get(cache_idem_k)
-                if prev_em is not None:
-                    out_dup = dict(prev_em)
-                    out_dup["idempotente_reusado"] = True
-                    return out_dup
             wsfe_lk = _get_wsfe_lock(cuit, pto_vta_in, cbte_tipo_in)
-            with wsfe_lk:
-                with _audit_lock:
-                    prev_em = _WSFE_IDEM_CACHE.get(cache_idem_k)
-                    if prev_em is not None:
-                        out_dup = dict(prev_em)
-                        out_dup["idempotente_reusado"] = True
-                        return out_dup
-                res = emitir_comprobante_wsfe(
-                    cuit_emisor=cuit,
-                    pto_vta=pto_vta_in,
-                    cbte_tipo=cbte_tipo_in,
-                    receptor_cuit=args.get("receptor_cuit", ""),
-                    importe_neto=float(args.get("importe_neto", 0)),
-                    importe_iva=float(args.get("importe_iva", 0)),
-                    concepto=int(args.get("concepto", 2)),
-                    ambiente=ambiente_in,
-                    confirmado=True,
-                    cbte_asoc=args.get("cbte_asoc"),
-                    condicion_iva_receptor_id=args.get("condicion_iva_receptor_id"),
+
+            def _registrar_emision(res_ok: Dict[str, Any], fue_override: bool) -> None:
+                suf = " [OVERRIDE reemitir_aunque_duplicado=true]" if fue_override else ""
+                if res_ok.get("adoptado"):
+                    suf += " [CAE ADOPTADO]"
+                registrar_evento_historial(
+                    actor_email,
+                    cuit,
+                    origen_llm,
+                    "emitir_factura_wsfe",
+                    f"Factura WSFE #{res_ok.get('cbte_nro', '?')} CAE {res_ok.get('cae', '')} a {args.get('receptor_cuit', '')} por ${args.get('importe_neto', 0)}{suf}",
                 )
-                if isinstance(res, dict) and res.get("ok"):
-                    with _audit_lock:
-                        _WSFE_IDEM_CACHE[cache_idem_k] = dict(res)
-                    registrar_evento_historial(actor_email, cuit, origen_llm, "emitir_factura_wsfe", f"Factura WSFE a {args.get('receptor_cuit','')} por ${args.get('importe_neto',0)}")
-                return res
+
+            return emitir_wsfe_con_idempotencia(
+                cuit_emisor=cuit,
+                pto_vta=pto_vta_in,
+                cbte_tipo=cbte_tipo_in,
+                receptor_cuit=args.get("receptor_cuit", ""),
+                importe_neto=float(args.get("importe_neto", 0)),
+                importe_iva=float(args.get("importe_iva", 0)),
+                concepto=int(args.get("concepto", 2)),
+                ambiente=ambiente_in,
+                cbte_asoc=args.get("cbte_asoc"),
+                condicion_iva_receptor_id=args.get("condicion_iva_receptor_id"),
+                idempotency_key=idem_key,
+                reemitir_aunque_duplicado=reemitir_dup,
+                wsfe_lock=wsfe_lk,
+                on_emit_ok=_registrar_emision,
+            )
 
         return emitir_comprobante_wsfe(
             cuit_emisor=cuit,

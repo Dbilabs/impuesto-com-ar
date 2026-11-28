@@ -687,19 +687,13 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
         self.assertFalse(r_cross.json().get("ok"))
         self.assertTrue(r_cross.json().get("acceso_denegado"))
 
-        # 2. confirmado=true sin idempotency_key -> rechazado
-        r_noidem = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok}, json={
-            "name": "emitir_factura_wsfe",
-            "arguments": {"cuit": cuit_propio, "cuit_emisor": cuit_propio, "cbte_tipo": 11, "importe_neto": 100, "confirmado": True},
-        })
-        self.assertFalse(r_noidem.json().get("ok"))
-
-        # 3. confirmado=true con idempotency_key -> 2 llamadas solo emiten 1 CAE
+        # 2. confirmado=true con huella de servidor (idempotency_key opcional) -> 2 llamadas solo emiten 1 CAE
         emisiones = {"n": 0}
         def fake_emit(**kw):
             emisiones["n"] += 1
             return {"ok": True, "cae": "76471234567890", "cbte_nro": 1}
-        with patch.object(arca_ws, "emitir_comprobante_wsfe", side_effect=fake_emit):
+        with patch.object(arca_ws, "obtener_ultimo_autorizado_wsfe", return_value=0), \
+             patch.object(arca_ws, "emitir_comprobante_wsfe", side_effect=fake_emit):
             payload = {
                 "name": "emitir_factura_wsfe",
                 "arguments": {"cuit": cuit_propio, "cuit_emisor": cuit_propio, "cbte_tipo": 11, "importe_neto": 100, "confirmado": True, "idempotency_key": "venta-0001"},
@@ -707,6 +701,7 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
             r_e1 = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok}, json=payload)
             r_e2 = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok}, json=payload)
             self.assertTrue(r_e1.json().get("ok"))
+            self.assertTrue(r_e2.json().get("replay"))
             self.assertTrue(r_e2.json().get("idempotente_reusado"))
             self.assertEqual(emisiones["n"], 1)
 
@@ -820,18 +815,12 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
             self.assertLessEqual(calls["n"], bot_main.CUIT_MAX_FAILS_24H)
         bot_main._clear_bad_creds(cuit_t, clear_budget=True)
 
-    def test_sec_n1g_n1h_n1i_paso0(self):
-        """Paso 0 (N1-g, N1-h, N1-i): bloquea carrera en login pendiente, no penaliza owner validado por ARCA lenta, y purga clave huérfana al vencer."""
+    def test_sec_n1g_carrera_vinculacion_rechazo_inflight_y_restauracion_owner(self):
+        """N1-g (Prueba A): rechaza reemplazo de pendiente durante AUDIT_INFLIGHT/TOOL_INFLIGHT y restaura owner+clave en mismatch."""
         import threading
-        import datetime
+        import time as _t
         from unittest.mock import patch
         from bot import main as bot_main
-        client = TestClient(app)
-
-        # --- N1-g: carrera durante login pendiente ---
-        cuit_a = "20777777773"
-        tok_real = _tok_verificado("real_n1g@impuesto.test")
-        tok_att = _tok_verificado("att_n1g@impuesto.test")
 
         class _DeferredExec:
             def __init__(self):
@@ -843,81 +832,373 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
                     fn, a, k = self.q.pop(0)
                     fn(*a, **k)
 
-        def fake_arca_race(cuit, clave):
-            return {"ok": True, "cuit": cuit, "ccma": {"ok": True}, "dfe": {"ok": True}, "mis_facilidades": {"ok": True}}
+        client = TestClient(bot_main.app)
+        cuit_v = "27123456781"
+        tok_real = _tok_verificado("real_n1g@impuesto.test")
+        tok_att = _tok_verificado("att_n1g@impuesto.test")
+        bot_main._clear_bad_creds(cuit_v, clear_budget=True)
+        bot_main.AUDIT_INFLIGHT.pop(cuit_v, None)
 
-        bot_main._clear_bad_creds(cuit_a, clear_budget=True)
         dex = _DeferredExec()
-        with patch.dict(os.environ, {"DISABLE_AUDIT_PREWARM": "0"}), \
-             patch.object(bot_main, "executor", dex), \
-             patch.object(bot_main, "auditar_estado_integral_arca", side_effect=fake_arca_race):
-            r_real = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_real}, json={
-                "name": "vincular_cuenta_en_chat",
-                "arguments": {"email": "real_n1g@impuesto.test", "cuit": cuit_a, "clave_fiscal": "RealPass1"},
-            })
-            self.assertTrue(r_real.json().get("ok"))
-            self.assertIn(cuit_a, bot_main.AUDIT_INFLIGHT)
-            # Atacante intenta reemplazar mientras login del dueño real está en curso -> BLOQUEADO
-            r_att = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_att}, json={
-                "name": "vincular_cuenta_en_chat",
-                "arguments": {"email": "att_n1g@impuesto.test", "cuit": cuit_a, "clave_fiscal": "FalsaAtacante"},
-            })
-            self.assertFalse(r_att.json().get("ok"))
-            dex.run_all()
-        self.assertTrue(_bv_mod.es_owner_validado("real_n1g@impuesto.test", cuit_a))
-        self.assertFalse(_bv_mod.es_owner_validado("att_n1g@impuesto.test", cuit_a))
-        self.assertEqual(_bv_mod.obtener_credenciales_descifradas(cuit_a)["clave_fiscal"], "RealPass1")
-        # Defensa en profundidad: marcar_cuit_validado rechaza email/clave que no coincidan
-        cuit_a2 = "20777777776"
-        _bv_mod.guardar_credenciales_cifradas(cuit=cuit_a2, clave_fiscal="ClaveX", owner_email="dueno_a2@impuesto.test")
-        self.assertFalse(_bv_mod.marcar_cuit_validado(cuit_a2, expected_email="otro@impuesto.test", expected_clave="ClaveX"))
-        self.assertFalse(_bv_mod.marcar_cuit_validado(cuit_a2, expected_email="dueno_a2@impuesto.test", expected_clave="OtraClave"))
-        self.assertTrue(_bv_mod.marcar_cuit_validado(cuit_a2, expected_email="dueno_a2@impuesto.test", expected_clave="ClaveX"))
+        def fake_arca_ok(cuit, clave):
+            if clave == "LaVerdadera1":
+                return {"ok": True, "doublecheck": {"fuentes_verificadas": ["ccma"]}}
+            raise RuntimeError("CLAVE_FISCAL_INCORRECTA: ARCA informó 'Clave o usuario incorrecto'")
 
-        # --- N1-h: ARCA lenta (Playwright TimeoutError en page.goto) no bloquea owner validado ---
-        cuit_b = "20777777774"
-        tok_val = _tok_verificado("valido_n1h@impuesto.test")
-        class FakePWTimeoutError(Exception):
-            pass
-        FakePWTimeoutError.__name__ = "TimeoutError"
+        old_prewarm = os.environ.pop("DISABLE_AUDIT_PREWARM", None)
+        try:
+            with patch.object(bot_main, "executor", dex), \
+                 patch.object(bot_main, "auditar_estado_integral_arca", side_effect=fake_arca_ok), \
+                 patch.object(bot_main, "AUDIT_SYNC_WAIT_SEC", 0.2):
+                r_real = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_real}, json={
+                    "name": "vincular_cuenta_en_chat",
+                    "arguments": {"email": "real_n1g@impuesto.test", "cuit": cuit_v, "clave_fiscal": "LaVerdadera1"},
+                }).json()
+                self.assertTrue(r_real.get("ok"))
 
-        modo = {"lento": False}
-        def fake_arca_slow(cuit, clave):
-            if modo["lento"]:
-                raise FakePWTimeoutError('page.goto: Timeout 30000ms exceeded.\nnavigating to "https://auth.afip.gob.ar/contribuyente_/login.xhtml"')
-            return {"ok": True, "cuit": cuit, "ccma": {"ok": True}, "dfe": {"ok": True}, "mis_facilidades": {"ok": True}}
+                # Atacante intenta reemplazar mientras el login del dueño sigue en AUDIT_INFLIGHT -> VALIDACION_EN_CURSO
+                r_att = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_att}, json={
+                    "name": "vincular_cuenta_en_chat",
+                    "arguments": {"email": "att_n1g@impuesto.test", "cuit": cuit_v, "clave_fiscal": "Basura"},
+                }).json()
+                self.assertFalse(r_att.get("ok"))
+                self.assertEqual(r_att.get("estado"), "VALIDACION_EN_CURSO")
 
-        bot_main._clear_bad_creds(cuit_b, clear_budget=True)
-        with patch.dict(os.environ, {"DISABLE_AUDIT_PREWARM": "0"}), \
-             patch.object(bot_main, "auditar_estado_integral_arca", side_effect=fake_arca_slow), \
-             patch.object(bot_main, "AUDIT_SYNC_WAIT_SEC", 2.0):
-            client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_val}, json={
-                "name": "vincular_cuenta_en_chat",
-                "arguments": {"email": "valido_n1h@impuesto.test", "cuit": cuit_b, "clave_fiscal": "RealPassB"},
-            })
-            # Esperar a que termine la validación inicial
-            r_init = bot_main._ejecutar_auditoria_sin_timeout(cuit_b, "RealPassB", forzar_refresco=False, actor_email="valido_n1h@impuesto.test")
-            self.assertTrue(r_init.get("ok"))
-            self.assertTrue(_bv_mod.es_owner_validado("valido_n1h@impuesto.test", cuit_b))
-            modo["lento"] = True
+                # Al terminar el login del dueño real, queda owner VALIDADO con su clave real
+                dex.run_all()
+                self.assertTrue(_bv_mod.es_owner_validado("real_n1g@impuesto.test", cuit_v))
+                self.assertEqual(_bv_mod.obtener_credenciales_descifradas(cuit_v)["clave_fiscal"], "LaVerdadera1")
+
+                # También rechazar reemplazo cuando hay un TOOL_INFLIGHT activo sobre un CUIT pendiente
+                cuit_tool = "27123456782"
+                _bv_mod.guardar_credenciales_cifradas(cuit=cuit_tool, clave_fiscal="ClaveTool1", owner_email="real_n1g@impuesto.test")
+                bot_main.TOOL_INFLIGHT[f"ccma:{cuit_tool}"] = {
+                    "started_at": _t.time(), "event": threading.Event(), "result": None, "cuit": cuit_tool, "usa_login": True,
+                }
+                try:
+                    r_att_tool = client.post("/api/v1/vincular", headers={"X-User-Token": tok_att}, json={
+                        "email": "att_n1g@impuesto.test", "cuit": cuit_tool, "clave_fiscal": "BasuraTool",
+                    }).json()
+                    self.assertFalse(r_att_tool.get("ok"))
+                    self.assertEqual(r_att_tool.get("estado"), "VALIDACION_EN_CURSO")
+                finally:
+                    bot_main.TOOL_INFLIGHT.pop(f"ccma:{cuit_tool}", None)
+        finally:
+            if old_prewarm is not None:
+                os.environ["DISABLE_AUDIT_PREWARM"] = old_prewarm
+
+        # Capa 2 directa: aunque una carrera hubiera pisado la entrada pendiente, marcar_cuit_validado restaura al actor exitoso y su clave
+        cuit_race = "27123456783"
+        _bv_mod.guardar_credenciales_cifradas(cuit=cuit_race, clave_fiscal="ClaveRealRace", owner_email="real_race@impuesto.test")
+        _bv_mod.guardar_credenciales_cifradas(cuit=cuit_race, clave_fiscal="BasuraRace", owner_email="att_race@impuesto.test")
+        h_real = _bv_mod.hash_clave_cuit(cuit_race, "ClaveRealRace")
+        # Sin clave_fiscal para restaurar -> nunca valida al atacante
+        self.assertFalse(_bv_mod.marcar_cuit_validado(cuit_race, email_actor="real_race@impuesto.test", clave_hash=h_real))
+        self.assertFalse(_bv_mod.es_owner_validado("att_race@impuesto.test", cuit_race))
+        # Con clave_fiscal del login exitoso -> restaura al dueño real como owner validado con su clave
+        self.assertTrue(_bv_mod.marcar_cuit_validado(cuit_race, email_actor="real_race@impuesto.test", clave_hash=h_real, clave_fiscal="ClaveRealRace"))
+        self.assertTrue(_bv_mod.es_owner_validado("real_race@impuesto.test", cuit_race))
+        self.assertEqual(_bv_mod.obtener_credenciales_descifradas(cuit_race)["clave_fiscal"], "ClaveRealRace")
+
+    def test_sec_n1h_clasificacion_por_etapa_y_owner_validado_resiste_arca_lenta(self):
+        """N1-h (Prueba B): timeout de page.goto ANTES de enviar contraseña no consume presupuesto ni bloquea a un owner validado; LoginNoConfirmado no crea CB de clave incorrecta."""
+        from unittest.mock import patch, MagicMock
+        from playwright.sync_api import TimeoutError as PWTimeout
+        from bot import main as bot_main
+        from bot.arca_errors import ArcaNoDisponible, LoginNoConfirmado, ClaveIncorrecta
+        from bot.auditoria_unificada import _login_portal_cf
+        from bot.scraper import _login_arca
+
+        # 1. Clasificación por etapa en _login_portal_cf y _login_arca
+        p_goto_fail = MagicMock()
+        p_goto_fail.goto.side_effect = PWTimeout('page.goto: Timeout 30000ms exceeded.\nnavigating to "https://auth.afip.gob.ar/contribuyente_/login.xhtml"')
+        with self.assertRaises(ArcaNoDisponible):
+            _login_portal_cf(p_goto_fail, "20987654321", "ClaveOk1")
+        with self.assertRaises(ArcaNoDisponible):
+            _login_arca(p_goto_fail, "20987654321", "ClaveOk1")
+
+        p_post_pw = MagicMock()
+        p_post_pw.url = "https://auth.afip.gob.ar/contribuyente_/login.xhtml"
+        p_post_pw.inner_text.return_value = "Cargando..."
+        p_post_pw.query_selector.return_value = None
+        p_post_pw.wait_for_url.side_effect = PWTimeout("Timeout 25000ms exceeded waiting for URL **/portalcf.cloud.**")
+        with patch("time.sleep", return_value=None):
+            with self.assertRaises(LoginNoConfirmado):
+                _login_portal_cf(p_post_pw, "20987654321", "ClaveOk1")
+
+        p_bad_pw = MagicMock()
+        p_bad_pw.url = "https://auth.afip.gob.ar/contribuyente_/login.xhtml"
+        p_bad_pw.inner_text.return_value = "Clave o usuario incorrecto"
+        with self.assertRaises(ClaveIncorrecta):
+            _login_portal_cf(p_bad_pw, "20987654321", "ClaveMala")
+
+        # 2. Flujo completo Prueba B: owner validado + 2 timeouts de page.goto -> presupuesto 0 y sigue operando cuando ARCA vuelve
+        client = TestClient(bot_main.app)
+        cuit_w = "20987654321"
+        em_w = "valido_n1h@impuesto.test"
+        tok_w = _tok_verificado(em_w)
+        bot_main._clear_bad_creds(cuit_w, clear_budget=True)
+        _bv_mod.guardar_credenciales_cifradas(cuit=cuit_w, clave_fiscal="ClaveOk1", owner_email=em_w)
+        _bv_mod.marcar_cuit_validado(cuit_w, email_actor=em_w, clave_hash=_bv_mod.hash_clave_cuit(cuit_w, "ClaveOk1"), clave_fiscal="ClaveOk1")
+
+        modo = {"v": "arca_lento"}
+        logins = {"n": 0}
+        def fake_arca_b(cuit, clave):
+            logins["n"] += 1
+            if modo["v"] == "arca_lento":
+                raise PWTimeout('page.goto: Timeout 30000ms exceeded.\nnavigating to "https://auth.afip.gob.ar/contribuyente_/login.xhtml", waiting until "domcontentloaded"')
+            if modo["v"] == "login_no_confirmado":
+                raise LoginNoConfirmado("Timeout esperando portalcf.cloud")
+            return {"ok": True, "doublecheck": {"fuentes_verificadas": ["ccma"]}}
+
+        with patch.object(bot_main, "auditar_estado_integral_arca", side_effect=fake_arca_b), \
+             patch.object(bot_main, "AUDIT_SYNC_WAIT_SEC", 1.0):
             for _ in range(2):
-                bot_main._ejecutar_auditoria_sin_timeout(cuit_b, "RealPassB", forzar_refresco=True, actor_email="valido_n1h@impuesto.test")
-            self.assertEqual(len(bot_main._CUIT_FAIL_BUDGET.get(cuit_b, [])), 0)
-            modo["lento"] = False
-            r_ok = bot_main._ejecutar_auditoria_sin_timeout(cuit_b, "RealPassB", forzar_refresco=True, actor_email="valido_n1h@impuesto.test")
-            self.assertTrue(r_ok.get("ok"))
+                r_slow = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_w}, json={
+                    "name": "auditar_estado_integral_arca", "arguments": {"cuit": cuit_w, "forzar_refresco": True},
+                }).json()
+                self.assertEqual(r_slow.get("estado"), "ARCA_TEMPORALMENTE_NO_DISPONIBLE")
+            self.assertEqual(len(bot_main._CUIT_FAIL_BUDGET.get(cuit_w, [])), 0)
 
-        # --- N1-i: pendiente vencido purga también credenciales.enc ---
-        cuit_c = "20777777775"
-        _bv_mod.guardar_credenciales_cifradas(cuit=cuit_c, clave_fiscal="ClaveHuerfana", owner_email="pend_n1i@impuesto.test")
-        acl = _bv_mod._load_acl()
-        old_ts = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=45)).isoformat()
-        acl["cuit_acl"][cuit_c]["created_at"] = old_ts
-        acl["cuit_acl"][cuit_c]["updated_at"] = old_ts
-        _bv_mod._save_acl(acl)
-        self.assertFalse(_bv_mod.es_owner_validado("pend_n1i@impuesto.test", cuit_c))
-        self.assertNotIn(cuit_c, _bv_mod._load_acl()["cuit_acl"])
-        self.assertIsNone(_bv_mod.obtener_credenciales_descifradas(cuit_c))
+            modo["v"] = "ok"
+            r_ok = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_w}, json={
+                "name": "auditar_estado_integral_arca", "arguments": {"cuit": cuit_w, "forzar_refresco": True},
+            }).json()
+            self.assertTrue(r_ok.get("ok"))
+            self.assertEqual(logins["n"], 3)
+
+            # LoginNoConfirmado para owner validado: descuenta presupuesto, estado LOGIN_NO_CONFIRMADO, sin CB de clave incorrecta
+            modo["v"] = "login_no_confirmado"
+            r_lnc = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_w}, json={
+                "name": "auditar_estado_integral_arca", "arguments": {"cuit": cuit_w, "forzar_refresco": True},
+            }).json()
+            self.assertEqual(r_lnc.get("estado"), "LOGIN_NO_CONFIRMADO")
+            self.assertEqual(len(bot_main._CUIT_FAIL_BUDGET.get(cuit_w, [])), 1)
+            self.assertNotIn(cuit_w, bot_main._BAD_CREDS_CB)
+
+            modo["v"] = "ok"
+            r_recov = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_w}, json={
+                "name": "auditar_estado_integral_arca", "arguments": {"cuit": cuit_w, "forzar_refresco": True},
+            }).json()
+            self.assertTrue(r_recov.get("ok"))
+        bot_main._clear_bad_creds(cuit_w, clear_budget=True)
+
+    def test_sec_n1i_purga_pendientes_borra_boveda_created_at_y_refresco_persistido(self):
+        """N1-i (Prueba C): purga por vencimiento borra ACL y bóveda, mide desde created_at, y el cooldown de refresco persiste en volumen."""
+        from unittest.mock import patch
+        import datetime as _dt
+
+        cuit_x = "20111111112"
+        _bv_mod.guardar_credenciales_cifradas(cuit=cuit_x, clave_fiscal="ClavePendiente", owner_email="pend_n1i@impuesto.test")
+        with patch.object(_bv_mod, "PENDING_TTL_SEC", -1):
+            _bv_mod.listar_cuits_autorizados("pend_n1i@impuesto.test")
+        self.assertNotIn(cuit_x, _bv_mod._load_acl()["cuit_acl"])
+        self.assertIsNone(_bv_mod.obtener_credenciales_descifradas(cuit_x))
+
+        # Vencimiento se mide desde created_at (actualizar updated_at no renueva indefinidamente)
+        viejo = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(seconds=3600)).isoformat()
+        ahora = _dt.datetime.now(_dt.timezone.utc).isoformat()
+        self.assertTrue(_bv_mod._es_pendiente_vencido({"validado": False, "created_at": viejo, "updated_at": ahora}))
+
+        # Cooldown de forzar_refresco persiste en volumen (pending_refresh.enc)
+        cuit_ref = "20111111119"
+        _bv_mod.limpiar_refresco_no_validado(cuit_ref)
+        ok1, _ = _bv_mod.verificar_y_marcar_refresco_no_validado(cuit_ref, cooldown_seg=600.0)
+        ok2, wait_s = _bv_mod.verificar_y_marcar_refresco_no_validado(cuit_ref, cooldown_seg=600.0)
+        self.assertTrue(ok1)
+        self.assertFalse(ok2)
+        self.assertGreater(wait_s, 0)
+        _bv_mod.limpiar_refresco_no_validado(cuit_ref)
+
+    def test_sec_n1j_tools_fail_closed(self):
+        """N1-j: _run_tool_sin_timeout clasifica fallos post-contraseña en fail-closed, descuenta presupuesto y libera CUIT pendiente."""
+        from unittest.mock import patch
+        from bot import main as bot_main
+        from bot.arca_errors import LoginNoConfirmado
+        client = TestClient(app)
+
+        cuit_j = "20333222111"
+        em_j = "att_n1j@impuesto.test"
+        tok_j = _tok_verificado(em_j)
+        bot_main._clear_bad_creds(cuit_j, clear_budget=True)
+        _bv_mod.guardar_credenciales_cifradas(cuit=cuit_j, clave_fiscal="MalaPassJ", owner_email=em_j)
+
+        calls = {"n": 0}
+        def fake_ccma_fail(cuit, clave):
+            calls["n"] += 1
+            raise LoginNoConfirmado("Timeout esperando portalcf.cloud tras enviar contraseña")
+
+        with patch("bot.auditoria_unificada.consultar_ccma_preciso", side_effect=fake_ccma_fail), \
+             patch.object(bot_main, "ERROR_TTL_SEC", 0), \
+             patch.object(bot_main, "AUDIT_SYNC_WAIT_SEC", 1.0):
+            for _ in range(5):
+                client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_j}, json={
+                    "name": "consultar_ccma_cuenta_corriente",
+                    "arguments": {"cuit": cuit_j},
+                })
+        self.assertLessEqual(calls["n"], bot_main.CUIT_MAX_FAILS_24H)
+        self.assertGreaterEqual(len(bot_main._CUIT_FAIL_BUDGET.get(cuit_j, [])), 1)
+        self.assertIsNone(_bv_mod.obtener_credenciales_descifradas(cuit_j))
+        bot_main._clear_bad_creds(cuit_j, clear_budget=True)
+
+    def test_sec_n4_wsfe_idempotencia_persistente_y_adopcion(self):
+        """Fase 3.1 / N4: idempotencia WSFE persistente en volumen + adopción de CAE (casos a, b, c, d del spec)."""
+        import datetime as _dt
+        from unittest.mock import patch
+        from bot import main as bot_main
+        from bot import arca_ws
+        client = TestClient(app)
+
+        cuit_em = "20555555558"
+        em_user = "emisor_n4@impuesto.test"
+        tok = _tok_verificado(em_user)
+        _bv_mod.guardar_credenciales_cifradas(cuit=cuit_em, clave_fiscal="ClaveN4", owner_email=em_user)
+        _bv_mod.marcar_cuit_validado(cuit_em, email_actor=em_user, clave_hash=_bv_mod.hash_clave_cuit(cuit_em, "ClaveN4"), clave_fiscal="ClaveN4")
+        hoy = _dt.datetime.now().strftime("%Y%m%d")
+
+        # (a) ARCA autoriza pero la respuesta se pierde; reintento llega con OTRA key -> adopta 1 solo CAE
+        state_a = {"emits": 0, "ultimo": 10, "comps": {}}
+        def emit_drop_a(**kw):
+            state_a["emits"] += 1
+            state_a["ultimo"] = 11
+            state_a["comps"][11] = {
+                "cbte_nro": 11, "pto_vta": 1, "cbte_tipo": 11,
+                "cae": "76479999000011", "cae_vencimiento": "20261207",
+                "imp_total": 1500.00, "doc_tipo": 80, "doc_nro": 30715875086, "cbte_fch": hoy,
+            }
+            raise TimeoutError("Read timed out esperando respuesta SOAP FECAESolicitar")
+
+        with patch.object(arca_ws, "obtener_ultimo_autorizado_wsfe", side_effect=lambda **kw: state_a["ultimo"]), \
+             patch.object(arca_ws, "consultar_comprobante_por_nro_wsfe", side_effect=lambda **kw: state_a["comps"].get(kw["cbte_nro"])), \
+             patch.object(arca_ws, "emitir_comprobante_wsfe", side_effect=emit_drop_a):
+            r1 = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok}, json={
+                "name": "emitir_factura_wsfe",
+                "arguments": {
+                    "cuit": cuit_em, "cuit_emisor": cuit_em, "pto_vta": 1, "cbte_tipo": 11,
+                    "receptor_cuit": "30715875086", "importe_neto": 1500.0, "importe_iva": 0.0,
+                    "confirmado": True, "idempotency_key": "llm-key-1",
+                },
+            }).json()
+            self.assertFalse(r1.get("ok"))
+            self.assertEqual(r1.get("estado"), "ESTADO_INCIERTO_REQUIERE_REVISION")
+
+            # Reintento con OTRA key (llm-key-2): debe reconciliar y adoptar el CAE sin re-emitir
+            r2 = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok}, json={
+                "name": "emitir_factura_wsfe",
+                "arguments": {
+                    "cuit": cuit_em, "cuit_emisor": cuit_em, "pto_vta": 1, "cbte_tipo": 11,
+                    "receptor_cuit": "30715875086", "importe_neto": 1500.0, "importe_iva": 0.0,
+                    "confirmado": True, "idempotency_key": "llm-key-2",
+                },
+            }).json()
+            self.assertTrue(r2.get("ok"))
+            self.assertTrue(r2.get("adoptado"))
+            self.assertEqual(r2.get("cae"), "76479999000011")
+            self.assertEqual(state_a["emits"], 1)
+
+        # (b) Lo mismo con un reinicio de proceso (se limpia toda la RAM) -> adopta igual desde volumen
+        state_b = {"emits": 0, "ultimo": 20, "comps": {}}
+        def emit_drop_b(**kw):
+            state_b["emits"] += 1
+            state_b["ultimo"] = 21
+            state_b["comps"][21] = {
+                "cbte_nro": 21, "pto_vta": 1, "cbte_tipo": 11,
+                "cae": "76479999000021", "cae_vencimiento": "20261207",
+                "imp_total": 2500.00, "doc_tipo": 80, "doc_nro": 30715875086, "cbte_fch": hoy,
+            }
+            raise ConnectionError("Connection reset by peer")
+
+        with patch.object(arca_ws, "obtener_ultimo_autorizado_wsfe", side_effect=lambda **kw: state_b["ultimo"]), \
+             patch.object(arca_ws, "consultar_comprobante_por_nro_wsfe", side_effect=lambda **kw: state_b["comps"].get(kw["cbte_nro"])), \
+             patch.object(arca_ws, "emitir_comprobante_wsfe", side_effect=emit_drop_b):
+            r_b1 = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok}, json={
+                "name": "emitir_factura_wsfe",
+                "arguments": {
+                    "cuit": cuit_em, "cuit_emisor": cuit_em, "pto_vta": 1, "cbte_tipo": 11,
+                    "receptor_cuit": "30715875086", "importe_neto": 2500.0, "importe_iva": 0.0,
+                    "confirmado": True,
+                },
+            }).json()
+            self.assertEqual(r_b1.get("estado"), "ESTADO_INCIERTO_REQUIERE_REVISION")
+            # Simular reinicio de proceso limpiando cachés y locks en memoria
+            bot_main._WSFE_IDEM_CACHE.clear()
+            getattr(bot_main, "_WSFE_EMIT_LOCKS", {}).clear()
+            r_b2 = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok}, json={
+                "name": "emitir_factura_wsfe",
+                "arguments": {
+                    "cuit": cuit_em, "cuit_emisor": cuit_em, "pto_vta": 1, "cbte_tipo": 11,
+                    "receptor_cuit": "30715875086", "importe_neto": 2500.0, "importe_iva": 0.0,
+                    "confirmado": True,
+                },
+            }).json()
+            self.assertTrue(r_b2.get("ok"))
+            self.assertTrue(r_b2.get("adoptado"))
+            self.assertEqual(r_b2.get("cae"), "76479999000021")
+            self.assertEqual(state_b["emits"], 1)
+
+        # (c) Dos ventas idénticas con reemitir_aunque_duplicado=True -> 2 CAE y queda en historial
+        state_c = {"n": 30}
+        def emit_ok_c(**kw):
+            state_c["n"] += 1
+            return {"ok": True, "resultado": "APROBADO", "cae": f"764700000000{state_c['n']}", "cbte_nro": state_c["n"]}
+
+        with patch.object(arca_ws, "obtener_ultimo_autorizado_wsfe", side_effect=lambda **kw: state_c["n"]), \
+             patch.object(arca_ws, "emitir_comprobante_wsfe", side_effect=emit_ok_c):
+            rc1 = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok}, json={
+                "name": "emitir_factura_wsfe",
+                "arguments": {
+                    "cuit": cuit_em, "cuit_emisor": cuit_em, "pto_vta": 1, "cbte_tipo": 11,
+                    "receptor_cuit": "", "importe_neto": 5000.0, "importe_iva": 0.0, "confirmado": True,
+                },
+            }).json()
+            rc2 = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok}, json={
+                "name": "emitir_factura_wsfe",
+                "arguments": {
+                    "cuit": cuit_em, "cuit_emisor": cuit_em, "pto_vta": 1, "cbte_tipo": 11,
+                    "receptor_cuit": "", "importe_neto": 5000.0, "importe_iva": 0.0,
+                    "confirmado": True, "reemitir_aunque_duplicado": True,
+                },
+            }).json()
+            self.assertTrue(rc1.get("ok"))
+            self.assertTrue(rc2.get("ok"))
+            self.assertNotEqual(rc1.get("cae"), rc2.get("cae"))
+            self.assertEqual(state_c["n"], 32)
+            hist = _bv_mod.obtener_historial_actividad(em_user, cuit=cuit_em, limite=10)
+            self.assertIn("reemitir_aunque_duplicado", str(hist))
+
+        # (d) El importe en ARCA NO coincide -> ESTADO_INCIERTO_REQUIERE_REVISION, sin re-emisión
+        state_d = {"emits": 0, "ultimo": 40}
+        def emit_drop_d(**kw):
+            state_d["emits"] += 1
+            state_d["ultimo"] = 41
+            raise TimeoutError("Timeout WSFE")
+
+        comp_distinto = {
+            "cbte_nro": 41, "pto_vta": 1, "cbte_tipo": 11,
+            "cae": "76479999000041", "cae_vencimiento": "20261207",
+            "imp_total": 9999.99, "doc_tipo": 80, "doc_nro": 30715875086, "cbte_fch": hoy,
+        }
+        with patch.object(arca_ws, "obtener_ultimo_autorizado_wsfe", side_effect=lambda **kw: state_d["ultimo"]), \
+             patch.object(arca_ws, "consultar_comprobante_por_nro_wsfe", return_value=comp_distinto), \
+             patch.object(arca_ws, "emitir_comprobante_wsfe", side_effect=emit_drop_d):
+            rd1 = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok}, json={
+                "name": "emitir_factura_wsfe",
+                "arguments": {
+                    "cuit": cuit_em, "cuit_emisor": cuit_em, "pto_vta": 1, "cbte_tipo": 11,
+                    "receptor_cuit": "30715875086", "importe_neto": 4321.0, "importe_iva": 0.0, "confirmado": True,
+                },
+            }).json()
+            self.assertEqual(rd1.get("estado"), "ESTADO_INCIERTO_REQUIERE_REVISION")
+            rd2 = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok}, json={
+                "name": "emitir_factura_wsfe",
+                "arguments": {
+                    "cuit": cuit_em, "cuit_emisor": cuit_em, "pto_vta": 1, "cbte_tipo": 11,
+                    "receptor_cuit": "30715875086", "importe_neto": 4321.0, "importe_iva": 0.0, "confirmado": True,
+                },
+            }).json()
+            self.assertFalse(rd2.get("ok"))
+            self.assertEqual(rd2.get("estado"), "ESTADO_INCIERTO_REQUIERE_REVISION")
+            self.assertEqual(state_d["emits"], 1)
 
 
 if __name__ == "__main__":

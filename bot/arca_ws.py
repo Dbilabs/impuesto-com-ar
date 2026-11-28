@@ -300,6 +300,100 @@ def consultar_ultimo_comprobante_wsfe(
     return int(nro)
 
 
+def consultar_comprobante_wsfe(
+    cuit_emisor: str,
+    pto_vta: int,
+    cbte_tipo: int,
+    cbte_nro: int,
+    token: str,
+    sign: str,
+    ambiente: str = "homologacion",
+) -> Optional[Dict[str, Any]]:
+    """Consulta FECompConsultar en WSFEv1 para verificar/adoptar un comprobante ya autorizado (N4)."""
+    env_key = "homologacion" if "homo" in ambiente.lower() else "produccion"
+    cuit_clean = "".join(c for c in str(cuit_emisor) if c.isdigit())
+    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ar="http://ar.gov.afip.dif.FEV1/">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <ar:FECompConsultar>
+         <ar:Auth>
+            <ar:Token>{token}</ar:Token>
+            <ar:Sign>{sign}</ar:Sign>
+            <ar:Cuit>{cuit_clean}</ar:Cuit>
+         </ar:Auth>
+         <ar:FeCompConsReq>
+            <ar:CbteTipo>{int(cbte_tipo)}</ar:CbteTipo>
+            <ar:CbteNro>{int(cbte_nro)}</ar:CbteNro>
+            <ar:PtoVta>{int(pto_vta)}</ar:PtoVta>
+         </ar:FeCompConsReq>
+      </ar:FECompConsultar>
+   </soapenv:Body>
+</soapenv:Envelope>"""
+    raw = _soap_post(ENDPOINTS[env_key]["wsfev1"], xml, soap_action="http://ar.gov.afip.dif.FEV1/FECompConsultar")
+    root = ET.fromstring(raw)
+    ns = {"ar": "http://ar.gov.afip.dif.FEV1/"}
+    result_get = root.find(".//ar:ResultGet", namespaces=ns)
+    if result_get is None:
+        return None
+    cae = (result_get.findtext("ar:CodAutorizacion", default="", namespaces=ns) or "").strip()
+    if not cae:
+        return None
+    imp_total_str = (result_get.findtext("ar:ImpTotal", default="0", namespaces=ns) or "0").strip()
+    doc_tipo_str = (result_get.findtext("ar:DocTipo", default="0", namespaces=ns) or "0").strip()
+    doc_nro_str = (result_get.findtext("ar:DocNro", default="0", namespaces=ns) or "0").strip()
+    cbte_fch = (result_get.findtext("ar:CbteFch", default="", namespaces=ns) or "").strip()
+    cae_vto = (result_get.findtext("ar:FchVto", default="", namespaces=ns) or "").strip()
+    resultado = (result_get.findtext("ar:Resultado", default="", namespaces=ns) or "").strip()
+    return {
+        "cbte_nro": int(cbte_nro),
+        "pto_vta": int(pto_vta),
+        "cbte_tipo": int(cbte_tipo),
+        "cae": cae,
+        "cae_vencimiento": cae_vto,
+        "imp_total": round(float(imp_total_str), 2),
+        "doc_tipo": int(doc_tipo_str),
+        "doc_nro": int(doc_nro_str),
+        "cbte_fch": cbte_fch,
+        "resultado": "APROBADO" if resultado == "A" else resultado,
+    }
+
+
+def obtener_ultimo_autorizado_wsfe(
+    cuit_emisor: str,
+    pto_vta: int,
+    cbte_tipo: int,
+    ambiente: str = "homologacion",
+    cert_path: Optional[str] = None,
+    key_path: Optional[str] = None,
+) -> Optional[int]:
+    """Helper de alto nivel: autentica WSAA y consulta FECompUltimoAutorizado. Devuelve None si no hay certificado."""
+    c_path = cert_path or os.environ.get("ARCA_WS_CERT")
+    k_path = key_path or os.environ.get("ARCA_WS_KEY")
+    if not c_path or not k_path:
+        return None
+    auth = autenticar_wsaa(c_path, k_path, service="wsfe", ambiente=ambiente)
+    return consultar_ultimo_comprobante_wsfe(cuit_emisor, pto_vta, cbte_tipo, auth["token"], auth["sign"], ambiente)
+
+
+def consultar_comprobante_por_nro_wsfe(
+    cuit_emisor: str,
+    pto_vta: int,
+    cbte_tipo: int,
+    cbte_nro: int,
+    ambiente: str = "homologacion",
+    cert_path: Optional[str] = None,
+    key_path: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Helper de alto nivel: autentica WSAA y consulta FECompConsultar para un número específico."""
+    c_path = cert_path or os.environ.get("ARCA_WS_CERT")
+    k_path = key_path or os.environ.get("ARCA_WS_KEY")
+    if not c_path or not k_path:
+        return None
+    auth = autenticar_wsaa(c_path, k_path, service="wsfe", ambiente=ambiente)
+    return consultar_comprobante_wsfe(cuit_emisor, pto_vta, cbte_tipo, cbte_nro, auth["token"], auth["sign"], ambiente)
+
+
 def emitir_comprobante_wsfe(
     cuit_emisor: str,
     pto_vta: int,
@@ -511,6 +605,7 @@ def emitir_comprobante_wsfe(
 
     return {
         **borrador,
+        "ok": bool(resultado == "A" and cae),
         "cbte_nro": proximo,
         "resultado": "APROBADO" if resultado == "A" else "RECHAZADO",
         "cae": cae,

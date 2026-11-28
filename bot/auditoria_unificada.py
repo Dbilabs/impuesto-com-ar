@@ -23,6 +23,7 @@ from typing import Dict, Any, List
 from playwright.sync_api import sync_playwright
 from .doublecheck_arca import validar_cobertura_auditoria
 from .validador_invariantes import validar_invariantes_auditoria
+from .arca_errors import ArcaNoDisponible, LoginNoConfirmado, ClaveIncorrecta
 
 AR_TZ = datetime.timezone(datetime.timedelta(hours=-3))
 
@@ -163,6 +164,66 @@ def _parse_ccma_detalle_periodos(txt: str) -> Dict[str, Any]:
     }
 
 
+def _login_portal_cf(page, cuit_clean: str, clave: str) -> None:
+    """Login único al Portal CF con clasificación estricta por etapa (N1-h)."""
+    password_enviada = False
+    try:
+        page.goto("https://auth.afip.gob.ar/contribuyente_/login.xhtml", wait_until="domcontentloaded", timeout=30000)
+        page.wait_for_selector("#F1\\:username", timeout=15000)
+        page.fill("#F1\\:username", cuit_clean)
+        page.click("#F1\\:btnSiguiente")
+        page.wait_for_selector("#F1\\:password", timeout=15000)
+        page.fill("#F1\\:password", clave)
+        page.click("#F1\\:btnIngresar")
+        password_enviada = True
+        # Detección rápida de Clave Fiscal incorrecta, bloqueada, cambio de clave o captcha
+        for _ in range(15):
+            if "portalcf.cloud.afip.gob.ar" in page.url or "portalcf.cloud.arca.gob.ar" in page.url:
+                break
+            try:
+                body_low = page.inner_text("body").lower()
+                if "clave o usuario incorrecto" in body_low:
+                    raise ClaveIncorrecta(
+                        "CLAVE_FISCAL_INCORRECTA: ARCA informó 'Clave o usuario incorrecto' para este CUIT. "
+                        "Actualizá tu Clave Fiscal en el chat o en https://impuesto.com.ar/vincular."
+                    )
+                if "clave bloqueada" in body_low or "usuario bloqueado" in body_low:
+                    raise ClaveIncorrecta(
+                        "CLAVE_FISCAL_BLOQUEADA: ARCA informó que la Clave Fiscal está bloqueada.",
+                        bloqueada=True,
+                    )
+                if "cambio de clave" in body_low or "cambiar su clave" in body_low:
+                    raise ClaveIncorrecta(
+                        "CAMBIO DE CLAVE: ARCA exige cambiar la Clave Fiscal antes de continuar.",
+                        cambio_clave=True,
+                    )
+                if "captcha" in body_low or "no soy un robot" in body_low:
+                    raise ClaveIncorrecta(
+                        "CAPTCHA: ARCA solicitó verificación captcha en el login.",
+                        captcha=True,
+                    )
+            except ClaveIncorrecta:
+                raise
+            except Exception:
+                pass
+            time.sleep(1.5)
+        if "portalcf.cloud." not in page.url:
+            page.wait_for_url("**/portalcf.cloud.**", timeout=25000, wait_until="domcontentloaded")
+    except (ArcaNoDisponible, LoginNoConfirmado, ClaveIncorrecta):
+        raise
+    except Exception as exc:
+        if not password_enviada:
+            raise ArcaNoDisponible(f"ARCA no disponible antes de enviar la contraseña: {exc}") from exc
+        raise LoginNoConfirmado(f"Login enviado sin confirmación en portalcf: {exc}") from exc
+
+    try:
+        page.wait_for_selector("#buscadorInput", timeout=25000)
+    except Exception:
+        page.wait_for_load_state("domcontentloaded", timeout=15000)
+    time.sleep(1.5)
+    page.keyboard.press("Escape")
+
+
 def consultar_ccma_preciso(cuit: str, clave: str) -> Dict[str, Any]:
     """Consulta CCMA con cálculo real de deuda + desglose por período (Monotributo vs Autónomos)."""
     cuit_clean = "".join(ch for ch in (cuit or "") if ch.isdigit())
@@ -174,35 +235,7 @@ def consultar_ccma_preciso(cuit: str, clave: str) -> Dict[str, Any]:
             ctx.set_default_navigation_timeout(25000)
             ctx.route("**/*", lambda route: route.abort() if route.request.resource_type in ("image", "font", "media") else route.continue_())
             page = ctx.new_page()
-            page.goto("https://auth.afip.gob.ar/contribuyente_/login.xhtml", wait_until="domcontentloaded", timeout=30000)
-            page.fill("#F1\\:username", cuit_clean)
-            page.click("#F1\\:btnSiguiente")
-            page.wait_for_selector("#F1\\:password", timeout=15000)
-            page.fill("#F1\\:password", clave)
-            page.click("#F1\\:btnIngresar")
-            # Detección rápida de Clave Fiscal incorrecta o bloqueada antes de esperar 45s
-            for _ in range(15):
-                if "portalcf.cloud.afip.gob.ar" in page.url or "portalcf.cloud.arca.gob.ar" in page.url:
-                    break
-                try:
-                    body_low = page.inner_text("body").lower()
-                    if "clave o usuario incorrecto" in body_low:
-                        raise RuntimeError("CLAVE_FISCAL_INCORRECTA: ARCA informó 'Clave o usuario incorrecto' para este CUIT. Actualizá tu Clave Fiscal en el chat o en https://impuesto.com.ar/vincular.")
-                    if "clave bloqueada" in body_low or "usuario bloqueado" in body_low:
-                        raise RuntimeError("CLAVE_FISCAL_BLOQUEADA: ARCA informó que la Clave Fiscal está bloqueada.")
-                except RuntimeError:
-                    raise
-                except Exception:
-                    pass
-                time.sleep(1.5)
-            if "portalcf.cloud." not in page.url:
-                page.wait_for_url("**/portalcf.cloud.**", timeout=25000, wait_until="domcontentloaded")
-            try:
-                page.wait_for_selector("#buscadorInput", timeout=25000)
-            except Exception:
-                page.wait_for_load_state("domcontentloaded", timeout=15000)
-            time.sleep(1.5)
-            page.keyboard.press("Escape")
+            _login_portal_cf(page, cuit_clean, clave)
 
             search = page.locator("#buscadorInput").first
             search.click(force=True)
@@ -277,36 +310,8 @@ def auditar_estado_integral_arca(cuit: str, clave: str) -> Dict[str, Any]:
         ctx.route("**/*", lambda route: route.abort() if route.request.resource_type in ("image", "font", "media") else route.continue_())
         page = ctx.new_page()
 
-        # 1. Login único al Portal CF
-        page.goto("https://auth.afip.gob.ar/contribuyente_/login.xhtml", wait_until="domcontentloaded", timeout=30000)
-        page.fill("#F1\\:username", cuit_clean)
-        page.click("#F1\\:btnSiguiente")
-        page.wait_for_selector("#F1\\:password", timeout=15000)
-        page.fill("#F1\\:password", clave)
-        page.click("#F1\\:btnIngresar")
-        # Detección rápida de Clave Fiscal incorrecta o bloqueada antes de esperar 45s
-        for _ in range(15):
-            if "portalcf.cloud.afip.gob.ar" in page.url or "portalcf.cloud.arca.gob.ar" in page.url:
-                break
-            try:
-                body_low = page.inner_text("body").lower()
-                if "clave o usuario incorrecto" in body_low:
-                    raise RuntimeError("CLAVE_FISCAL_INCORRECTA: ARCA informó 'Clave o usuario incorrecto' para este CUIT. Actualizá tu Clave Fiscal en el chat o en https://impuesto.com.ar/vincular.")
-                if "clave bloqueada" in body_low or "usuario bloqueado" in body_low:
-                    raise RuntimeError("CLAVE_FISCAL_BLOQUEADA: ARCA informó que la Clave Fiscal está bloqueada.")
-            except RuntimeError:
-                raise
-            except Exception:
-                pass
-            time.sleep(1.5)
-        if "portalcf.cloud." not in page.url:
-            page.wait_for_url("**/portalcf.cloud.**", timeout=25000, wait_until="domcontentloaded")
-        try:
-            page.wait_for_selector("#buscadorInput", timeout=25000)
-        except Exception:
-            page.wait_for_load_state("domcontentloaded", timeout=15000)
-        time.sleep(1.5)
-        page.keyboard.press("Escape")
+        # 1. Login único al Portal CF (clasificación por etapa N1-h)
+        _login_portal_cf(page, cuit_clean, clave)
 
         def open_service(query: str, must_contain: str):
             page.bring_to_front()

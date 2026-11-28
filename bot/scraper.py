@@ -5,6 +5,7 @@ import zipfile
 import logging
 from typing import List, Dict, Any, Optional
 from playwright.sync_api import sync_playwright
+from .arca_errors import ArcaNoDisponible, LoginNoConfirmado, ClaveIncorrecta
 
 logger = logging.getLogger("arca_scraper")
 
@@ -17,36 +18,58 @@ def _get_browser_path():
 def _login_arca(page, usuario: str, clave: str):
     import time as _t
     usuario_clean = usuario.replace("-", "").strip()
-    page.goto("https://auth.afip.gob.ar/contribuyente_/login.xhtml", wait_until="domcontentloaded", timeout=30000)
-    page.wait_for_selector("#F1\\:username", timeout=15000)
-    page.fill("#F1\\:username", usuario_clean)
-    page.click("#F1\\:btnSiguiente")
-    page.wait_for_selector("#F1\\:password", timeout=15000)
-    page.fill("#F1\\:password", clave)
-    page.click("#F1\\:btnIngresar")
+    password_enviada = False
+    try:
+        page.goto("https://auth.afip.gob.ar/contribuyente_/login.xhtml", wait_until="domcontentloaded", timeout=30000)
+        page.wait_for_selector("#F1\\:username", timeout=15000)
+        page.fill("#F1\\:username", usuario_clean)
+        page.click("#F1\\:btnSiguiente")
+        page.wait_for_selector("#F1\\:password", timeout=15000)
+        page.fill("#F1\\:password", clave)
+        page.click("#F1\\:btnIngresar")
+        password_enviada = True
 
-    # Detección rápida de error de credenciales sin esperar 30s de timeout
-    for _ in range(12):
-        if "portalcf.cloud.afip.gob.ar" in page.url or "portalcf.cloud.arca.gob.ar" in page.url:
-            break
-        try:
-            body_low = page.inner_text("body").lower()
-            if "clave o usuario incorrecto" in body_low:
-                raise ValueError("CLAVE_FISCAL_INCORRECTA: ARCA informó 'Clave o usuario incorrecto' para este CUIT.")
-            if "clave bloqueada" in body_low or "usuario bloqueado" in body_low:
-                raise ValueError("CLAVE_FISCAL_BLOQUEADA: ARCA informó que la Clave Fiscal está bloqueada.")
-        except ValueError:
-            raise
-        except Exception:
-            pass
-        error_box = page.query_selector(".alert-danger, #errorMsg, .ui-messages-error")
-        if error_box and error_box.is_visible():
-            err_txt = error_box.inner_text()
-            raise ValueError(f"Error de autenticación en ARCA: {err_txt}")
-        _t.sleep(1.2)
+        # Detección rápida de error de credenciales sin esperar 30s de timeout
+        for _ in range(12):
+            if "portalcf.cloud.afip.gob.ar" in page.url or "portalcf.cloud.arca.gob.ar" in page.url:
+                break
+            try:
+                body_low = page.inner_text("body").lower()
+                if "clave o usuario incorrecto" in body_low:
+                    raise ClaveIncorrecta("CLAVE_FISCAL_INCORRECTA: ARCA informó 'Clave o usuario incorrecto' para este CUIT.")
+                if "clave bloqueada" in body_low or "usuario bloqueado" in body_low:
+                    raise ClaveIncorrecta("CLAVE_FISCAL_BLOQUEADA: ARCA informó que la Clave Fiscal está bloqueada.", bloqueada=True)
+                if "cambio de clave" in body_low or "cambiar su clave" in body_low:
+                    raise ClaveIncorrecta("CAMBIO DE CLAVE: ARCA exige cambiar la Clave Fiscal antes de continuar.", cambio_clave=True)
+                if "captcha" in body_low or "no soy un robot" in body_low:
+                    raise ClaveIncorrecta("CAPTCHA: ARCA solicitó verificación captcha en el login.", captcha=True)
+            except ClaveIncorrecta:
+                raise
+            except Exception:
+                pass
+            error_box = page.query_selector(".alert-danger, #errorMsg, .ui-messages-error")
+            if error_box and error_box.is_visible():
+                err_txt = (error_box.inner_text() or "").strip()
+                err_low = err_txt.lower()
+                if any(k in err_low for k in ("incorrect", "inválid", "invalida", "bloquead", "captcha", "cambio de clave")):
+                    raise ClaveIncorrecta(
+                        f"CLAVE_FISCAL_INCORRECTA: {err_txt}",
+                        bloqueada="bloquead" in err_low,
+                        cambio_clave="cambio de clave" in err_low,
+                        captcha="captcha" in err_low,
+                    )
+                raise LoginNoConfirmado(f"Error de autenticación en ARCA sin confirmación: {err_txt}")
+            _t.sleep(1.2)
 
-    if "portalcf.cloud." not in page.url:
-        page.wait_for_url("**/portalcf.cloud.**", timeout=20000, wait_until="domcontentloaded")
+        if "portalcf.cloud." not in page.url:
+            page.wait_for_url("**/portalcf.cloud.**", timeout=20000, wait_until="domcontentloaded")
+    except (ArcaNoDisponible, LoginNoConfirmado, ClaveIncorrecta):
+        raise
+    except Exception as exc:
+        if not password_enviada:
+            raise ArcaNoDisponible(f"ARCA no disponible antes de enviar la contraseña: {exc}") from exc
+        raise LoginNoConfirmado(f"Login enviado sin confirmación en portalcf: {exc}") from exc
+
     try:
         page.wait_for_selector("#buscadorInput", timeout=20000)
     except Exception:

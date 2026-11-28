@@ -3,30 +3,9 @@ import re
 import logging
 from typing import Dict, Any, List, Optional
 from playwright.sync_api import sync_playwright
+from .scraper import _get_browser_path, _login_arca
 
 logger = logging.getLogger("arca_monotributo")
-
-def _get_browser_path():
-    browser_executable = os.environ.get("CHROME_PATH")
-    if not browser_executable and os.path.exists("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"):
-        browser_executable = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-    return browser_executable
-
-def _login_arca(page, usuario: str, clave: str):
-    usuario_clean = usuario.replace("-", "").strip()
-    page.goto("https://auth.afip.gob.ar/contribuyente_/login.xhtml", wait_until="domcontentloaded", timeout=30000)
-    page.wait_for_selector("#F1\\:username", timeout=15000)
-    page.fill("#F1\\:username", usuario_clean)
-    page.click("#F1\\:btnSiguiente")
-    page.wait_for_selector("#F1\\:password", timeout=15000)
-    page.fill("#F1\\:password", clave)
-    page.click("#F1\\:btnIngresar")
-    page.wait_for_timeout(3000)
-
-    error_box = page.query_selector(".alert-danger, #errorMsg, .ui-messages-error")
-    if error_box and error_box.is_visible():
-        err_txt = error_box.inner_text()
-        raise ValueError(f"Error de autenticación en ARCA: {err_txt}")
 
 def consultar_estado_monotributo(usuario: str, clave: str) -> Dict[str, Any]:
     """
