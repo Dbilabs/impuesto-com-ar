@@ -1507,7 +1507,7 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
             soap_calls["n"] += 1
             return xml_apoc
 
-        with patch.dict(os.environ, {"ARCA_WS_CERT": "/tmp/c.crt", "ARCA_WS_KEY": "/tmp/k.key"}), \
+        with patch.dict(os.environ, {"WSAPOC_ENABLED": "1", "ARCA_WS_CERT": "/tmp/c.crt", "ARCA_WS_KEY": "/tmp/k.key"}), \
              patch.object(arca_ws, "autenticar_wsaa", return_value={"token": "t", "sign": "s"}), \
              patch.object(arca_ws, "_soap_post", side_effect=fake_soap_apoc):
             r1 = client.post("/api/v1/mcp/tool", json={
@@ -1526,7 +1526,7 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
             self.assertEqual(soap_calls["n"], 1)
 
         # 2. Limpio
-        with patch.dict(os.environ, {"ARCA_WS_CERT": "/tmp/c.crt", "ARCA_WS_KEY": "/tmp/k.key"}), \
+        with patch.dict(os.environ, {"WSAPOC_ENABLED": "1", "ARCA_WS_CERT": "/tmp/c.crt", "ARCA_WS_KEY": "/tmp/k.key"}), \
              patch.object(arca_ws, "autenticar_wsaa", return_value={"token": "t", "sign": "s"}), \
              patch.object(arca_ws, "_soap_post", return_value=xml_limpio):
             r_clean = client.post("/api/v1/mcp/tool", json={
@@ -1539,7 +1539,7 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
             self.assertEqual(r_clean.get("fuente"), "WSAPOC")
 
         # 3. Web Service caído -> fallback a Playwright
-        with patch.dict(os.environ, {"ARCA_WS_CERT": "/tmp/c.crt", "ARCA_WS_KEY": "/tmp/k.key"}), \
+        with patch.dict(os.environ, {"WSAPOC_ENABLED": "1", "ARCA_WS_CERT": "/tmp/c.crt", "ARCA_WS_KEY": "/tmp/k.key"}), \
              patch.object(arca_ws, "autenticar_wsaa", return_value={"token": "t", "sign": "s"}), \
              patch.object(arca_ws, "_soap_post", side_effect=TimeoutError("WSAPOC down")), \
              patch("bot.scraper_extras_arca.verificar_proveedor_apocrifo_apoc", return_value={"ok": True, "cuit": "30888888881", "es_apocrifo": False, "fuente": "PLAYWRIGHT_FALLBACK"}):
@@ -1551,7 +1551,7 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
             self.assertEqual(r_fb.get("fuente"), "PLAYWRIGHT_FALLBACK")
 
         # 4. XML malformado -> error explícito, NUNCA es_apocrifo=False
-        with patch.dict(os.environ, {"ARCA_WS_CERT": "/tmp/c.crt", "ARCA_WS_KEY": "/tmp/k.key"}), \
+        with patch.dict(os.environ, {"WSAPOC_ENABLED": "1", "ARCA_WS_CERT": "/tmp/c.crt", "ARCA_WS_KEY": "/tmp/k.key"}), \
              patch.object(arca_ws, "autenticar_wsaa", return_value={"token": "t", "sign": "s"}), \
              patch.object(arca_ws, "_soap_post", return_value="<soap:Broken><unclosed"):
             r_mal = client.post("/api/v1/mcp/tool", json={
@@ -1562,7 +1562,7 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
             self.assertNotIn("es_apocrifo", r_mal)
 
         # 5. Respuesta con <Errors> -> error explícito, NUNCA es_apocrifo=False
-        with patch.dict(os.environ, {"ARCA_WS_CERT": "/tmp/c.crt", "ARCA_WS_KEY": "/tmp/k.key"}), \
+        with patch.dict(os.environ, {"WSAPOC_ENABLED": "1", "ARCA_WS_CERT": "/tmp/c.crt", "ARCA_WS_KEY": "/tmp/k.key"}), \
              patch.object(arca_ws, "autenticar_wsaa", return_value={"token": "t", "sign": "s"}), \
              patch.object(arca_ws, "_soap_post", return_value=xml_errors):
             r_err = client.post("/api/v1/mcp/tool", json={
@@ -1572,6 +1572,74 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
             self.assertFalse(r_err.get("ok"))
             self.assertNotIn("es_apocrifo", r_err)
         arca_ws._WSAPOC_CACHE.clear()
+
+    def test_sec_w1_w2_w3_w4_wsaa_cache_y_wsapoc(self):
+        """W1 (WSAA cifrado en VAULT_DIR + alreadyAuthenticated), W2 (rate limit + LRU), W3 (filtro CUIT), W4 (flag WSAPOC_ENABLED)."""
+        import datetime as _dt
+        from unittest.mock import patch
+        from bot import arca_ws
+        from bot import main as bot_main
+        client = TestClient(app)
+
+        # W1: ticket cifrado guardado en VAULT_DIR/wsaa_cache y leído sin re-llamar a WSAA
+        exp_fut = (_dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(hours=8)).isoformat()
+        cache_p = arca_ws._wsaa_cache_dir() / "ta_homologacion_wsfe_testcert.crt.enc"
+        _bv_mod._write_enc_json(cache_p, {"token": "TOK_VOL", "sign": "SIGN_VOL", "expiration": exp_fut})
+        self.assertTrue(str(cache_p).startswith(str(_bv_mod.VAULT_DIR)))
+        ta = arca_ws.autenticar_wsaa("/tmp/testcert.crt", "/tmp/testcert.key", service="wsfe", ambiente="homologacion")
+        self.assertTrue(ta["desde_cache"])
+        self.assertEqual(ta["token"], "TOK_VOL")
+
+        # W1: respuesta WSAA con coe.alreadyAuthenticated -> WsaaAlreadyAuthenticatedError tipada
+        xml_already = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">'
+            '<soapenv:Body><soapenv:Fault><faultcode>ns1:coe.alreadyAuthenticated</faultcode>'
+            '<faultstring>El CEE ya posee un TA valido para el acceso al WSN solicitado</faultstring>'
+            '</soapenv:Fault></soapenv:Body></soapenv:Envelope>'
+        )
+        fake_c = _bv_mod.VAULT_DIR / "dummy_w1.crt"
+        fake_k = _bv_mod.VAULT_DIR / "dummy_w1.key"
+        fake_c.write_text("x"); fake_k.write_text("y")
+        def fake_subp(cmd, **kw):
+            out_idx = cmd.index("-out") + 1
+            Path(cmd[out_idx]).write_bytes(b"DER")
+        with patch.object(arca_ws.subprocess, "run", side_effect=fake_subp), \
+             patch.object(arca_ws, "_soap_post", return_value=xml_already):
+            with self.assertRaises(arca_ws.WsaaAlreadyAuthenticatedError):
+                arca_ws.autenticar_wsaa(str(fake_c), str(fake_k), service="wsfe", ambiente="homologacion")
+
+        # W3: PublicacionAPOC de OTRO CUIT no debe marcar es_apocrifo=True
+        xml_otro = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:t="http://tempuri.org/">'
+            '<soap:Body><t:GetPublicacionAPOCResponse><t:GetPublicacionAPOCResult>'
+            '<t:codigo>0</t:codigo><t:resultados><t:PublicacionAPOC>'
+            '<t:Cuit>30111111119</t:Cuit><t:FechaCondicion>2025-01-01</t:FechaCondicion>'
+            '</t:PublicacionAPOC></t:resultados></t:GetPublicacionAPOCResult></t:GetPublicacionAPOCResponse></soap:Body></soap:Envelope>'
+        )
+        res_w3 = arca_ws.parsear_respuesta_wsapoc(xml_otro, "30222222228")
+        self.assertTrue(res_w3["ok"])
+        self.assertFalse(res_w3["es_apocrifo"])
+
+        # W2: rate limit por IP (30/min) en verificar_proveedor_apocrifo_apoc
+        bot_main._APOC_IP_HITS.clear()
+        with patch.object(bot_main, "APOC_RATE_LIMIT_PER_MIN", 2), \
+             patch("bot.scraper_extras_arca.verificar_proveedor_apocrifo_apoc", return_value={"ok": True, "es_apocrifo": False}):
+            client.post("/api/v1/mcp/tool", headers={"CF-Connecting-IP": "198.51.100.7"}, json={"name": "verificar_proveedor_apocrifo_apoc", "arguments": {"cuit_proveedor": "30715875086"}})
+            client.post("/api/v1/mcp/tool", headers={"CF-Connecting-IP": "198.51.100.7"}, json={"name": "verificar_proveedor_apocrifo_apoc", "arguments": {"cuit_proveedor": "30715875086"}})
+            r_lim = client.post("/api/v1/mcp/tool", headers={"CF-Connecting-IP": "198.51.100.7"}, json={"name": "verificar_proveedor_apocrifo_apoc", "arguments": {"cuit_proveedor": "30715875086"}}).json()
+            self.assertFalse(r_lim.get("ok"))
+            self.assertTrue(r_lim.get("rate_limited"))
+        bot_main._APOC_IP_HITS.clear()
+
+        # W4: sin WSAPOC_ENABLED=1 usa fallback a Playwright incluso con ARCA_WS_CERT seteado
+        with patch.dict(os.environ, {"WSAPOC_ENABLED": "0", "ARCA_WS_CERT": "/tmp/c.crt", "ARCA_WS_KEY": "/tmp/k.key"}), \
+             patch("bot.scraper_extras_arca.verificar_proveedor_apocrifo_apoc", return_value={"ok": True, "fuente": "PW_DEFAULT"}):
+            r_w4 = client.post("/api/v1/mcp/tool", headers={"CF-Connecting-IP": "198.51.100.8"}, json={"name": "verificar_proveedor_apocrifo_apoc", "arguments": {"cuit_proveedor": "30715875099"}}).json()
+            self.assertTrue(r_w4.get("ok"))
+            self.assertEqual(r_w4.get("fuente"), "PW_DEFAULT")
+        bot_main._APOC_IP_HITS.clear()
 
 
 if __name__ == "__main__":

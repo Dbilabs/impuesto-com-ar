@@ -14,12 +14,18 @@ import os
 import json
 import base64
 import ssl
+import logging
 import subprocess
 import tempfile
 import datetime
+import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
+from collections import OrderedDict
+from pathlib import Path
 from typing import Dict, Any, Optional
+
+logger = logging.getLogger("impuesto.arca_ws")
 
 try:
     from zoneinfo import ZoneInfo
@@ -42,6 +48,10 @@ class CertificadoPendienteError(RuntimeError):
     """Faltan ARCA_WS_CERT / ARCA_WS_KEY para operar Web Services oficiales."""
 
 
+class WsaaAlreadyAuthenticatedError(RuntimeError):
+    """WSAA rechazó LoginCms con coe.alreadyAuthenticated (ya existe un TA vigente para ese certificado y servicio)."""
+
+
 class WsapocResponseError(RuntimeError):
     """Error explícito o XML malformado en respuesta de WSAPOC (nunca interpretar como 'no apócrifo')."""
 
@@ -50,8 +60,17 @@ class WsapocUnavailableError(RuntimeError):
     """WSAPOC temporalmente no disponible (red/timeout/HTTP 5xx); habilita fallback a Playwright."""
 
 
-_WSAPOC_CACHE: Dict[str, tuple[float, Dict[str, Any]]] = {}
+_WSAPOC_CACHE: "OrderedDict[str, tuple[float, Dict[str, Any]]]" = OrderedDict()
 WSAPOC_CACHE_TTL_SEC = 86400.0  # 24 horas por CUIT consultado
+WSAPOC_CACHE_MAX_SIZE = 10000   # Tope LRU en memoria (W2)
+
+
+def _wsaa_cache_dir() -> Path:
+    """W1: almacena tickets WSAA dentro del volumen persistente (<VAULT_DIR>/wsaa_cache), nunca en <repo>/data."""
+    from . import boveda_segura as bv
+    d = bv.VAULT_DIR / "wsaa_cache"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 ENDPOINTS = {
     "homologacion": {
@@ -93,8 +112,8 @@ CBTE_TIPOS = {
     "FACTURA_M": 51
 }
 
-CACHE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "wsaa_cache"))
-os.makedirs(CACHE_DIR, exist_ok=True)
+# W1: tickets WSAA ahora se guardan cifrados en <VAULT_DIR>/wsaa_cache (vía _wsaa_cache_dir())
+CACHE_DIR = None
 
 
 def _ssl_context():
@@ -208,19 +227,23 @@ def autenticar_wsaa(
 ) -> Dict[str, str]:
     """
     Obtiene Token y Sign desde WSAA firmando el TRA en formato CMS/PKCS#7.
-    Cachea el Ticket de Acceso (TA) durante su vigencia (~12 horas) para evitar errores de 'TA ya vigente'.
+    W1: Cachea el Ticket de Acceso (TA) cifrado en <VAULT_DIR>/wsaa_cache (0600, volumen persistente)
+    y detecta `coe.alreadyAuthenticated` con WsaaAlreadyAuthenticatedError.
     """
+    from . import boveda_segura as bv
     env_key = "homologacion" if "homo" in ambiente.lower() else "produccion"
-    cache_file = os.path.join(CACHE_DIR, f"ta_{env_key}_{service}_{os.path.basename(cert_path)}.json")
+    cache_path = _wsaa_cache_dir() / f"ta_{env_key}_{service}_{os.path.basename(cert_path)}.enc"
 
-    # 1. Revisar cache vigente
-    if os.path.exists(cache_file):
+    # 1. Revisar cache cifrado vigente en volumen
+    if cache_path.exists():
         try:
-            with open(cache_file, "r", encoding="utf-8") as f:
-                cached = json.load(f)
-            exp = datetime.datetime.fromisoformat(cached["expiration"])
-            if exp > datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=5):
-                return {"token": cached["token"], "sign": cached["sign"], "desde_cache": True}
+            cached = bv._read_enc_json(cache_path, {})
+            if isinstance(cached, dict) and cached.get("expiration") and cached.get("token") and cached.get("sign"):
+                exp = datetime.datetime.fromisoformat(str(cached["expiration"]).replace("Z", "+00:00"))
+                if exp.tzinfo is None:
+                    exp = exp.replace(tzinfo=datetime.timezone.utc)
+                if exp > datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=5):
+                    return {"token": cached["token"], "sign": cached["sign"], "desde_cache": True}
         except Exception:
             pass
 
@@ -278,7 +301,29 @@ def autenticar_wsaa(
    </soapenv:Body>
 </soapenv:Envelope>"""
 
-    raw = _soap_post(ENDPOINTS[env_key]["wsaa"], soap_wsaa, soap_action="loginCms", timeout=15)
+    try:
+        raw = _soap_post(ENDPOINTS[env_key]["wsaa"], soap_wsaa, soap_action="loginCms", timeout=15)
+    except urllib.error.HTTPError as http_err:
+        body = ""
+        try:
+            body = http_err.read().decode("utf-8", errors="ignore")
+        except Exception:
+            pass
+        if "alreadyauthenticated" in body.lower():
+            logger.error(f"[WSAA ALERTA] coe.alreadyAuthenticated para service={service} env={env_key} (verificar volumen persistente en /app/data/boveda/wsaa_cache).")
+            raise WsaaAlreadyAuthenticatedError(
+                f"WSAA rechazó LoginCms con coe.alreadyAuthenticated para '{service}' ({env_key}). "
+                "Ya existe un Ticket de Acceso vigente emitido recientemente; verificá la persistencia de /app/data/boveda/wsaa_cache."
+            ) from http_err
+        raise
+
+    if "alreadyauthenticated" in (raw or "").lower():
+        logger.error(f"[WSAA ALERTA] coe.alreadyAuthenticated para service={service} env={env_key}.")
+        raise WsaaAlreadyAuthenticatedError(
+            f"WSAA rechazó LoginCms con coe.alreadyAuthenticated para '{service}' ({env_key}). "
+            "Ya existe un Ticket de Acceso vigente emitido recientemente; verificá la persistencia de /app/data/boveda/wsaa_cache."
+        )
+
     root = ET.fromstring(raw)
     login_return = None
     for el in root.iter():
@@ -293,9 +338,7 @@ def autenticar_wsaa(
     sign = ta_root.findtext(".//sign")
     expiration = ta_root.findtext(".//expirationTime") or exp_time
 
-    with open(cache_file, "w", encoding="utf-8") as f:
-        json.dump({"token": token, "sign": sign, "expiration": expiration}, f)
-
+    bv._write_enc_json(cache_path, {"token": token, "sign": sign, "expiration": expiration})
     return {"token": token, "sign": sign, "desde_cache": False}
 
 
@@ -793,8 +836,14 @@ def parsear_respuesta_wsapoc(raw_xml: str, cuit_clean: str) -> Dict[str, Any]:
     if codigo is not None and codigo.upper() not in ("", "0", "00", "200", "OK"):
         raise WsapocResponseError(f"WSAPOC devolvió código de error {codigo}: {descripcion or 'sin detalle'}")
 
-    if publicaciones:
-        first = publicaciones[0]
+    # W3: filtrar publicaciones estrictamente por PublicacionAPOC.Cuit == CUIT consultado
+    publicaciones_cuit = [
+        p for p in publicaciones
+        if "".join(c for c in str(p.get("Cuit", "")) if c.isdigit()) == cuit_clean
+    ]
+
+    if publicaciones_cuit:
+        first = publicaciones_cuit[0]
         return {
             "ok": True,
             "cuit": cuit_clean,
@@ -802,7 +851,7 @@ def parsear_respuesta_wsapoc(raw_xml: str, cuit_clean: str) -> Dict[str, Any]:
             "fecha_condicion": first.get("FechaCondicion") or None,
             "fecha_publicacion": first.get("FechaPublicacion") or None,
             "descripcion": first.get("Descripcion") or descripcion or "Incluido en Base e-APOC",
-            "publicaciones": publicaciones,
+            "publicaciones": publicaciones_cuit,
             "fuente": "WSAPOC",
         }
 
@@ -836,10 +885,13 @@ def consultar_apocrifo_wsapoc(
     cache_k = f"{env_key}:{cuit_clean}"
     if usar_cache:
         hit = _WSAPOC_CACHE.get(cache_k)
-        if hit and (_time.time() - hit[0]) < WSAPOC_CACHE_TTL_SEC:
-            out_c = dict(hit[1])
-            out_c["desde_cache"] = True
-            return out_c
+        if hit:
+            if (_time.time() - hit[0]) < WSAPOC_CACHE_TTL_SEC:
+                _WSAPOC_CACHE.move_to_end(cache_k)
+                out_c = dict(hit[1])
+                out_c["desde_cache"] = True
+                return out_c
+            _WSAPOC_CACHE.pop(cache_k, None)
 
     c_path = cert_path or os.environ.get("ARCA_WS_CERT")
     k_path = key_path or os.environ.get("ARCA_WS_KEY")
@@ -880,6 +932,9 @@ def consultar_apocrifo_wsapoc(
 
     res = parsear_respuesta_wsapoc(raw, cuit_clean)
     _WSAPOC_CACHE[cache_k] = (_time.time(), dict(res))
+    _WSAPOC_CACHE.move_to_end(cache_k)
+    while len(_WSAPOC_CACHE) > WSAPOC_CACHE_MAX_SIZE:
+        _WSAPOC_CACHE.popitem(last=False)
     return res
 
 

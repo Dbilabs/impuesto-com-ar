@@ -103,6 +103,8 @@ _CUIT_FAIL_BUDGET: Dict[str, list] = {}
 CUIT_MAX_FAILS_24H = int(os.environ.get("CUIT_MAX_FAILS_24H", "2"))
 _wsfe_locks: Dict[str, threading.Lock] = {}
 _WSFE_IDEM_CACHE: Dict[str, Dict[str, Any]] = {}
+_APOC_IP_HITS: Dict[str, list] = {}
+APOC_RATE_LIMIT_PER_MIN = 30
 LOCK_ACQUIRE_TIMEOUT_SEC = float(os.environ.get("LOCK_ACQUIRE_TIMEOUT_SEC", "180.0"))
 
 
@@ -1187,21 +1189,35 @@ def run_mcp_tool(
     if tool == "verificar_proveedor_apocrifo_apoc":
         from .arca_ws import consultar_apocrifo_wsapoc, CertificadoPendienteError, WsapocUnavailableError, WsapocResponseError
         from .scraper_extras_arca import verificar_proveedor_apocrifo_apoc
+        # W2: rate limit por IP (30/min) para herramienta pública
+        client_ip_apoc = _extract_client_ip(request)
+        now_apoc = time.time()
+        with _audit_lock:
+            hist_ip = [t for t in _APOC_IP_HITS.get(client_ip_apoc, []) if now_apoc - t < 60.0]
+            if len(hist_ip) >= APOC_RATE_LIMIT_PER_MIN:
+                return {
+                    "ok": False,
+                    "rate_limited": True,
+                    "error": "Demasiadas consultas a Base e-APOC desde tu IP (máx. 30/min). Esperá unos segundos.",
+                }
+            hist_ip.append(now_apoc)
+            _APOC_IP_HITS[client_ip_apoc] = hist_ip
+
         cuit_prov = normalizar_cuit(args.get("cuit_proveedor", ""))
         amb_apoc = (args.get("ambiente") or "produccion").strip().lower()
-        # Fase 3.3: WSAPOC directo fuera de PLAYWRIGHT_SEM; fallback a Playwright solo si WS está caído o sin certificado
-        try:
-            return consultar_apocrifo_wsapoc(cuit_prov, ambiente=amb_apoc)
-        except WsapocResponseError as ws_err:
-            # Error explícito o XML malformado -> NUNCA devolver "no apócrifo"
-            return {"ok": False, "cuit": cuit_prov, "fuente": "WSAPOC", "error": str(ws_err)}
-        except (CertificadoPendienteError, WsapocUnavailableError) as fb_err:
-            logger.info(f"[WSAPOC] Fallback a Playwright para {cuit_prov}: {fb_err}")
-            return _run_tool_sin_timeout(
-                f"eapoc:{cuit_prov}", "Base e-APOC ARCA",
-                lambda: verificar_proveedor_apocrifo_apoc(cuit_prov),
-                cuit=cuit_prov or "publico", actor_email=actor_email or "", origen_llm=origen_llm,
-            )
+        # W4: WSAPOC detrás de WSAPOC_ENABLED=1 hasta capturar evidencia real de codigo/descripcion en homologación
+        if os.environ.get("WSAPOC_ENABLED", "").strip() == "1":
+            try:
+                return consultar_apocrifo_wsapoc(cuit_prov, ambiente=amb_apoc)
+            except WsapocResponseError as ws_err:
+                return {"ok": False, "cuit": cuit_prov, "fuente": "WSAPOC", "error": str(ws_err)}
+            except (CertificadoPendienteError, WsapocUnavailableError) as fb_err:
+                logger.info(f"[WSAPOC] Fallback a Playwright para {cuit_prov}: {fb_err}")
+        return _run_tool_sin_timeout(
+            f"eapoc:{cuit_prov}", "Base e-APOC ARCA",
+            lambda: verificar_proveedor_apocrifo_apoc(cuit_prov),
+            cuit=cuit_prov or "publico", actor_email=actor_email or "", origen_llm=origen_llm,
+        )
 
     # =========================================================================
     # AUTENTICACIÓN Y VINCULACIÓN 100% DENTRO DEL CHAT (CERO SALIR DEL LLM)
