@@ -1,14 +1,15 @@
 """
 bot/limite_login.py
-Limitador de intentos de autenticación/OTP en tres niveles (IP+usuario, usuario y global).
+Limitador de intentos de autenticación/OTP en tres niveles (IP+usuario, usuario, solo IP y global).
 Inspirado en src/auth/limiteLogin.js de diegoparras/arcanum (Licencia MIT).
 
-Características:
+Características (cierre R2 + N3):
 - Claves hasheadas con SHA-256 (nunca almacena emails ni IPs en claro en memoria).
 - Memoria acotada (máx. 10.000 entradas con poda LRU).
-- Backoff exponencial por (IP, usuario) desde el 5° fallo (30s -> 1m -> 2m -> ... máx. 15m).
-- Límite por usuario (10 fallos -> 15m; evita bloqueos DoS de 24h sobre la víctima).
-- Límite global por minuto (200 eventos/min -> pausa 60s).
+- Backoff exponencial por (IP, usuario) desde el umbral (30s -> 1m -> 2m -> ... máx. 15m).
+- Balde por IP independiente del email para envíos OTP (5/15m) + tope global alto (600/min solo por cuota del proveedor),
+  evitando que 70 pedidos aleatorios de OTP bloqueen a usuarios legítimos (N3).
+- En verificación OTP y login por frase clave, el límite global cuenta únicamente fallos reales.
 """
 
 import hashlib
@@ -29,9 +30,11 @@ class LimiteLogin:
         por_usuario: int = 10,
         global_por_min: int = 200,
         max_claves: int = 10000,
+        por_ip: int = 0,
     ):
         self.por_ip_usuario = por_ip_usuario
         self.por_usuario = por_usuario
+        self.por_ip = por_ip
         self.global_por_min = global_por_min
         self.max_claves = max_claves
         self._lock = threading.Lock()
@@ -40,6 +43,9 @@ class LimiteLogin:
 
     def _clave_ip(self, ip: str, usuario: str) -> str:
         return "i:" + _h(f"{ip}\n{(usuario or '').strip().lower()}")
+
+    def _clave_solo_ip(self, ip: str) -> str:
+        return "p:" + _h(str(ip or "unknown"))
 
     def _clave_usuario(self, usuario: str) -> str:
         return "u:" + _h((usuario or "").strip().lower())
@@ -69,7 +75,10 @@ class LimiteLogin:
         with self._lock:
             if self._ventana_global["hasta"] > now:
                 return False, "Demasiados intentos en la plataforma. Probá de nuevo en 1 minuto."
-            for k in (self._clave_ip(ip, usuario), self._clave_usuario(usuario)):
+            claves = [self._clave_ip(ip, usuario), self._clave_usuario(usuario)]
+            if self.por_ip > 0:
+                claves.append(self._clave_solo_ip(ip))
+            for k in claves:
                 r = self._fallos.get(k)
                 if r and r["hasta"] > now:
                     wait_s = max(1, int(r["hasta"] - now))
@@ -91,6 +100,13 @@ class LimiteLogin:
                 lambda _extra: 900.0,
                 now,
             )
+            if self.por_ip > 0:
+                self._sumar(
+                    self._clave_solo_ip(ip),
+                    self.por_ip,
+                    lambda extra: min(900.0, 60.0 * (2 ** min(extra, 4))),
+                    now,
+                )
             if now - self._ventana_global["desde"] > 60.0:
                 self._ventana_global = {"desde": now, "n": 0, "hasta": 0.0}
             self._ventana_global["n"] += 1
@@ -104,7 +120,9 @@ class LimiteLogin:
             self._fallos.pop(self._clave_usuario(usuario), None)
 
 
-# Instancias separadas para envío OTP, verificación OTP y login por frase clave
-LIMITE_OTP_ENVIO = LimiteLogin(por_ip_usuario=3, por_usuario=5, global_por_min=60)
+# Instancias separadas (N3):
+# - LIMITE_OTP_ENVIO: balde por IP (5/15m), por email (5/15m) y tope global alto (600/min solo por cuota proveedor).
+# - LIMITE_OTP_VERIF y LIMITE_LOGIN_CHAT: límite global cuenta solo fallos reales.
+LIMITE_OTP_ENVIO = LimiteLogin(por_ip_usuario=3, por_usuario=5, por_ip=5, global_por_min=600)
 LIMITE_OTP_VERIF = LimiteLogin(por_ip_usuario=5, por_usuario=10, global_por_min=150)
 LIMITE_LOGIN_CHAT = LimiteLogin(por_ip_usuario=5, por_usuario=10, global_por_min=150)

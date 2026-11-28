@@ -1984,7 +1984,19 @@ export async function onRequest({ request, env, params }) {
                 branding_pie = excluded.branding_pie
               WHERE estudios_contables.owner_email = excluded.owner_email
             `).bind(estudioId, ident.email, args.nombre_estudio, cuitClean, args.socio_responsable, branding).run();
-          } catch (e) {}
+          } catch (dbErr) {
+            return jsonRpcSuccess(id, {
+              isError: true,
+              content: [{
+                type: "text",
+                text: JSON.stringify({
+                  ok: false,
+                  error: "No se pudo guardar el estudio en D1 (verificá que esté aplicada migrations/0002_estudios_owner.sql).",
+                  detalle: String(dbErr?.message || "").slice(0, 200)
+                }, null, 2)
+              }]
+            });
+          }
         }
         return jsonRpcSuccess(id, {
           content: [{
@@ -2379,7 +2391,19 @@ export async function onRequest({ request, env, params }) {
               }]
             });
           }
-          if (isTimeout) {
+          // N5: solo devolver EN_PROGRESO en tools que realmente corren en segundo plano en ARCA
+          const ASYNC_ARCA_TOOLS = new Set([
+            "auditar_estado_integral_arca",
+            "consultar_ccma_cuenta_corriente",
+            "consultar_situacion_monotributo",
+            "consultar_bienes_personales_web",
+            "consultar_nuestra_parte_arca",
+            "consultar_mis_retenciones_arca",
+            "consultar_comprobantes_mes",
+            "leer_notificaciones_dfe",
+            "verificar_proveedor_apocrifo_apoc"
+          ]);
+          if (isTimeout && ASYNC_ARCA_TOOLS.has(toolName)) {
             return jsonRpcSuccess(id, {
               content: [{
                 type: "text",

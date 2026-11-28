@@ -749,6 +749,50 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
         ok_other, _ = lim.chequear("5.6.7.8", "user@test.com")
         self.assertTrue(ok_other)
 
+    def test_sec_n1_ataque3_secuestro_cuit_y_logins_fallidos_bloqueado(self):
+        """N1 / Ataque 3 de Claude: atacante con email verificado intenta vincular CUIT ajeno con 5 claves distintas -> máx. 2 logins en 24h y el CUIT se libera tras fallo."""
+        from unittest.mock import patch
+        from bot import main as bot_main
+        client = TestClient(app)
+        cuit_ajeno = "20777777771"
+        atacante = "atacante_n1@impuesto.test"
+        tok_att = _tok_verificado(atacante)
+
+        logins = {"n": 0}
+        def fake_bad_arca(cuit, clave):
+            logins["n"] += 1
+            raise RuntimeError("CLAVE_FISCAL_INCORRECTA: ARCA informó 'Clave o usuario incorrecto'")
+
+        bot_main._clear_bad_creds(cuit_ajeno, clear_budget=True)
+        with patch.object(bot_main, "auditar_estado_integral_arca", side_effect=fake_bad_arca), \
+             patch.object(bot_main, "AUDIT_SYNC_WAIT_SEC", 1.0):
+            for idx in range(5):
+                clave_falsa = f"MalaClave{idx}"
+                r_v = client.post("/api/v1/vincular", headers={"X-User-Token": tok_att}, json={
+                    "email": atacante, "cuit": cuit_ajeno, "clave_fiscal": clave_falsa,
+                })
+                if r_v.json().get("ok"):
+                    bot_main._ejecutar_auditoria_sin_timeout(cuit_ajeno, clave_falsa, forzar_refresco=True)
+            # Presupuesto por CUIT corta en 2 logins en 24h (nunca 5!)
+            self.assertLessEqual(logins["n"], bot_main.CUIT_MAX_FAILS_24H)
+            # Y el CUIT fue liberado (no quedó secuestrado por el atacante)
+            self.assertIsNone(_bv_mod.obtener_credenciales_descifradas(cuit_ajeno))
+        bot_main._clear_bad_creds(cuit_ajeno, clear_budget=True)
+
+    def test_sec_n3_ataque4_70_otp_aleatorios_no_bloquean_usuario_legitimo(self):
+        """N3 / Ataque 4 de Claude: 70 pedidos de OTP con emails e IPs aleatorios NO deben bloquear a un usuario legítimo."""
+        from unittest.mock import patch
+        from bot import limite_login as ll
+        # Usar instancia limpia para no interferir con otros tests
+        fresh_lim = ll.LimiteLogin(por_ip_usuario=3, por_usuario=5, por_ip=5, global_por_min=600)
+        with patch.object(ll, "LIMITE_OTP_ENVIO", fresh_lim), \
+             patch.object(_bv_mod, "_enviar_email_otp", return_value=(True, "resend")):
+            for i in range(70):
+                _bv_mod.solicitar_codigo_otp_email(f"rand{i}@evil.test", client_ip=f"10.0.{i // 250}.{i % 250 + 1}")
+            # Usuario legítimo desde su IP sigue pudiendo pedir OTP sin DoS global
+            r_legit = _bv_mod.solicitar_codigo_otp_email("usuario_real@empresa.com.ar", client_ip="200.1.2.3")
+            self.assertTrue(r_legit.get("ok"), f"Usuario legítimo bloqueado por DoS global: {r_legit}")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -498,8 +498,8 @@ def auditar_estado_integral_arca(cuit: str, clave: str) -> Dict[str, Any]:
                 stxt = sct.inner_text("body")
                 m_sd = re.search(r"Deuda\s*\n\s*\$\s*([\d\.,]+)", stxt)
                 m_sld = re.search(r"Saldo Libre Disponibilidad\s*\n\s*\$\s*([\d\.,]+)", stxt)
-                if not (m_sd or m_sld):
-                    raise RuntimeError("PARSE_ERROR: SCT no devolvió importes de Deuda ni Saldo Libre Disponibilidad.")
+                if not m_sd:
+                    raise RuntimeError("PARSE_ERROR: SCT no devolvió la fila oficial de 'Deuda'.")
                 resultado["sct"] = {
                     "deuda_dgi_ventana_actual": _parse_ar_num(m_sd.group(1), strict=True) if m_sd else 0.0,
                     "saldo_libre_disponibilidad": _parse_ar_num(m_sld.group(1), strict=True) if m_sld else 0.0,

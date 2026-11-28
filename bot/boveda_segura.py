@@ -321,9 +321,13 @@ def guardar_credenciales_cifradas(
         _save_vault(vault)
 
         if em:
-            entry = acl["cuit_acl"].setdefault(cuit_clean, {"owner_email": em, "authorized": {}, "created_at": ahora})
+            entry = acl["cuit_acl"].setdefault(
+                cuit_clean,
+                {"owner_email": em, "authorized": {}, "validado": False, "created_at": ahora},
+            )
             if not entry.get("owner_email"):
                 entry["owner_email"] = em
+            entry.setdefault("validado", False)
             entry["updated_at"] = ahora
             _save_acl(acl)
 
@@ -331,11 +335,57 @@ def guardar_credenciales_cifradas(
         "ok": True,
         "cuit": cuit_clean,
         "owner_email": em or None,
+        "estado_propiedad": "validado" if (existing_acl and existing_acl.get("validado")) else "pendiente_validacion",
         "modo": modo,
         "cifrado": "Fernet AES + HMAC-SHA256",
         "solo_lectura_por_defecto": True,
         "vinculado_at": ahora,
     }
+
+
+def marcar_cuit_validado(cuit: str) -> None:
+    """Confirma la propiedad del CUIT tras el primer login exitoso en ARCA (cierre N1)."""
+    cuit_clean = normalizar_cuit(cuit)
+    if len(cuit_clean) != 11:
+        return
+    with _vault_io_lock:
+        acl = _load_acl()
+        entry = acl["cuit_acl"].get(cuit_clean)
+        if entry and not entry.get("validado"):
+            entry["validado"] = True
+            entry["validado_at"] = _now_iso()
+            _save_acl(acl)
+
+
+def liberar_cuit_pendiente(cuit: str) -> bool:
+    """Si un CUIT estaba en pendiente_validacion y falló el login en ARCA, lo libera para no secuestrarlo (N1)."""
+    cuit_clean = normalizar_cuit(cuit)
+    if len(cuit_clean) != 11:
+        return False
+    with _vault_io_lock:
+        acl = _load_acl()
+        entry = acl["cuit_acl"].get(cuit_clean)
+        if not entry or entry.get("validado", False):
+            return False
+        acl["cuit_acl"].pop(cuit_clean, None)
+        _save_acl(acl)
+        vault = _load_vault()
+        if cuit_clean in vault:
+            vault.pop(cuit_clean, None)
+            _save_vault(vault)
+        return True
+
+
+def es_owner_validado(email: Optional[str], cuit: str) -> bool:
+    """Devuelve True solo si `email` es owner de `cuit` Y ya superó al menos un login exitoso en ARCA."""
+    em = normalizar_email(email or "")
+    cuit_clean = normalizar_cuit(cuit)
+    if not em or len(cuit_clean) != 11:
+        return False
+    with _vault_io_lock:
+        acl = _load_acl()
+        entry = acl["cuit_acl"].get(cuit_clean)
+        return bool(entry and entry.get("owner_email") == em and entry.get("validado", False))
 
 
 def obtener_credenciales_descifradas(cuit: str) -> Optional[Dict[str, Any]]:

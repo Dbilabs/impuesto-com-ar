@@ -52,6 +52,9 @@ from .boveda_segura import (
     solicitar_codigo_otp_email,
     verificar_codigo_otp_email,
     obtener_huella_vault_key,
+    marcar_cuit_validado,
+    liberar_cuit_pendiente,
+    es_owner_validado,
 )
 from .backoffice_growth import (
     esta_en_mantenimiento,
@@ -85,6 +88,8 @@ AUDIT_INFLIGHT: Dict[str, Dict[str, Any]] = {}
 TOOL_CACHE: Dict[str, Dict[str, Any]] = {}
 TOOL_INFLIGHT: Dict[str, Dict[str, Any]] = {}
 _BAD_CREDS_CB: Dict[str, Dict[str, Any]] = {}
+_CUIT_FAIL_BUDGET: Dict[str, list] = {}
+CUIT_MAX_FAILS_24H = int(os.environ.get("CUIT_MAX_FAILS_24H", "2"))
 _wsfe_locks: Dict[str, threading.Lock] = {}
 _WSFE_IDEM_CACHE: Dict[str, Dict[str, Any]] = {}
 LOCK_ACQUIRE_TIMEOUT_SEC = float(os.environ.get("LOCK_ACQUIRE_TIMEOUT_SEC", "180.0"))
@@ -126,8 +131,36 @@ def _hash_clave(cuit: str, clave: str) -> str:
     return hashlib.sha256(f"{cuit}:{clave}".encode("utf-8")).hexdigest()
 
 
+def _check_cuit_fail_budget(cuit: str) -> Optional[Dict[str, Any]]:
+    """N1 cierre total: presupuesto de máx. 2 logins fallidos cada 24h por CUIT (independiente de la clave o email)."""
+    c = normalizar_cuit(cuit)
+    now = time.time()
+    with _audit_lock:
+        fails = [t for t in _CUIT_FAIL_BUDGET.get(c, []) if now - t < 86400.0]
+        if fails:
+            _CUIT_FAIL_BUDGET[c] = fails
+        else:
+            _CUIT_FAIL_BUDGET.pop(c, None)
+        if len(fails) >= CUIT_MAX_FAILS_24H:
+            return {
+                "ok": False,
+                "estado": "PRESUPUESTO_FALLOS_CUIT_AGOTADO",
+                "cuit": c,
+                "circuit_breaker_activo": True,
+                "error": f"El CUIT {c} alcanzó el máximo de {CUIT_MAX_FAILS_24H} logins fallidos en 24h.",
+                "mensaje": (
+                    f"Por seguridad, frenamos nuevos intentos de login contra ARCA para el CUIT {c} durante 24 horas "
+                    "para evitar el bloqueo de la Clave Fiscal. Si sos el titular validado, reintentá más tarde o contactá a soporte."
+                ),
+            }
+    return None
+
+
 def _check_bad_creds(cuit: str, clave: str) -> Optional[Dict[str, Any]]:
-    """Circuit breaker P0-7: frena logins repetidos con la misma Clave Fiscal rechazada para evitar bloqueo en ARCA."""
+    """Circuit breaker P0-7 + N1: frena logins repetidos por presupuesto 24h del CUIT o misma clave rechazada."""
+    budget_err = _check_cuit_fail_budget(cuit)
+    if budget_err:
+        return budget_err
     h = _hash_clave(cuit, clave)
     with _audit_lock:
         rec = _BAD_CREDS_CB.get(cuit)
@@ -147,20 +180,29 @@ def _check_bad_creds(cuit: str, clave: str) -> Optional[Dict[str, Any]]:
 
 
 def _mark_bad_creds(cuit: str, clave: str, err_msg: str) -> None:
+    c = normalizar_cuit(cuit)
+    now = time.time()
     estado = "CLAVE_FISCAL_BLOQUEADA" if "BLOQUEADA" in err_msg.upper() else "CLAVE_FISCAL_INCORRECTA"
     with _audit_lock:
-        _BAD_CREDS_CB[cuit] = {
-            "clave_hash": _hash_clave(cuit, clave),
+        _BAD_CREDS_CB[c] = {
+            "clave_hash": _hash_clave(c, clave),
             "estado": estado,
             "error": err_msg,
-            "ts": time.time(),
+            "ts": now,
         }
+        fails = [t for t in _CUIT_FAIL_BUDGET.get(c, []) if now - t < 86400.0]
+        fails.append(now)
+        _CUIT_FAIL_BUDGET[c] = fails
+    # N1: si el CUIT estaba pendiente_validacion, liberarlo de inmediato para que no quede secuestrado
+    liberar_cuit_pendiente(c)
 
 
-def _clear_bad_creds(cuit: str) -> None:
+def _clear_bad_creds(cuit: str, *, clear_budget: bool = False) -> None:
     c = normalizar_cuit(cuit)
     with _audit_lock:
         _BAD_CREDS_CB.pop(c, None)
+        if clear_budget:
+            _CUIT_FAIL_BUDGET.pop(c, None)
         AUDIT_CACHE.pop(c, None)
         for k in [k for k in TOOL_CACHE if c in k]:
             TOOL_CACHE.pop(k, None)
@@ -345,6 +387,10 @@ def _run_auditoria_background(cuit: str, clave: str, entry: Dict[str, Any], acto
             raise TimeoutError("Timeout esperando disponibilidad del motor headless ARCA.")
         res = auditar_estado_integral_arca(cuit=cuit, clave=clave)
         now = time.time()
+        # N1: confirmar propiedad del CUIT y limpiar presupuesto solo tras un login exitoso en ARCA
+        if isinstance(res, dict) and (res.get("ok") is True or res.get("doublecheck", {}).get("fuentes_verificadas")):
+            marcar_cuit_validado(cuit)
+            _clear_bad_creds(cuit, clear_budget=True)
         with _audit_lock:
             entry["result"] = res
             entry["finished_at"] = now
@@ -821,6 +867,12 @@ def api_vincular(
 
     res: Dict[str, Any] = {"ok": True}
     if req.modo != "solo_token_llm":
+        cuit_req = normalizar_cuit(req.cuit or "")
+        owner_ya_validado = es_owner_validado(email, cuit_req)
+        if not owner_ya_validado:
+            budget_err = _check_cuit_fail_budget(cuit_req)
+            if budget_err:
+                return budget_err
         res = guardar_credenciales_cifradas(
             cuit=req.cuit or "",
             clave_fiscal=req.clave_fiscal,
@@ -832,8 +884,9 @@ def api_vincular(
         )
         if not res.get("ok"):
             return res
-        if res.get("cuit"):
-            _clear_bad_creds(res["cuit"])
+        # N1: solo limpiar _BAD_CREDS_CB si quien actualiza es el owner ya validado (nunca el presupuesto de un atacante)
+        if res.get("cuit") and owner_ya_validado:
+            _clear_bad_creds(res["cuit"], clear_budget=False)
 
     tok = crear_token_usuario(
         email=email,
@@ -963,6 +1016,11 @@ def run_mcp_tool(
         if not tok.get("ok"):
             return tok
 
+        owner_ya_validado_chat = es_owner_validado(em, cuit_in)
+        if not owner_ya_validado_chat:
+            budget_err = _check_cuit_fail_budget(cuit_in)
+            if budget_err:
+                return budget_err
         res_v = guardar_credenciales_cifradas(
             cuit=cuit_in,
             clave_fiscal=clave_in,
@@ -971,7 +1029,8 @@ def run_mcp_tool(
         )
         if not res_v.get("ok"):
             return res_v
-        _clear_bad_creds(cuit_in)
+        if owner_ya_validado_chat:
+            _clear_bad_creds(cuit_in, clear_budget=False)
 
         registrar_evento_historial(
             email=em,
