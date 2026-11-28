@@ -107,7 +107,8 @@ ENDPOINTS = {
         "wsfexv1": "https://wswhomo.afip.gov.ar/wsfexv1/service.asmx",
         "wsfecred": "https://fwshomo.afip.gov.ar/wsfecred/FECredService",
         "padron_a5": "https://awshomo.afip.gov.ar/sr-padron/webservices/personaServiceA5",
-        "veconsumerws": "https://infraestructura.afip.gob.ar/ve-ws/services/veconsumer",
+        # Confirmado WSDL vivo homologación (200 OK): Fase 3.4
+        "veconsumerws": "https://stable-middleware-tecno-ext.afip.gob.ar/ve-ws/services/veconsumer",
         # Confirmado contra WSDL vivo (200 OK): https://eapoc-ws-qaext.afip.gob.ar/service.asmx?WSDL (op: GetPublicacionAPOC)
         "wsapoc": "https://eapoc-ws-qaext.afip.gob.ar/service.asmx",
         "wscdc": "https://wswhomo.afip.gov.ar/WSCDC/service.asmx",

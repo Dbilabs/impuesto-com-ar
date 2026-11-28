@@ -1795,13 +1795,70 @@ def run_mcp_tool(
         )
 
     if tool == "leer_notificaciones_dfe":
+        from .eventanilla_ws import consultar_comunicaciones_ve, VeConsumerResponseError, VeConsumerUnavailableError
+        from .arca_ws import CertificadoPendienteError
         from .scraper import consultar_notificaciones_dfe
-        obj = args.get("cuit") or cuit
-        return _run_tool_sin_timeout(
-            f"dfe:{cuit}:{obj}", "Domicilio Fiscal Electrónico (DFE)",
-            lambda: {"ok": True, "cuit": obj, "notificaciones": consultar_notificaciones_dfe(usuario=cuit, clave=clave, cuit_objetivo=args.get("cuit"))},
-            cuit=cuit, actor_email=actor_email, origen_llm=origen_llm, accion_hist="consulta_dfe", clave=clave,
-        )
+        obj = normalizar_cuit(args.get("cuit") or cuit)
+        amb_dfe = (args.get("ambiente") or "produccion").strip().lower()
+        cache_k_dfe = f"dfe_ve:{obj}:{amb_dfe}"
+        now_dfe = time.time()
+        with _audit_lock:
+            hit_dfe = TOOL_CACHE.get(cache_k_dfe)
+            if hit_dfe and not hit_dfe.get("is_error") and (now_dfe - hit_dfe["ts"]) < AUDIT_TTL_SEC:
+                out_c = dict(hit_dfe["data"])
+                out_c["desde_cache"] = True
+                return out_c
+        # Fase 3.4: intentar e-Ventanilla (veconsumerws) SOLO metadatos (consultarComunicaciones) fuera de PLAYWRIGHT_SEM
+        try:
+            res_ve = consultar_comunicaciones_ve(obj, ambiente=amb_dfe)
+            with _audit_lock:
+                TOOL_CACHE[cache_k_dfe] = {"ts": time.time(), "is_error": not res_ve.get("ok"), "data": res_ve}
+            return res_ve
+        except VeConsumerResponseError as ve_err:
+            # Error explícito de WS / XML malformado / totalItems>0 vacío -> NUNCA "sin notificaciones"
+            return {"ok": False, "cuit": obj, "fuente": "VECONSUMERWS", "error": str(ve_err)}
+        except (CertificadoPendienteError, VeConsumerUnavailableError) as fb_err:
+            logger.info(f"[VECONSUMERWS] Fallback a Playwright DFE para {obj}: {fb_err}")
+            return _run_tool_sin_timeout(
+                f"dfe:{cuit}:{obj}", "Domicilio Fiscal Electrónico (DFE)",
+                lambda: {"ok": True, "cuit": obj, "notificaciones": consultar_notificaciones_dfe(usuario=cuit, clave=clave, cuit_objetivo=args.get("cuit"))},
+                cuit=cuit, actor_email=actor_email, origen_llm=origen_llm, accion_hist="consulta_dfe", clave=clave,
+            )
+
+    if tool == "abrir_comunicacion_dfe":
+        from .eventanilla_ws import consumir_comunicacion_ve, VeConsumerResponseError, VeConsumerUnavailableError
+        from .arca_ws import CertificadoPendienteError
+        if not confirmado_strict:
+            return {
+                "ok": False,
+                "requiere_confirmacion": True,
+                "aviso_legal": "ATENCIÓN: abrir una comunicación del Domicilio Fiscal Electrónico (consumirComunicacion) puede contar como notificado y comenzar a correr plazos legales. Confirmá explícitamente enviando `confirmado: true`.",
+                "error": "Operación mutante: requiere `confirmado: true` estricto.",
+            }
+        id_com_raw = args.get("id_comunicacion")
+        if not id_com_raw or not str(id_com_raw).strip().isdigit():
+            return {"ok": False, "error": "Indicá `id_comunicacion` numérico obtenido con `leer_notificaciones_dfe`."}
+        obj_ab = normalizar_cuit(args.get("cuit") or cuit)
+        inc_adj = _parse_bool_strict(args.get("incluir_adjuntos", False))
+        amb_ab = (args.get("ambiente") or "produccion").strip().lower()
+        try:
+            res_ab = consumir_comunicacion_ve(
+                obj_ab,
+                int(str(id_com_raw).strip()),
+                incluir_adjuntos=inc_adj,
+                ambiente=amb_ab,
+            )
+            if res_ab.get("ok"):
+                registrar_evento_historial(
+                    actor_email,
+                    obj_ab,
+                    origen_llm,
+                    "abrir_comunicacion_dfe",
+                    f"Comunicación DFE #{id_com_raw} abierta vía consumirComunicacion (incluir_adjuntos={inc_adj})",
+                )
+            return res_ab
+        except (VeConsumerResponseError, VeConsumerUnavailableError, CertificadoPendienteError) as exc:
+            return {"ok": False, "cuit": obj_ab, "fuente": "VECONSUMERWS", "error": str(exc)}
 
     if tool in ("consultar_estado_monotributo", "consultar_situacion_monotributo"):
         with _audit_lock:

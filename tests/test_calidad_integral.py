@@ -2088,6 +2088,168 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
         }).json()
         self.assertFalse(r_c2.get("ok"))
 
+    def test_sec_fase34_eventanilla_veconsumerws(self):
+        """Fase 3.4 e-Ventanilla: endpoint homo, 2 páginas, vacío, Fault, XML malformado, totalItems>0 vacío, auth error, abrir sin confirmado y MD5 desparejo."""
+        import base64 as _b64
+        import gzip as _gzip
+        import hashlib as _hl
+        import urllib.error as _uerr
+        from unittest.mock import patch
+        from bot import arca_ws
+        from bot import eventanilla_ws as ve
+        from bot import main as bot_main
+        client = TestClient(app)
+
+        # 1. Endpoint homologación corregido
+        self.assertEqual(
+            arca_ws.ENDPOINTS["homologacion"]["veconsumerws"],
+            "https://stable-middleware-tecno-ext.afip.gob.ar/ve-ws/services/veconsumer",
+        )
+        self.assertEqual(
+            arca_ws.ENDPOINTS["produccion"]["veconsumerws"],
+            "https://infraestructura.afip.gob.ar/ve-ws/services/veconsumer",
+        )
+
+        cuit_ve = "20777777781"
+        em_ve = "owner_ve34@impuesto.test"
+        tok_ve = _tok_verificado(em_ve)
+        _bv_mod.guardar_credenciales_cifradas(cuit=cuit_ve, clave_fiscal="ClaveVE", owner_email=em_ve)
+        _bv_mod.marcar_cuit_validado(cuit_ve, email_actor=em_ve, clave_hash=_bv_mod.hash_clave_cuit(cuit_ve, "ClaveVE"), clave_fiscal="ClaveVE")
+
+        xml_estados = (
+            '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">'
+            '<soap:Body><consultarEstadosResponse><return>'
+            '<estado><id>1</id><descripcion>No Leída</descripcion></estado>'
+            '<estado><id>2</id><descripcion>Leída</descripcion></estado>'
+            '</return></consultarEstadosResponse></soap:Body></soap:Envelope>'
+        )
+        xml_pag1 = (
+            '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">'
+            '<soap:Body><consultarComunicacionesResponse><RespuestaPaginada>'
+            '<pagina>1</pagina><totalPaginas>2</totalPaginas><totalItems>2</totalItems>'
+            '<items><item><idComunicacion>101</idComunicacion><cuitDestinatario>20777777781</cuitDestinatario>'
+            '<asunto>Intimación IVA</asunto><fechaPublicacion>2026-11-01</fechaPublicacion>'
+            '<estado>1</estado><sistemaPublicadorDesc>ARCA Fiscalización</sistemaPublicadorDesc><tieneAdjunto>true</tieneAdjunto></item></items>'
+            '</RespuestaPaginada></consultarComunicacionesResponse></soap:Body></soap:Envelope>'
+        )
+        xml_pag2 = (
+            '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">'
+            '<soap:Body><consultarComunicacionesResponse><RespuestaPaginada>'
+            '<pagina>2</pagina><totalPaginas>2</totalPaginas><totalItems>2</totalItems>'
+            '<items><item><idComunicacion>102</idComunicacion><cuitDestinatario>20777777781</cuitDestinatario>'
+            '<asunto>Aviso Vencimiento</asunto><fechaPublicacion>2026-11-10</fechaPublicacion>'
+            '<estado>2</estado><sistemaPublicadorDesc>ARCA Recaudación</sistemaPublicadorDesc><tieneAdjunto>false</tieneAdjunto></item></items>'
+            '</RespuestaPaginada></consultarComunicacionesResponse></soap:Body></soap:Envelope>'
+        )
+        xml_vacio = (
+            '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">'
+            '<soap:Body><consultarComunicacionesResponse><RespuestaPaginada>'
+            '<pagina>1</pagina><totalPaginas>1</totalPaginas><totalItems>0</totalItems><items/>'
+            '</RespuestaPaginada></consultarComunicacionesResponse></soap:Body></soap:Envelope>'
+        )
+        xml_total_sin_items = (
+            '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">'
+            '<soap:Body><consultarComunicacionesResponse><RespuestaPaginada>'
+            '<pagina>1</pagina><totalPaginas>1</totalPaginas><totalItems>3</totalItems><items/>'
+            '</RespuestaPaginada></consultarComunicacionesResponse></soap:Body></soap:Envelope>'
+        )
+        xml_fault = (
+            '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">'
+            '<soap:Body><soap:Fault><faultcode>soap:Server</faultcode><faultstring>Token inválido</faultstring></soap:Fault></soap:Body></soap:Envelope>'
+        )
+
+        # 2. Listado en 2 páginas + mapeo de estados
+        ve._VE_ESTADOS_CACHE.clear()
+        bot_main.TOOL_CACHE.clear()
+        def fake_soap_2p(url, body, soap_action="", **kw):
+            if "consultarEstados" in soap_action or "consultarEstados" in body:
+                return xml_estados
+            if "<pagina>2</pagina>" in body:
+                return xml_pag2
+            return xml_pag1
+
+        with patch.object(arca_ws, "autenticar_wsaa_para_cuit", return_value={"token": "t", "sign": "s", "fuente_certificado": "propio"}), \
+             patch.object(arca_ws, "_soap_post", side_effect=fake_soap_2p):
+            r_2p = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_ve}, json={
+                "name": "leer_notificaciones_dfe", "arguments": {"cuit": cuit_ve, "ambiente": "homologacion"},
+            }).json()
+            self.assertTrue(r_2p.get("ok"))
+            self.assertEqual(r_2p.get("fuente"), "VECONSUMERWS")
+            self.assertEqual(r_2p.get("total"), 2)
+            self.assertEqual(len(r_2p.get("notificaciones", [])), 2)
+            self.assertEqual(r_2p["notificaciones"][0]["estado_desc"], "No Leída")
+            self.assertEqual(r_2p["notificaciones"][1]["estado_desc"], "Leída")
+
+        # 3. Vacío (totalItems=0)
+        bot_main.TOOL_CACHE.clear()
+        with patch.object(arca_ws, "autenticar_wsaa_para_cuit", return_value={"token": "t", "sign": "s", "fuente_certificado": "propio"}), \
+             patch.object(arca_ws, "_soap_post", return_value=xml_vacio):
+            r_empty = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_ve}, json={
+                "name": "leer_notificaciones_dfe", "arguments": {"cuit": cuit_ve, "ambiente": "homologacion"},
+            }).json()
+            self.assertTrue(r_empty.get("ok"))
+            self.assertEqual(r_empty.get("total"), 0)
+            self.assertEqual(r_empty.get("notificaciones"), [])
+
+        # 4. Fault, XML malformado, totalItems>0 vacío, y error de auth (HTTP 401) -> todos error explícito
+        for label, side_eff in (
+            ("fault", lambda *a, **k: xml_fault),
+            ("malformed", lambda *a, **k: "<soap:Broken><unclosed"),
+            ("total_sin_items", lambda *a, **k: xml_total_sin_items),
+            ("auth_401", lambda *a, **k: (_ for _ in ()).throw(_uerr.HTTPError("https://x", 401, "Unauthorized", {}, None))),
+        ):
+            bot_main.TOOL_CACHE.clear()
+            with patch.object(arca_ws, "autenticar_wsaa_para_cuit", return_value={"token": "t", "sign": "s", "fuente_certificado": "propio"}), \
+                 patch.object(arca_ws, "_soap_post", side_effect=side_eff):
+                r_err = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_ve}, json={
+                    "name": "leer_notificaciones_dfe", "arguments": {"cuit": cuit_ve, "ambiente": "homologacion"},
+                }).json()
+                self.assertFalse(r_err.get("ok"), f"Caso {label} debería fallar explícitamente: {r_err}")
+                self.assertNotIn("notificaciones", r_err)
+
+        # 5. abrir_comunicacion_dfe sin confirmado=True -> rechazado con aviso legal
+        r_noconf = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_ve}, json={
+            "name": "abrir_comunicacion_dfe", "arguments": {"cuit": cuit_ve, "id_comunicacion": 101},
+        }).json()
+        self.assertFalse(r_noconf.get("ok"))
+        self.assertTrue(r_noconf.get("requiere_confirmacion"))
+        self.assertIn("notificado", r_noconf.get("aviso_legal", "").lower())
+
+        # 6. abrir_comunicacion_dfe con confirmado=True + adjunto gzip con MD5 válido vs MD5 desparejo
+        plain_doc = b"Resolucion ARCA 2026 contenido oficial"
+        gz_bytes = _gzip.compress(plain_doc)
+        gz_b64 = _b64.b64encode(gz_bytes).decode("ascii")
+        md5_ok = _hl.md5(gz_bytes).hexdigest()
+        xml_com_ok = (
+            '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">'
+            '<soap:Body><consumirComunicacionResponse><Comunicacion>'
+            '<mensaje>Texto completo de notificación DFE</mensaje><tiempoDeVida>30</tiempoDeVida>'
+            f'<adjuntos><adjunto><filename>intimacion.txt</filename><content>{gz_b64}</content>'
+            f'<compressed>true</compressed><signed>false</signed><encrypted>false</encrypted>'
+            f'<md5>{md5_ok}</md5><contentSize>{len(gz_bytes)}</contentSize></adjunto></adjuntos>'
+            '</Comunicacion></consumirComunicacionResponse></soap:Body></soap:Envelope>'
+        )
+        xml_com_bad_md5 = xml_com_ok.replace(md5_ok, "0" * 32)
+
+        with patch.object(arca_ws, "autenticar_wsaa_para_cuit", return_value={"token": "t", "sign": "s", "fuente_certificado": "propio"}), \
+             patch.object(arca_ws, "_soap_post", return_value=xml_com_ok):
+            r_open = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_ve}, json={
+                "name": "abrir_comunicacion_dfe",
+                "arguments": {"cuit": cuit_ve, "id_comunicacion": 101, "incluir_adjuntos": True, "confirmado": True, "ambiente": "homologacion"},
+            }).json()
+            self.assertTrue(r_open.get("ok"))
+            self.assertEqual(r_open.get("mensaje"), "Texto completo de notificación DFE")
+            self.assertEqual(_b64.b64decode(r_open["adjuntos"][0]["content_base64"]), plain_doc)
+
+        with patch.object(arca_ws, "autenticar_wsaa_para_cuit", return_value={"token": "t", "sign": "s", "fuente_certificado": "propio"}), \
+             patch.object(arca_ws, "_soap_post", return_value=xml_com_bad_md5):
+            r_bad_md5 = client.post("/api/v1/mcp/tool", headers={"X-User-Token": tok_ve}, json={
+                "name": "abrir_comunicacion_dfe",
+                "arguments": {"cuit": cuit_ve, "id_comunicacion": 101, "incluir_adjuntos": True, "confirmado": True, "ambiente": "homologacion"},
+            }).json()
+            self.assertFalse(r_bad_md5.get("ok"))
+            self.assertIn("md5", r_bad_md5.get("error", "").lower())
+
 
 if __name__ == "__main__":
     unittest.main()

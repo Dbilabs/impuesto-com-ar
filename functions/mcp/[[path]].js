@@ -348,6 +348,21 @@ const MCP_TOOLS = [
     }
   },
   {
+    name: "abrir_comunicacion_dfe",
+    description: "ATENCIÓN LEGAL: abre el contenido completo de una comunicación del Domicilio Fiscal Electrónico vía e-Ventanilla (`consumirComunicacion`). Abrir puede contar como notificado y comenzar a correr plazos legales. Requiere `confirmado: true` estricto.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cuit: { type: "string", description: "CUIT del contribuyente (11 dígitos)" },
+        id_comunicacion: { type: "integer", description: "ID de comunicación obtenido con `leer_notificaciones_dfe`" },
+        incluir_adjuntos: { type: "boolean", default: false, description: "Incluir contenido de adjuntos (máx. 10 MB c/u, verificado con MD5)" },
+        ambiente: { type: "string", enum: ["produccion", "homologacion"], default: "produccion" },
+        confirmado: { type: "boolean", default: false, description: "OBLIGATORIO true: abrir puede perfeccionar la notificación legal" }
+      },
+      required: ["id_comunicacion", "confirmado"]
+    }
+  },
+  {
     name: "consultar_padron_cuit_ws",
     description: "Consulta la constancia de inscripción (Razón Social, condición IVA/Monotributo y domicilio fiscal) de cualquier CUIT vía Web Service oficial WS_SR_PADRON_A5 en <1 segundo.",
     inputSchema: {
@@ -1098,6 +1113,7 @@ export async function onRequest({ request, env, params }) {
         "emitir_factura_wsfe",
         "resolver_emision_incierta",
         "cargar_certificado_wsaa_cuit",
+        "abrir_comunicacion_dfe",
         "ejecutar_accion_bot",
         "consultar_y_renovar_certificado_mipyme",
         "vincular_cuenta_en_chat",
@@ -1131,7 +1147,7 @@ export async function onRequest({ request, env, params }) {
           inputSchema: { ...schema, properties: props },
           annotations: {
             readOnlyHint: isReadOnly,
-            destructiveHint: t.name === "emitir_factura_wsfe" || t.name === "resolver_emision_incierta" || t.name === "revocar_usuario_cuit" || t.name === "admin_accion_emergencia_plataforma",
+            destructiveHint: t.name === "emitir_factura_wsfe" || t.name === "resolver_emision_incierta" || t.name === "abrir_comunicacion_dfe" || t.name === "revocar_usuario_cuit" || t.name === "admin_accion_emergencia_plataforma",
             idempotentHint: isReadOnly,
             openWorldHint: true
           }
@@ -2409,6 +2425,7 @@ export async function onRequest({ request, env, params }) {
           const isMutatingCall =
             (toolName === "emitir_factura_wsfe" && confirmadoStrict) ||
             (toolName === "resolver_emision_incierta" && confirmadoStrict) ||
+            (toolName === "abrir_comunicacion_dfe" && confirmadoStrict) ||
             (toolName === "consultar_y_renovar_certificado_mipyme" && confirmadoStrict) ||
             toolName === "vincular_cuenta_en_chat" ||
             toolName === "autorizar_usuario_cuit" ||
