@@ -97,21 +97,50 @@ def _extract_input_value(html_text: str, name_or_id: str) -> Optional[str]:
 
 
 def _clasificar_rechazo_html(html_text: str) -> None:
-    """Si la respuesta HTML tras enviar la contraseña indica rechazo explícito, lanza ClaveIncorrecta."""
-    low = (html_text or "").lower()
-    if "g-recaptcha" in low or "captcha" in low or "verificación de seguridad" in low:
+    """P3: clasifica rechazos anclados a mensajes de error del formulario (F1:msg / contenedores de error)
+    o widgets reales de captcha, no a substrings sueltos en cualquier parte del HTML."""
+    if not html_text:
+        return
+    # 1. Widgets explícitos de CAPTCHA en el formulario
+    if re.search(r"<[^>]+class\s*=\s*['\"][^'\"]*(?:g-recaptcha|h-captcha)[^'\"]*['\"]", html_text, re.IGNORECASE):
         raise ClaveIncorrecta("ARCA solicitó CAPTCHA durante el login HTTP.", captcha=True)
-    if "clave bloqueada" in low or "usuario bloqueado" in low or "bloqueada" in low:
+
+    # 2. Extraer únicamente bloques de error del formulario (F1:msg, ui-messages, alert-danger, etc.)
+    err_blocks = re.findall(
+        r"<(?:span|div|p|li)\b[^>]*(?:id\s*=\s*['\"]F1:msg['\"]|class\s*=\s*['\"][^'\"]*(?:error|alert|ui-messages|mensaje-error)[^'\"]*['\"])[^>]*>(.*?)</(?:span|div|p|li)>",
+        html_text,
+        re.IGNORECASE | re.DOTALL,
+    )
+    err_text = " ".join(re.sub(r"<[^>]+>", " ", b) for b in err_blocks).strip().lower()
+    if not err_text:
+        return
+    if "captcha" in err_text or "verificación de seguridad" in err_text:
+        raise ClaveIncorrecta("ARCA solicitó CAPTCHA durante el login HTTP.", captcha=True)
+    if "bloquead" in err_text:
         raise ClaveIncorrecta("CLAVE_FISCAL_BLOQUEADA: ARCA informó que la Clave Fiscal está bloqueada.", bloqueada=True)
-    if "cambio de clave" in low or "cambiar su clave" in low or "debe cambiar" in low:
+    if "cambio de clave" in err_text or "cambiar su clave" in err_text or "debe cambiar" in err_text:
         raise ClaveIncorrecta("CAMBIO DE CLAVE obligatorio requerido por ARCA.", cambio_clave=True)
-    if (
-        "clave o usuario incorrecto" in low
-        or "usuario o clave incorrecta" in low
-        or "clave fiscal incorrecta" in low
-        or "f1:msg" in low and "incorrect" in low
-    ):
+    if "incorrect" in err_text or "clave o usuario" in err_text or "usuario o clave" in err_text:
         raise ClaveIncorrecta("CLAVE_FISCAL_INCORRECTA: ARCA rechazó la Clave Fiscal.")
+
+
+def parsear_importes_servicio_html(servicio: str, html_text: str) -> Dict[str, Any]:
+    """M2: extrae importes clave del HTML del paso 6 usando los parsers estrictos de auditoria_unificada.py."""
+    from ..auditoria_unificada import _parse_ar_num
+    plain = html.unescape(re.sub(r"<[^>]+>", " ", html_text or ""))
+    plain = re.sub(r"\s+", " ", plain).strip()
+    if servicio == "ccma":
+        m = re.search(r"Total\s+Saldo\s+Deudor\s*[:\-]?\s*\$?\s*([\d\.,]+)", plain, re.IGNORECASE)
+        val = _parse_ar_num(m.group(1), strict=True) if m else None
+        return {"total_saldo_deudor": val}
+    if servicio == "mis_facilidades":
+        m = re.search(r"Planes\s+vigentes\s*[:\-]?\s*(\d+)", plain, re.IGNORECASE)
+        return {"planes_vigentes": int(m.group(1)) if m else None}
+    if servicio == "sct":
+        m = re.search(r"Deuda\s*[:\-]?\s*\$?\s*([\d\.,]+)", plain, re.IGNORECASE)
+        val = _parse_ar_num(m.group(1), strict=True) if m else None
+        return {"deuda_sct": val}
+    return {}
 
 
 class ArcaHttpClient:
@@ -186,6 +215,10 @@ class ArcaHttpClient:
             except (httpx.TimeoutException, httpx.TransportError, httpx.HTTPStatusError) as exc:
                 raise ArcaNoDisponible(f"ARCA no disponible en POST F1:username: {type(exc).__name__}") from exc
 
+            # P3: si no aparece F1:password en la respuesta del paso 2, lanzar ArcaNoDisponible SIN enviar la contraseña
+            if not re.search(r"<input\b[^>]*(?:name|id)\s*=\s*['\"]F1:password['\"]", r2.text, re.IGNORECASE):
+                raise ArcaNoDisponible("ARCA no devolvió el campo F1:password tras enviar el CUIT (paso 2); no se envió la contraseña.")
+
             vs2 = _extract_input_value(r2.text, "javax.faces.ViewState") or vs1
 
             # --- Paso 3: POST F1:password + F1:btnIngresar (a partir de acá password_enviada=True) ---
@@ -227,7 +260,9 @@ class ArcaHttpClient:
             except (httpx.TimeoutException, httpx.TransportError) as exc:
                 raise ArcaNoDisponible(f"Error pidiendo autorización del servicio '{servicio}': {type(exc).__name__}") from exc
 
-            if r5.status_code in (401, 403, 404):
+            if r5.status_code == 401:
+                raise LoginNoConfirmado(f"Portal CF devolvió HTTP 401 al pedir autorización para '{servicio}'.")
+            if r5.status_code in (403, 404):
                 raise ServicioNoAutorizadoError(
                     f"El CUIT {cuit_clean} no tiene autorizado el servicio '{servicio}' en Portal CF (HTTP {r5.status_code})."
                 )
@@ -252,6 +287,7 @@ class ArcaHttpClient:
             except (httpx.TimeoutException, httpx.TransportError, httpx.HTTPStatusError) as exc:
                 raise ArcaNoDisponible(f"Error abriendo servicio '{servicio}': {type(exc).__name__}") from exc
 
+            importes = parsear_importes_servicio_html(servicio, r6.text)
             logger.info("[POC_HTTP] cuit=%s servicio=%s status=%s bytes=%s", cuit_clean, servicio, r6.status_code, len(r6.text))
             return {
                 "ok": True,
@@ -260,6 +296,7 @@ class ArcaHttpClient:
                 "status_code": r6.status_code,
                 "url_final": str(r6.url),
                 "html": r6.text,
+                "importes_extraidos": importes,
                 "password_enviada": password_enviada,
                 "fuente": "ARCA_HTTP_POC",
             }

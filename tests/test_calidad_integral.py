@@ -1839,7 +1839,6 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
                 ArcaHttpClient(require_flag=True).autenticar_y_abrir_servicio(cuit="20304050607", clave="x")
 
         def _make_transport(mode: str) -> httpx.MockTransport:
-            step = {"post_login": 0}
             def handler(request: httpx.Request) -> httpx.Response:
                 url = str(request.url)
                 if "login.xhtml" in url and request.method == "GET":
@@ -1847,9 +1846,11 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
                         raise httpx.ReadTimeout("timeout en GET login.xhtml")
                     return httpx.Response(200, text='<form><input type="hidden" name="javax.faces.ViewState" value="VS1_REDACTED"/></form>')
                 if "login.xhtml" in url and request.method == "POST":
-                    step["post_login"] += 1
-                    if step["post_login"] == 1:
-                        return httpx.Response(200, text='<form><input type="hidden" name="javax.faces.ViewState" value="VS2_REDACTED"/></form>')
+                    body = request.content.decode("utf-8", errors="ignore")
+                    if "F1%3Ausername" in body or "F1:username" in body:
+                        if mode == "no_pw_field":
+                            return httpx.Response(200, text='<form><input type="hidden" name="javax.faces.ViewState" value="VS2_REDACTED"/></form>')
+                        return httpx.Response(200, text='<form><input type="password" name="F1:password"/><input type="hidden" name="javax.faces.ViewState" value="VS2_REDACTED"/></form>')
                     if mode == "timeout_post":
                         raise httpx.ReadTimeout("timeout tras enviar F1:password")
                     if mode == "bad_pass":
@@ -1860,23 +1861,25 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
                 if "portal/login" in url:
                     return httpx.Response(200, text="<html>Portal CF OK</html>")
                 if "/autorizacion" in url:
+                    if mode == "auth_401":
+                        return httpx.Response(401, json={"error": "No autenticado"})
                     if mode == "no_auth":
                         return httpx.Response(403, json={"error": "Servicio no adherido"})
                     return httpx.Response(200, json={"token": "TOK_REDACTED", "sign": "SIGN_REDACTED"})
                 if "ccma/index.aspx" in url:
-                    return httpx.Response(200, text="<html>Total Saldo Deudor: $ 0,00</html>")
+                    return httpx.Response(200, text="<html>Total Saldo Deudor: $ 1.250,50</html>")
                 return httpx.Response(404, text="Not found")
             return httpx.MockTransport(handler)
 
         with patch.dict(os.environ, {"ARCA_HTTP_LOGIN": "1"}):
-            # 2. Login OK -> abre CCMA
+            # 2. Login OK -> abre CCMA y parsea importe estricto (M2)
             res_ok = ArcaHttpClient(transport=_make_transport("ok")).autenticar_y_abrir_servicio(
                 cuit="20304050607", clave="ClaveFixture", servicio="ccma",
             )
             self.assertTrue(res_ok["ok"])
             self.assertTrue(res_ok["password_enviada"])
             self.assertEqual(res_ok["fuente"], "ARCA_HTTP_POC")
-            self.assertIn("Total Saldo Deudor", res_ok["html"])
+            self.assertAlmostEqual(res_ok["importes_extraidos"]["total_saldo_deudor"], 1250.50, places=2)
 
             # 3. Clave incorrecta -> ClaveIncorrecta
             with self.assertRaises(ClaveIncorrecta) as c_bad:
@@ -1888,17 +1891,50 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
                 ArcaHttpClient(transport=_make_transport("captcha")).autenticar_y_abrir_servicio(cuit="20304050607", clave="Real")
             self.assertTrue(c_cap.exception.captcha)
 
-            # 5. Timeout ANTES de enviar la contraseña -> ArcaNoDisponible
+            # 5. Timeout ANTES de enviar la contraseña o falta F1:password en paso 2 -> ArcaNoDisponible
             with self.assertRaises(ArcaNoDisponible):
                 ArcaHttpClient(transport=_make_transport("timeout_pre")).autenticar_y_abrir_servicio(cuit="20304050607", clave="Real")
+            with self.assertRaises(ArcaNoDisponible):
+                ArcaHttpClient(transport=_make_transport("no_pw_field")).autenticar_y_abrir_servicio(cuit="20304050607", clave="Real")
 
-            # 6. Timeout DESPUÉS de enviar la contraseña -> LoginNoConfirmado
+            # 6. Timeout DESPUÉS de enviar la contraseña o HTTP 401 en paso 5 -> LoginNoConfirmado
             with self.assertRaises(LoginNoConfirmado):
                 ArcaHttpClient(transport=_make_transport("timeout_post")).autenticar_y_abrir_servicio(cuit="20304050607", clave="Real")
+            with self.assertRaises(LoginNoConfirmado):
+                ArcaHttpClient(transport=_make_transport("auth_401")).autenticar_y_abrir_servicio(cuit="20304050607", clave="Real")
 
-            # 7. Servicio sin autorización -> ServicioNoAutorizadoError
+            # 7. Servicio sin autorización (403) -> ServicioNoAutorizadoError
             with self.assertRaises(ServicioNoAutorizadoError):
                 ArcaHttpClient(transport=_make_transport("no_auth")).autenticar_y_abrir_servicio(cuit="20304050607", clave="Real")
+
+            # 8. M1 + M2: medir_poc_http corta en 1er LoginNoConfirmado, corta en captcha y aborta en 2 captchas, y valida paridad 100%
+            from scripts.medir_poc_http import ejecutar_medicion
+            r_lnc = ejecutar_medicion(
+                [{"cuit": "20304050607", "clave": "Real"}],
+                corridas=20, pausa_seg=0.0, transport=_make_transport("timeout_post"),
+            )
+            self.assertEqual(r_lnc["corridas_totales"], 1)
+
+            r_cap2 = ejecutar_medicion(
+                [{"cuit": "20304050607", "clave": "Real"}, {"cuit": "20304050608", "clave": "Real"}, {"cuit": "20304050609", "clave": "Real"}],
+                corridas=20, pausa_seg=0.0, transport=_make_transport("captcha"),
+            )
+            self.assertTrue(r_cap2["abortado_por_captchas"])
+            self.assertEqual(r_cap2["corridas_totales"], 2)
+
+            r_par_ok = ejecutar_medicion(
+                [{"cuit": "20304050607", "clave": "Real"}],
+                corridas=2, pausa_seg=0.0, transport=_make_transport("ok"),
+                playwright_fn=lambda c, cl, s: {"total_saldo_deudor": 1250.50},
+            )
+            self.assertEqual(r_par_ok["paridad_pct"], 100.0)
+            r_par_bad = ejecutar_medicion(
+                [{"cuit": "20304050607", "clave": "Real"}],
+                corridas=2, pausa_seg=0.0, transport=_make_transport("ok"),
+                playwright_fn=lambda c, cl, s: {"total_saldo_deudor": 9999.00},
+            )
+            self.assertEqual(r_par_bad["paridad_pct"], 0.0)
+            self.assertFalse(r_par_bad["cumple_go"])
 
 
 if __name__ == "__main__":
