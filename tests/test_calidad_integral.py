@@ -1783,10 +1783,30 @@ class TestContratosYCalidadFiscal(unittest.TestCase):
                 self.assertTrue(kfile.exists())
                 self.assertEqual(vfile.read_bytes(), orig_v_bytes)
 
-                # 4. --aplicar migra los 3 *.enc, crea backup y renombra .vault_key -> .vault_key.migrada
+                # 3b. O2-b: fallo a mitad en el 3er archivo (No space left) no corrompe originales y el reintento completa todo
+                import scripts.migrar_clave_boveda as _mig_mod
+                orig_fn = _mig_mod._fernet_from_env_key
+                class _BoomFernet:
+                    def __init__(self, f): self.f = f; self.n = 0
+                    def encrypt(self, b):
+                        self.n += 1
+                        if self.n == 3:
+                            raise OSError("No space left on device")
+                        return self.f.encrypt(b)
+                    def decrypt(self, b):
+                        return self.f.decrypt(b)
+                with patch.object(_mig_mod, "_fernet_from_env_key", lambda k: _BoomFernet(orig_fn(k))):
+                    with self.assertRaises(OSError):
+                        migrar_boveda(vdir, "NuevaClaveMaestraO2-2026", aplicar=True)
+                # Originales intactos tras el fallo en staging
+                self.assertEqual(vfile.read_bytes(), orig_v_bytes)
+                self.assertTrue(kfile.exists())
+
+                # 4. --aplicar tras el fallo: migra los 3 *.enc, backup DENTRO de vdir/_backups_o2 (O2-c) y renombra .vault_key
                 r_ap = migrar_boveda(vdir, "NuevaClaveMaestraO2-2026", aplicar=True)
                 self.assertTrue(r_ap["ok"] and not r_ap["dry_run"])
                 self.assertTrue(Path(r_ap["backup_dir"]).exists())
+                self.assertTrue(str(Path(r_ap["backup_dir"]).resolve()).startswith(str((vdir / "_backups_o2").resolve())))
                 self.assertFalse(kfile.exists())
                 self.assertTrue((vdir / ".vault_key.migrada").exists())
 

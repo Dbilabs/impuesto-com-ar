@@ -28,6 +28,24 @@ docker run -d --restart unless-stopped -p 8000:8000 \
   --name arca-bot arca-bot
 ```
 
+### Migración de bóveda desde `.vault_key` a `IMPUESTO_VAULT_KEY` (O2)
+Si la VM venía corriendo con `.vault_key` generada localmente y vas a pasar a `IMPUESTO_VAULT_KEY`:
+1. **Pará el contenedor actual** (`docker stop arca-bot`) para evitar que escriba archivos con otra clave durante la migración.
+2. **Hacé un backup en el host:**
+   ```bash
+   sudo tar czf boveda-backup-$(date +%F).tgz -C /var/lib/impuesto boveda
+   ```
+3. **Corré primero `--dry-run` y luego `--aplicar`** sobre el volumen montado:
+   ```bash
+   docker run --rm -v /var/lib/impuesto/boveda:/app/data/boveda \
+     -e IMPUESTO_VAULT_KEY="tu-clave-nueva" arca-bot \
+     python3 scripts/migrar_clave_boveda.py --vault-dir /app/data/boveda
+   docker run --rm -v /var/lib/impuesto/boveda:/app/data/boveda \
+     -e IMPUESTO_VAULT_KEY="tu-clave-nueva" arca-bot \
+     python3 scripts/migrar_clave_boveda.py --vault-dir /app/data/boveda --aplicar
+   ```
+4. **Levantá el contenedor nuevo** con `IMPUESTO_VAULT_KEY`, `BOT_API_SECRET` y el volumen `/app/data/boveda`.
+
 ## Configuración en Cloudflare Pages
 En las variables de entorno de Cloudflare Pages:
 - `BOT_PROVIDER`: `propio` (o `afipsdk` para usar Afip SDK como secundario).

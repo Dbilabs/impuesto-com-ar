@@ -25,15 +25,12 @@ from typing import Dict, Any, Optional, List, Tuple
 
 logger = logging.getLogger("boveda_segura")
 
-import logging
 try:
     from cryptography.fernet import Fernet, InvalidToken
     HAS_CRYPTO = True
 except ImportError:
     HAS_CRYPTO = False
     InvalidToken = Exception
-
-logger_boveda = logging.getLogger("impuesto.boveda")
 
 
 class VaultKeyMismatchError(RuntimeError):
@@ -192,14 +189,14 @@ def _read_enc_json(path: Path, default: Any) -> Any:
         data = f.decrypt(path.read_bytes())
     except InvalidToken as exc:
         if _is_cloud_prod() and KEY_FILE.exists():
-            logger_boveda.critical(
+            logger.critical(
                 "O2: clave de bóveda distinta a la usada para cifrar (%s). Existe %s en volumen: "
                 "corré `python3 scripts/migrar_clave_boveda.py --aplicar` antes de operar. NO se reescribirá el archivo.",
                 path.name,
                 KEY_FILE,
             )
         else:
-            logger_boveda.critical(
+            logger.critical(
                 "O2: clave de bóveda distinta a la usada para cifrar (%s). NO se reescribirá el archivo.",
                 path.name,
             )

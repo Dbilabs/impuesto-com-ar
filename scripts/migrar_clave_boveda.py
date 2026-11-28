@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
 """
 scripts/migrar_clave_boveda.py
-Migra la bóveda cifrada de impuesto.com.ar desde `.vault_key` local hacia `IMPUESTO_VAULT_KEY` (cierre O2).
+Migra la bóveda cifrada de impuesto.com.ar desde `.vault_key` local hacia `IMPUESTO_VAULT_KEY` (cierre O2/O2-b/O2-c).
 
-Pasos que realiza:
-  1. Backup completo con fecha de VAULT_DIR (solo con --aplicar).
-  2. Descifra cada archivo `*.enc` (incluido `wsaa_cache/*.enc`) con la clave de `.vault_key`.
-  3. Vuelve a cifrar con `sha256(IMPUESTO_VAULT_KEY)` usando escritura atómica y permisos 0600.
-  4. Verifica que cada archivo migrado se lea correctamente con la clave nueva.
-  5. Renombra `.vault_key` a `.vault_key.migrada`.
-  6. Imprime únicamente huellas cortas (SHA-256 8 hex), NUNCA las claves.
-
-Uso:
-  python3 scripts/migrar_clave_boveda.py                  # --dry-run por defecto (no modifica nada)
-  python3 scripts/migrar_clave_boveda.py --aplicar        # ejecuta backup + migración
-  python3 scripts/migrar_clave_boveda.py --vault-dir /var/lib/impuesto/boveda --aplicar
+Características:
+  - Modo `--dry-run` por defecto (no modifica archivos). `--aplicar` ejecuta la migración.
+  - Backup persistente dentro de `<vault_dir>/_backups_o2/<ts>` por defecto (excluido de migraciones futuras),
+    o en `--backup-dir`. Dentro de Docker (`/.dockerenv`), exige que el backup quede bajo `/app/data/boveda`.
+  - Migración en dos fases (atómica): cifra y verifica TODOS los archivos en `<vault_dir>/.mig_tmp_<ts>/`
+    antes de hacer `os.replace` sobre los originales. Si algo falla antes, no se toca ningún original.
+  - Retomable: si un archivo ya abre con `IMPUESTO_VAULT_KEY`, se saltea; si no abre ni con `.vault_key`
+    ni con `IMPUESTO_VAULT_KEY`, aborta indicando el nombre del archivo.
+  - Imprime únicamente huellas cortas (SHA-256 8 hex), NUNCA las claves.
 """
 
 import argparse
@@ -25,13 +22,16 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from cryptography.fernet import Fernet, InvalidToken
+
+BACKUP_SUBDIR = "_backups_o2"
+STAGE_PREFIX = ".mig_tmp_"
 
 
 def _fernet_from_env_key(env_key: str) -> Fernet:
@@ -47,13 +47,43 @@ def _huella_str(s: str) -> str:
     return hashlib.sha256(s.strip().encode("utf-8")).hexdigest()[:8]
 
 
+def _es_ruta_excluida(rel_parts: tuple) -> bool:
+    for part in rel_parts:
+        if part == BACKUP_SUBDIR or part.startswith(STAGE_PREFIX):
+            return True
+    return False
+
+
+def _listar_enc_activos(vdir: Path) -> List[Path]:
+    out = []
+    for p in sorted(vdir.rglob("*.enc")):
+        rel = p.relative_to(vdir)
+        if _es_ruta_excluida(rel.parts):
+            continue
+        out.append(p)
+    return out
+
+
+def _validar_backup_dir_en_docker(backup_dir: Path) -> None:
+    if Path("/.dockerenv").exists():
+        vol_root = Path("/app/data/boveda").resolve()
+        try:
+            backup_dir.resolve().relative_to(vol_root)
+        except ValueError as exc:
+            raise RuntimeError(
+                f"O2-c: dentro de Docker el backup ({backup_dir}) debe quedar dentro del volumen persistente "
+                f"({vol_root}) para no perderse al terminar el contenedor."
+            ) from exc
+
+
 def migrar_boveda(
     vault_dir: Path,
     new_env_key: str,
     *,
     aplicar: bool = False,
+    backup_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
-    """Migra todos los `*.enc` dentro de `vault_dir` (recursivo) desde `.vault_key` hacia `new_env_key`."""
+    """Migra todos los `*.enc` activos dentro de `vault_dir` desde `.vault_key` hacia `new_env_key`."""
     vdir = Path(vault_dir).resolve()
     key_file = vdir / ".vault_key"
     env_k = (new_env_key or "").strip()
@@ -71,7 +101,7 @@ def migrar_boveda(
     huella_vieja = _huella_bytes(old_raw)
     huella_nueva = _huella_str(env_k)
 
-    enc_files: List[Path] = sorted(vdir.rglob("*.enc"))
+    enc_files = _listar_enc_activos(vdir)
     if not enc_files:
         return {
             "ok": True,
@@ -80,21 +110,28 @@ def migrar_boveda(
             "huella_nueva": huella_nueva,
             "archivos_encontrados": 0,
             "migrados": [],
+            "ya_migrados": [],
             "backup_dir": None,
         }
 
-    # Paso 2 (validación previa tanto en dry-run como en --aplicar): descifrar TODO antes de escribir nada
-    decrypted_payloads: List[tuple[Path, bytes]] = []
+    # Fase 1: descifrar y clasificar (retomable: acepta clave vieja o clave nueva si ya fue migrado)
+    pendientes: List[tuple[Path, bytes]] = []
+    ya_migrados: List[str] = []
     for p in enc_files:
+        rel_str = str(p.relative_to(vdir))
         raw_ct = p.read_bytes()
         try:
             plain = f_old.decrypt(raw_ct)
-        except InvalidToken as exc:
-            raise RuntimeError(
-                f"No se pudo descifrar {p.relative_to(vdir)} con .vault_key (huella={huella_vieja}). "
-                "Abortando sin modificar ningún archivo."
-            ) from exc
-        decrypted_payloads.append((p, plain))
+            pendientes.append((p, plain))
+        except InvalidToken:
+            try:
+                f_new.decrypt(raw_ct)
+                ya_migrados.append(rel_str)
+            except InvalidToken as exc:
+                raise RuntimeError(
+                    f"No se pudo descifrar '{rel_str}' ni con .vault_key ({huella_vieja}) ni con IMPUESTO_VAULT_KEY ({huella_nueva}). "
+                    "Abortando sin modificar ningún archivo."
+                ) from exc
 
     if not aplicar:
         return {
@@ -103,29 +140,47 @@ def migrar_boveda(
             "huella_anterior": huella_vieja,
             "huella_nueva": huella_nueva,
             "archivos_encontrados": len(enc_files),
-            "archivos": [str(p.relative_to(vdir)) for p in enc_files],
+            "pendientes": [str(p.relative_to(vdir)) for p, _ in pendientes],
+            "ya_migrados": ya_migrados,
             "backup_dir": None,
         }
 
-    # Paso 1: backup completo con fecha antes de tocar nada
-    ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
-    backup_dir = vdir.parent / f"{vdir.name}_backup_{ts}"
-    shutil.copytree(vdir, backup_dir)
+    # Backup persistente (por defecto dentro de <vault_dir>/_backups_o2/<ts>)
+    ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+    bdir = Path(backup_dir).resolve() if backup_dir else (vdir / BACKUP_SUBDIR / ts)
+    _validar_backup_dir_en_docker(bdir)
+    bdir.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(
+        vdir,
+        bdir,
+        ignore=lambda _src, names: [n for n in names if n == BACKUP_SUBDIR or n.startswith(STAGE_PREFIX)],
+    )
 
-    # Paso 3: re-cifrar con escritura atómica y permisos 0600
-    migrados: List[str] = []
-    for p, plain in decrypted_payloads:
-        new_ct = f_new.encrypt(plain)
-        tmp = p.with_suffix(p.suffix + f".mig.{os.getpid()}")
-        tmp.write_bytes(new_ct)
-        os.chmod(tmp, 0o600)
-        os.replace(tmp, p)
-        # Paso 4: verificar lectura inmediata con la clave nueva
-        if f_new.decrypt(p.read_bytes()) != plain:
-            raise RuntimeError(f"Verificación post-migración falló para {p.name}.")
-        migrados.append(str(p.relative_to(vdir)))
+    # Fase 2 (atómica): cifrar y verificar TODO en directorio temporal dentro de vault_dir antes de tocar originales
+    stage_dir = vdir / f"{STAGE_PREFIX}{ts}_{os.getpid()}"
+    stage_dir.mkdir(parents=True, exist_ok=True)
+    staged_pairs: List[tuple[Path, Path]] = []
+    try:
+        for p, plain in pendientes:
+            rel = p.relative_to(vdir)
+            staged_path = stage_dir / rel
+            staged_path.parent.mkdir(parents=True, exist_ok=True)
+            new_ct = f_new.encrypt(plain)
+            staged_path.write_bytes(new_ct)
+            os.chmod(staged_path, 0o600)
+            if f_new.decrypt(staged_path.read_bytes()) != plain:
+                raise RuntimeError(f"Verificación post-cifrado falló para '{rel}'.")
+            staged_pairs.append((staged_path, p))
 
-    # Paso 5: renombrar .vault_key -> .vault_key.migrada
+        # Fase 3: reemplazo atómico una vez que TODOS los archivos se cifraron y verificaron con éxito
+        migrados: List[str] = []
+        for staged_path, orig_path in staged_pairs:
+            os.replace(staged_path, orig_path)
+            migrados.append(str(orig_path.relative_to(vdir)))
+    finally:
+        shutil.rmtree(stage_dir, ignore_errors=True)
+
+    # Fase 4: renombrar .vault_key -> .vault_key.migrada
     migrated_key_path = vdir / ".vault_key.migrada"
     os.replace(key_file, migrated_key_path)
     os.chmod(migrated_key_path, 0o600)
@@ -137,7 +192,8 @@ def migrar_boveda(
         "huella_nueva": huella_nueva,
         "archivos_encontrados": len(enc_files),
         "migrados": migrados,
-        "backup_dir": str(backup_dir),
+        "ya_migrados": ya_migrados,
+        "backup_dir": str(bdir),
         "vault_key_renombrada": str(migrated_key_path),
     }
 
@@ -145,20 +201,22 @@ def migrar_boveda(
 def main() -> int:
     parser = argparse.ArgumentParser(description="Migra archivos *.enc de .vault_key a IMPUESTO_VAULT_KEY (O2).")
     parser.add_argument("--vault-dir", default=str(ROOT / "data" / "boveda"), help="Ruta de VAULT_DIR (default: data/boveda)")
+    parser.add_argument("--backup-dir", default="", help="Ruta de backup (default: <vault-dir>/_backups_o2/<ts>)")
     parser.add_argument("--aplicar", action="store_true", help="Ejecuta backup y migración real (sin este flag corre en --dry-run)")
     parser.add_argument("--dry-run", action="store_true", help="Simula y verifica descifrado sin modificar archivos (comportamiento por defecto)")
     args = parser.parse_args()
 
     aplicar = bool(args.aplicar and not args.dry_run)
     env_key = os.environ.get("IMPUESTO_VAULT_KEY", "").strip()
-    res = migrar_boveda(Path(args.vault_dir), env_key, aplicar=aplicar)
+    bdir = Path(args.backup_dir) if args.backup_dir.strip() else None
+    res = migrar_boveda(Path(args.vault_dir), env_key, aplicar=aplicar, backup_dir=bdir)
     modo = "APLICADO" if not res["dry_run"] else "DRY-RUN (sin cambios; usá --aplicar para ejecutar)"
     print(f"[O2 migración bóveda — {modo}]")
     print(f"  Huella clave anterior (.vault_key): {res['huella_anterior']}")
     print(f"  Huella clave nueva (IMPUESTO_VAULT_KEY): {res['huella_nueva']}")
-    print(f"  Archivos *.enc verificados: {res['archivos_encontrados']}")
+    print(f"  Archivos *.enc verificados: {res['archivos_encontrados']} (ya migrados: {len(res.get('ya_migrados', []))})")
     if res.get("backup_dir"):
-        print(f"  Backup creado en: {res['backup_dir']}")
+        print(f"  Backup persistente creado en: {res['backup_dir']}")
     if res.get("vault_key_renombrada"):
         print(f"  .vault_key renombrada a: {res['vault_key_renombrada']}")
     return 0
